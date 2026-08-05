@@ -1,0 +1,76 @@
+Project Brief: WhatsApp Order-to-Kitchen (MVP)
+
+1. Project Definition
+What it is: A WhatsApp-based ordering system for restaurants. A customer chats with the restaurant's WhatsApp number, browses the menu, places an order, and pays — all inside the chat. Once payment is confirmed, the order appears in a simple merchant-facing app UI so the restaurant can see and manage it.
+
+Elevator pitch: Let customers order and pay through WhatsApp; let the restaurant see and act on that order in one clean dashboard — no missed calls, no manual note-taking, no separate ordering app for the customer to download.
+
+Current phase: MVP. No POS integration yet. Petpooja (and later UrbanPiper) integration is the planned Phase 2 — for now, a confirmed/paid order simply shows up in our own app UI, and the restaurant staff act on it manually from there.
+
+
+2. Problem Statement
+Small/independent restaurants take orders over phone calls and ad-hoc WhatsApp chats today — no structure, easy to mishear/miswrite orders, no record.
+Customers want the convenience of ordering without downloading a dedicated app or juggling multiple food-delivery apps and their commissions.
+Restaurant staff have no single, calm place to see "what's been ordered and paid for right now" without babysitting a phone.
+Existing WhatsApp SaaS tools are mostly broadcast/marketing tools, not an actual order-taking + payment + view-your-orders workflow built for a restaurant's day-to-day.
+
+
+3. Target Audience / Segment
+Primary (merchant side): Independent restaurants, cafés, and small cloud kitchens — starting with a small cluster in Bangalore. Owner or a staff member (cashier/manager) is the one operating our app UI.
+
+Primary (customer side): Anyone ordering food from that restaurant via WhatsApp — no app download required, just chat.
+
+Not for (right now): Large multi-outlet chains needing enterprise POS sync, saree/textile shops, kirana stores, any non-food-ordering use case. Single-outlet or few-outlet independent restaurants only, for MVP.
+
+
+4. Merchant-Side POV Flow
+Restaurant sets up their menu/catalog once (items, prices, categories, availability toggle) inside our merchant app.
+Customer orders and pays via WhatsApp (see Section 5).
+The moment payment is confirmed, the order appears in the merchant app's Orders view — new orders clearly marked (e.g. "New" status), with item list, quantity, customer name/number, order total, and timestamp.
+Staff can update order status manually in the app (e.g. New → Preparing → Ready → Completed). Each status change is (planned) to trigger an automatic WhatsApp update back to the customer — for MVP, at minimum the "Completed"/"Ready" trigger should work.
+Staff can view a simple running list/history of today's orders and daily totals.
+(Out of scope for MVP, planned Phase 2): order auto-prints or auto-syncs to a POS/KDS (Petpooja first) instead of manual status updates.
+
+
+5. User (Customer)-Side POV Flow
+Customer messages the restaurant's WhatsApp number (or taps a WhatsApp link/QR code at the restaurant or on social media).
+Bot greets them and shows the menu/catalog (categories → items → price).
+Customer selects items and quantities (via WhatsApp catalog/cart or a simple guided chat flow).
+Bot shows an order summary and total, customer confirms.
+Bot sends a payment link (UPI/Razorpay) in the same chat.
+Customer pays; on successful payment, bot sends a confirmation message ("Order confirmed! We'll let you know when it's ready.").
+Customer receives status updates in the same chat as the restaurant updates order status (at minimum: a "ready/completed" message for MVP).
+
+
+6. MVP Scope
+WhatsApp ordering flow: catalog browsing → cart → order summary → payment link → payment confirmation message.
+Payment: UPI/Razorpay payment link generated per order, webhook confirms payment.
+Merchant app UI: once payment is confirmed, the order shows up in a simple dashboard (list of orders, order detail, manual status update). This is the only place the order needs to appear — no POS push for now.
+Basic menu/catalog management screen for the merchant (add/edit items, prices, availability).
+
+
+7. Explicitly Out of Scope (for now)
+Petpooja / UrbanPiper / any POS integration — deferred to Phase 2. For MVP, "order appears in our app UI" after payment is the finish line.
+Kitchen printer / KDS auto-ticketing.
+Loyalty, broadcast campaigns, win-back marketing messages.
+Multi-outlet management, multi-user roles/permissions.
+AI chatbot personality / free-text natural language ordering (use structured menu/catalog + guided flow instead).
+Any non-restaurant vertical.
+Native mobile app for merchant — a responsive web app is enough for MVP.
+
+
+8. Tech / System Notes
+Messaging: WhatsApp Cloud API (via a Business Solution Provider) for chat, catalog, and template messages.
+Payments: Razorpay (or similar) payment links + webhook for payment confirmation.
+Backend: needs to map WhatsApp conversation state → order object → payment status → merchant app order list.
+Merchant app: simple web dashboard (orders list, order detail/status update, menu management). No POS calls in MVP — this is intentionally the "fake door" for the ops-sync feature we'll build in Phase 2.
+Data to store per order: order ID, customer name/phone, items + quantities, total, payment status, order status, timestamps.
+Phase 2 (not now, just noting for architecture): Petpooja order-injection API integration should be able to slot in later without re-architecting the order model — keep the order object POS-integration-friendly (e.g. don't hardcode "app-only" assumptions into the data model).
+
+
+9. Success Criteria (MVP)
+A real customer can complete an order and payment entirely inside WhatsApp, start to finish, with no restaurant staff manual intervention needed to take the order.
+A restaurant staff member can see a new paid order appear in the app UI within seconds of payment, with correct item/quantity/total detail.
+Staff can update order status and the customer (at minimum) gets notified when the order is ready/completed.
+Pilot-ready: this flow works reliably enough to hand to 1–2 real Bangalore restaurants for a live trial.
+
