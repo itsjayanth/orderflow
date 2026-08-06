@@ -2,15 +2,15 @@ import uuid
 
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from customers.adapters.repository import CustomerRepository
+from identity.adapters.repository import MerchantRepository
+from notifications.adapters.repository import NotificationTemplateRepository
+from notifications.domain.models import DEFAULT_MESSAGES
+from notifications.domain.rendering import render_template
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from orders.adapters.repository import OrderRepository
 from shared.db import SessionFactory
 from shared.encryption import decrypt
 from shared.tenant import TenantContext
-
-_ORDER_CONFIRMED_MESSAGE = "Order confirmed! We'll let you know when it's ready."
-_ORDER_READY_MESSAGE = "Your order is ready!"
-_ORDER_COMPLETED_MESSAGE = "Your order is complete. Enjoy your meal!"
 
 
 class WhatsAppNotificationChannel:
@@ -21,7 +21,7 @@ class WhatsAppNotificationChannel:
     def __init__(self, sender: WhatsAppSender) -> None:
         self._sender = sender
 
-    async def _send(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID, message: str) -> bool:
+    async def _send(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID, kind: str) -> bool:
         tenant = TenantContext(merchant_id=merchant_id)
         async with SessionFactory() as session:
             waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
@@ -36,6 +36,21 @@ class WhatsAppNotificationChannel:
             if customer is None:
                 return False
 
+            merchant = await MerchantRepository(session).get(tenant.merchant_id)
+
+            template = await NotificationTemplateRepository(session).get(tenant, kind)
+            if template is not None and template.is_active:
+                context = {
+                    "business_name": merchant.business_name if merchant else "",
+                    "customer_name": customer.display_name or "",
+                    "order_id": str(order.order_id),
+                    "total": str(order.total),
+                    "currency": order.currency,
+                }
+                message = render_template(template.body, context)
+            else:
+                message = DEFAULT_MESSAGES[kind]
+
             return await self._sender.send_text(
                 phone_number_id=waba.phone_number_id,
                 access_token=decrypt(waba.access_token_encrypted),
@@ -44,16 +59,10 @@ class WhatsAppNotificationChannel:
             )
 
     async def notify_order_confirmed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
-        return await self._send(
-            merchant_id=merchant_id, order_id=order_id, message=_ORDER_CONFIRMED_MESSAGE
-        )
+        return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_confirmed")
 
     async def notify_order_ready(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
-        return await self._send(
-            merchant_id=merchant_id, order_id=order_id, message=_ORDER_READY_MESSAGE
-        )
+        return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_ready")
 
     async def notify_order_completed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
-        return await self._send(
-            merchant_id=merchant_id, order_id=order_id, message=_ORDER_COMPLETED_MESSAGE
-        )
+        return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_completed")

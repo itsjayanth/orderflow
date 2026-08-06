@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -51,7 +52,7 @@ export function OrderDetailPage() {
         </p>
       </div>
 
-      <div className="flex items-center gap-3">
+      <Card className="flex flex-wrap items-center gap-3 p-4">
         <span className="text-sm font-medium">
           Status: {order.fulfillment_status ? STATUS_LABELS[order.fulfillment_status] : '—'}
         </span>
@@ -71,13 +72,13 @@ export function OrderDetailPage() {
             Mark {STATUS_LABELS[status]}
           </Button>
         ))}
-      </div>
+      </Card>
 
       {updateStatus.isError && (
         <p className="text-destructive text-sm">Failed to update status. Please try again.</p>
       )}
 
-      <div className="rounded-md border">
+      <Card className="overflow-hidden py-0">
         <Table>
           <TableHeader>
             <TableRow>
@@ -90,7 +91,7 @@ export function OrderDetailPage() {
           <TableBody>
             {order.items.map((item) => (
               <TableRow key={item.order_item_id}>
-                <TableCell>{item.name_snapshot}</TableCell>
+                <TableCell className="font-medium">{item.name_snapshot}</TableCell>
                 <TableCell>{item.quantity}</TableCell>
                 <TableCell>{item.price_snapshot}</TableCell>
                 <TableCell>{item.line_total}</TableCell>
@@ -98,9 +99,9 @@ export function OrderDetailPage() {
             ))}
           </TableBody>
         </Table>
-      </div>
+      </Card>
 
-      <p className="text-right text-lg font-medium">
+      <p className="text-right text-lg font-semibold">
         Total: {order.currency} {order.total}
       </p>
     </div>

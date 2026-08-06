@@ -1,3 +1,4 @@
+import { Card } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -18,8 +19,8 @@ export function CustomersPage() {
   const { data: customers, isLoading, isError } = useCustomers()
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
+    <div className="space-y-6">
+      <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Customers</h1>
         <p className="text-muted-foreground text-sm">
           Customers who have messaged your WhatsApp number.
@@ -32,32 +33,34 @@ export function CustomersPage() {
       )}
 
       {customers && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Last order</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {customers.length === 0 ? (
+        <Card className="overflow-hidden py-0">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground text-center">
-                  No customers yet.
-                </TableCell>
+                <TableHead>Name</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Last order</TableHead>
               </TableRow>
-            ) : (
-              customers.map((customer) => (
-                <TableRow key={customer.customer_id}>
-                  <TableCell>{customer.display_name ?? customer.whatsapp_number}</TableCell>
-                  <TableCell>{customer.whatsapp_number}</TableCell>
-                  <TableCell>{formatDate(customer.last_order_at)}</TableCell>
+            </TableHeader>
+            <TableBody>
+              {customers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-muted-foreground text-center">
+                    No customers yet.
+                  </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                customers.map((customer) => (
+                  <TableRow key={customer.customer_id}>
+                    <TableCell>{customer.display_name ?? customer.whatsapp_number}</TableCell>
+                    <TableCell>{customer.whatsapp_number}</TableCell>
+                    <TableCell>{formatDate(customer.last_order_at)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </Card>
       )}
     </div>
   )

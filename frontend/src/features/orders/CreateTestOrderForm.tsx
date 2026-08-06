@@ -19,6 +19,9 @@ const schema = z.object({
 })
 type FormValues = z.infer<typeof schema>
 
+const selectClassName =
+  'border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-full rounded-lg border px-3.5 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4'
+
 export function CreateTestOrderForm() {
   const [open, setOpen] = useState(false)
   const { data: menuItems } = useMenuItems()
@@ -54,7 +57,10 @@ export function CreateTestOrderForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4 rounded-md border p-4">
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      className="bg-card max-w-md space-y-4 rounded-xl border p-4 shadow-sm"
+    >
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-medium">New test order</h2>
         <button
@@ -89,11 +95,7 @@ export function CreateTestOrderForm() {
 
       <div className="space-y-2">
         <Label htmlFor="menu_item_id">Item</Label>
-        <select
-          id="menu_item_id"
-          className="border-input h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-          {...register('menu_item_id')}
-        >
+        <select id="menu_item_id" className={selectClassName} {...register('menu_item_id')}>
           <option value="">Select an item…</option>
           {menuItems?.map((item) => (
             <option key={item.menu_item_id} value={item.menu_item_id}>
@@ -121,11 +123,7 @@ export function CreateTestOrderForm() {
 
       <div className="space-y-2">
         <Label htmlFor="payment_method">Payment method</Label>
-        <select
-          id="payment_method"
-          className="border-input h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-          {...register('payment_method')}
-        >
+        <select id="payment_method" className={selectClassName} {...register('payment_method')}>
           <option value="online">Online (payment link)</option>
           <option value="cod">Cash on delivery/pickup</option>
         </select>

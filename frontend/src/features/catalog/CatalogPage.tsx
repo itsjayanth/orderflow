@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -49,12 +50,14 @@ export function CatalogPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
+      <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Catalog</h1>
-        <p className="text-muted-foreground text-sm">Menu/catalog management lives here.</p>
+        <p className="text-muted-foreground text-sm">
+          Manage your menu items and control what customers can order.
+        </p>
       </div>
 
-      <div className="rounded-md border">
+      <Card className="overflow-hidden py-0">
         <Table>
           <TableHeader>
             <TableRow>
@@ -100,9 +103,12 @@ export function CatalogPage() {
             ))}
           </TableBody>
         </Table>
-      </div>
+      </Card>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4 rounded-md border p-4">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="bg-card max-w-md space-y-4 rounded-xl border p-4 shadow-sm"
+      >
         <h2 className="text-lg font-medium">Add item</h2>
 
         <div className="space-y-2">

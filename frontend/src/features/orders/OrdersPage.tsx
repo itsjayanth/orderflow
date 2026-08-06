@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { Card } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -9,7 +10,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 import type { FulfillmentStatus } from '@/shared/api/types'
+import { StatusBadge } from '@/shared/components/StatusBadge'
 
 import { CreateTestOrderForm } from './CreateTestOrderForm'
 import { STATUS_LABELS } from './statusTransitions'
@@ -27,7 +30,7 @@ export function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
+      <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Orders</h1>
         <p className="text-muted-foreground text-sm">
           Updates automatically as new orders come in.
@@ -36,24 +39,25 @@ export function OrdersPage() {
 
       <CreateTestOrderForm />
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {FILTERS.map((status) => (
           <button
             key={status}
             type="button"
             onClick={() => setFilter(status)}
-            className={`rounded-md border px-3 py-1 text-sm ${
+            className={cn(
+              'rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all duration-150',
               filter === status
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent border-border',
+            )}
           >
             {status === 'all' ? 'All' : STATUS_LABELS[status]}
           </button>
         ))}
       </div>
 
-      <div className="rounded-md border">
+      <Card className="overflow-hidden py-0">
         <Table>
           <TableHeader>
             <TableRow>
@@ -82,23 +86,30 @@ export function OrdersPage() {
             {orders?.map((order) => (
               <TableRow key={order.order_id}>
                 <TableCell>
-                  <Link to={`/orders/${order.order_id}`} className="hover:underline">
+                  <Link
+                    to={`/orders/${order.order_id}`}
+                    className="text-primary font-medium hover:underline"
+                  >
                     {formatDateTime(order.placed_at)}
                   </Link>
                 </TableCell>
                 <TableCell>{order.items.length}</TableCell>
-                <TableCell>
+                <TableCell className="font-medium">
                   {order.currency} {order.total}
                 </TableCell>
-                <TableCell>{order.payment_status}</TableCell>
+                <TableCell className="text-muted-foreground">{order.payment_status}</TableCell>
                 <TableCell>
-                  {order.fulfillment_status ? STATUS_LABELS[order.fulfillment_status] : '—'}
+                  {order.fulfillment_status ? (
+                    <StatusBadge status={order.fulfillment_status} />
+                  ) : (
+                    '—'
+                  )}
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
-      </div>
+      </Card>
     </div>
   )
 }

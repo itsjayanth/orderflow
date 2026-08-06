@@ -2,7 +2,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -22,19 +24,6 @@ const whatsappSchema = z.object({
 })
 type WhatsAppForm = z.infer<typeof whatsappSchema>
 
-function Badge({ tone, children }: { tone: 'green' | 'amber' | 'gray'; children: string }) {
-  const toneClasses = {
-    green: 'bg-green-100 text-green-800',
-    amber: 'bg-amber-100 text-amber-800',
-    gray: 'bg-muted text-muted-foreground',
-  }[tone]
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${toneClasses}`}>
-      {children}
-    </span>
-  )
-}
-
 function PaymentSettingsSection() {
   const { data, isLoading } = usePaymentSettings()
   const update = useUpdatePaymentSettings()
@@ -50,7 +39,7 @@ function PaymentSettingsSection() {
   }
 
   return (
-    <section className="space-y-4 rounded-md border p-4">
+    <Card className="space-y-4 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-medium">Payments (Razorpay)</h2>
@@ -103,7 +92,7 @@ function PaymentSettingsSection() {
           {update.isPending ? 'Saving…' : 'Save payment settings'}
         </Button>
       </form>
-    </section>
+    </Card>
   )
 }
 
@@ -124,7 +113,7 @@ function WhatsAppSettingsSection() {
   const tone = data?.connection_status === 'connected' ? 'green' : 'gray'
 
   return (
-    <section className="space-y-4 rounded-md border p-4">
+    <Card className="space-y-4 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-medium">WhatsApp</h2>
@@ -177,7 +166,7 @@ function WhatsAppSettingsSection() {
           {update.isPending ? 'Saving…' : 'Save WhatsApp settings'}
         </Button>
       </form>
-    </section>
+    </Card>
   )
 }
 
