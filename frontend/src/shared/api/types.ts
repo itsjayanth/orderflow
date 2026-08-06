@@ -21,3 +21,29 @@ export interface MeResponse {
   staff_user: StaffUser
   merchant: Merchant
 }
+
+export interface CustomerOut {
+  customer_id: string
+  whatsapp_number: string
+  display_name: string | null
+  first_seen_at: string
+  last_order_at: string | null
+}
+
+export interface AddressOut {
+  address_id: string
+  label: string
+  line1: string
+  line2: string | null
+  landmark: string | null
+  city: string
+  pincode: string
+  geo_lat: number | null
+  geo_long: number | null
+  is_default: boolean
+  created_at: string
+}
+
+export interface CustomerWithAddressesOut extends CustomerOut {
+  addresses: AddressOut[]
+}
