@@ -145,18 +145,28 @@ The highest-external-dependency phase. No WhatsApp Business test number or Meta 
 
 ---
 
-## Phase 7 — Notifications
+## Phase 7 — Notifications ✅ done
 
-**Backend**
+Wires real handlers onto the `orders/domain/events.py` bus built in Phase 4, replacing what had been a no-subscriber (silent) bus. Built without a live WhatsApp connection (same situation as Phases 5/6) — the send attempt is real, only delivery no-ops against dummy credentials.
+
+**Deviations from the original plan, and why:**
+- **The event bus had to become async.** It was originally synchronous (`Handler = Callable[[OrderEvent], None]`); sending a WhatsApp message is an HTTP call, so `Handler` is now `Callable[[OrderEvent], Awaitable[None]]` and `publish` is `async def`, awaited in registration order. Updated all three existing publishers (`orders/api/router.py`'s fulfillment-status endpoint, `ordering_flow/domain/checkout.py`'s COD branch, `payments/api/router.py`'s Razorpay webhook handler) to `await publish(...)`.
+- **No template-vs-freeform message selection was built.** The 24h customer-initiated-conversation window (`ARCHITECTURE.md` §8) matters for real WhatsApp Business API traffic, but without a live BSP connection there's no policy to verify or template ID to send against — flagged here rather than guessed at. `notifications/adapters/whatsapp_channel.py` sends plain `send_text` messages for all three notification kinds; swapping in template messages later is a one-file change (the `NotificationChannel` protocol and its call sites don't need to know).
+- **One method per notification kind, not a generic `notify(message)`.** `notifications/domain/channel.py`'s `NotificationChannel` protocol has `notify_order_confirmed` / `notify_order_ready` / `notify_order_completed` — keeps the actual message copy (and, later, which ones need a template) owned by the adapter, not scattered across every call site.
+- **A swappable module-level singleton, not FastAPI `Depends()`, for the channel.** Order events (and their notification side effects) aren't triggered by an HTTP request the way sending a webhook reply is — the notification handlers subscribed in `notifications/wiring.py` fire off the domain event bus, with no request/response cycle to hang a dependency override on. `wiring.py` exposes `set_notification_channel`/`get_notification_channel` instead, which tests use to swap in a fake channel around calls that would otherwise trigger a real (if gracefully-failing) network attempt.
+- **`register_notification_handlers()` is called at `app.py` module level, not inside `lifespan`.** `lifespan` doesn't run under the `ASGITransport` the test `client` fixture uses, so subscriptions registered there would never actually fire in tests — unlike `shared/scheduler.py`'s APScheduler job, which correctly stays in `lifespan` since it's a genuinely runtime-only concern. Registration is idempotent (a guard flag) so importing `app` more than once — which pytest does per test module — never double-subscribes and double-sends.
+- Notifications are fire-and-forget from the publishing request's point of view: a failed or slow send is logged and swallowed (`WhatsAppSender`'s existing graceful-failure contract from Phase 6), never blocks or fails the order-status-update / checkout / payment-webhook request that published the event. Verified live: advancing an order to `ready` against dummy WhatsApp credentials logged `WhatsApp send failed: 403 Forbidden` and still returned `200 OK` for the status update itself.
+
+**Backend, as built:**
 - `notifications/domain/channel.py`: `NotificationChannel` protocol.
-- `notifications/adapters/whatsapp_channel.py`: implementation using the `shared/whatsapp_client.py` from Phase 6, sending approved template messages where required (outside the 24h customer-initiated window — verify template-message policy against your BSP, flagged in `ARCHITECTURE.md` §8).
-- Wire real handlers onto the `orders/domain/events.py` bus (replacing Phase 5's log-only stubs): `OrderConfirmed`-class → "Order confirmed!"; `ready` transition (minimum, per brief) → status update message.
-- Tests: event → outbound-call assertion (mock the WhatsApp client), template-vs-freeform selection logic if the 24h window matters for your BSP.
+- `notifications/adapters/whatsapp_channel.py`: `WhatsAppNotificationChannel`, built on the `WhatsAppSender` from Phase 6 — looks up the merchant's `WhatsAppBusinessAccount`, the order, and its customer in a fresh DB session (handlers run after the triggering request already committed, so there's nothing to share a transaction with), then sends.
+- `notifications/wiring.py`: subscribes `OrderPaid` and `OrderConfirmedCOD` → confirmed message; `OrderReady` → ready message; `OrderCompleted` → completed message.
+- Tests (`tests/test_notifications.py`): `WhatsAppNotificationChannel` against a fake sender (message content per event kind, graceful `False` on missing WABA/order/customer, sender-failure propagation); `wiring` (idempotent registration, each event type routes to the correct notification method, channel-swap isolation).
 
 **Frontend**
-- None — this phase is backend-only (outbound WhatsApp, not dashboard UI).
+- None — this phase is backend-only (outbound WhatsApp, not dashboard UI), as planned.
 
-**Definition of done**: advancing an order to `ready` in the dashboard (Phase 4's UI) results in the test customer receiving a WhatsApp message — closes the loop the brief's success criteria describe end to end.
+**Definition of done** (met, adapted for no live WhatsApp connection): advancing an order to `ready` via the dashboard triggers a real outbound send attempt to `graph.facebook.com` with the merchant's on-file (dummy) credentials — rejected by Meta as expected, logged, and non-blocking — closing the loop the brief's success criteria describe, short of an actual delivered message pending real BSP credentials.
 
 ---
 

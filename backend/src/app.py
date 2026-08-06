@@ -6,12 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from conversation.api.router import router as whatsapp_webhook_router
 from dashboard_api.api.router import router as dashboard_api_router
+from notifications.wiring import register_notification_handlers
 from ordering_flow.api.router import router as ordering_flow_router
 from payments.api.router import router as payments_webhook_router
 from shared.config import get_settings
 from shared.scheduler import create_scheduler
 
 settings = get_settings()
+
+# Module level, not inside lifespan -- lifespan doesn't run under the
+# ASGITransport tests use, so subscriptions registered there would never
+# actually fire in tests.
+register_notification_handlers()
 
 
 @asynccontextmanager

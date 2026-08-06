@@ -56,6 +56,6 @@ async def update_fulfillment_status(
 
     event_cls = _EVENT_BY_STATUS.get(body.to_status)
     if event_cls is not None:
-        publish(event_cls(order_id=order.order_id, merchant_id=tenant.merchant_id))
+        await publish(event_cls(order_id=order.order_id, merchant_id=tenant.merchant_id))
 
     return OrderOut.model_validate(order)

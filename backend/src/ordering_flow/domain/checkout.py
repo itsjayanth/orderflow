@@ -96,7 +96,7 @@ async def perform_checkout(
             order_id=order.order_id, provider="cod", event_type="cod_selected"
         )
         await session.commit()
-        publish(OrderConfirmedCOD(order_id=order.order_id, merchant_id=tenant.merchant_id))
+        await publish(OrderConfirmedCOD(order_id=order.order_id, merchant_id=tenant.merchant_id))
         return CheckoutResult(order=order, payment_link_url=None)
 
     order = await order_repo.create(

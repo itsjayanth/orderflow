@@ -40,6 +40,17 @@ class FakeSender(WhatsAppSender):
         return True
 
 
+class NoopNotificationChannel:
+    async def notify_order_confirmed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return True
+
+    async def notify_order_ready(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return True
+
+    async def notify_order_completed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return True
+
+
 async def _seed_connected_merchant(db_session: AsyncSession, phone_number_id: str = "PNID1"):
     merchant = await MerchantRepository(db_session).create(
         business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
@@ -154,17 +165,29 @@ async def test_track_order_with_no_orders(db_session: AsyncSession) -> None:
 
 
 async def test_track_order_with_existing_order_shows_status(db_session: AsyncSession) -> None:
+    from notifications import wiring
+
     merchant, tenant = await _seed_connected_merchant(db_session)
     menu_item = await MenuItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
-    await perform_checkout(
-        db_session,
-        tenant,
-        customer_whatsapp_number="919876543210",
-        items=[CheckoutItem(menu_item_id=menu_item.menu_item_id, quantity=1)],
-        payment_method="cod",
-    )
+
+    # perform_checkout publishes OrderConfirmedCOD, which the real
+    # notification channel would otherwise try to send over the (dummy,
+    # non-functional) WhatsApp credentials seeded above -- swap in a no-op
+    # so this test doesn't make a real network call to Meta.
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(NoopNotificationChannel())
+    try:
+        await perform_checkout(
+            db_session,
+            tenant,
+            customer_whatsapp_number="919876543210",
+            items=[CheckoutItem(menu_item_id=menu_item.menu_item_id, quantity=1)],
+            payment_method="cod",
+        )
+    finally:
+        wiring.set_notification_channel(real_channel)
 
     sender = FakeSender()
     message = _inbound(from_phone="919876543210", button_id="track_order")

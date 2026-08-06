@@ -88,6 +88,6 @@ async def razorpay_webhook(
     await session.commit()
 
     if verified.succeeded:
-        publish(OrderPaid(order_id=order.order_id, merchant_id=merchant_id))
+        await publish(OrderPaid(order_id=order.order_id, merchant_id=merchant_id))
 
     return {"status": "ok"}
