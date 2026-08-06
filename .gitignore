@@ -221,3 +221,6 @@ __marimo__/
 node_modules/
 *.tsbuildinfo
 
+# Claude Code local state (background-agent worktrees, etc.)
+.claude/
+
