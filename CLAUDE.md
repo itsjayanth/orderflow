@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-Backend and frontend scaffolds exist (`backend/`, `frontend/`), following the design in `ARCHITECTURE.md` and the stack decisions in `TECH_STACK.md` — read both before making architecture changes. The scaffold is structural (hexagonal module layout, health check, routing, design-system foundation); most domain logic (entities, state machines, real endpoints) is not implemented yet. Check current repo state before relying on anything beyond this section, since it will go stale as the project is built out.
+Backend and frontend scaffolds exist (`backend/`, `frontend/`), following the design in `ARCHITECTURE.md` and the stack decisions in `TECH_STACK.md` — read both before making architecture changes. The scaffold is structural (hexagonal module layout, health check, routing, design-system foundation); most domain logic (entities, state machines, real endpoints) is not implemented yet. `IMPLEMENTATION_PLAN.md` breaks the remaining work into ordered phases (Identity → Catalog → Customers → Orders → Payments → WhatsApp → Notifications → Onboarding) — when picking up implementation work, check it first for what phase is next and what a phase's definition of done looks like. Check current repo state before relying on anything beyond this section, since it will go stale as the project is built out.
 
 ### Backend (`backend/`)
 
