@@ -57,3 +57,31 @@ export interface MenuItem {
   created_at: string
   updated_at: string
 }
+
+export type FulfillmentStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
+
+export interface OrderItemOut {
+  order_item_id: string
+  menu_item_id: string
+  name_snapshot: string
+  price_snapshot: string
+  quantity: number
+  line_total: string
+}
+
+export interface OrderOut {
+  order_id: string
+  customer_id: string
+  order_type: string
+  payment_method: string
+  payment_status: string
+  fulfillment_status: FulfillmentStatus | null
+  subtotal: string
+  total: string
+  currency: string
+  placed_at: string
+  paid_at: string | null
+  ready_at: string | null
+  completed_at: string | null
+  items: OrderItemOut[]
+}

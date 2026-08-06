@@ -85,9 +85,9 @@ Implemented as described below. Phases 2 and 3 were built in parallel (independe
 
 ---
 
-## Phase 4 — Orders domain (entities, state machines, dashboard CRUD)
+## Phase 4 — Orders domain (entities, state machines, dashboard CRUD) ✅ done
 
-The two state machines from `ARCHITECTURE.md` §7 are the highest-risk piece of logic in the whole system — build and test them in isolation before wiring payments or WhatsApp to them.
+The two state machines from `ARCHITECTURE.md` §7 are the highest-risk piece of logic in the whole system — build and test them in isolation before wiring payments or WhatsApp to them. Implemented as described below; `orders/domain/state_machine.py` is exhaustively unit-tested (85 cases: every legal transition in both tables plus every illegal `(from, to)` combination across the full state space, no DB involved) before anything else was built on top of it.
 
 **Backend**
 - `orders/domain/models.py`: `Order`, `OrderItem`, `OrderStatusEvent`.
