@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+.env*
+# VITE_ vars are baked into the client bundle at build time anyway (not
+# secret) -- .env.production is committed so Vercel's build has a base API
+# URL without needing a dashboard-configured env var.
+!.env.production
