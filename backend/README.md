@@ -63,3 +63,9 @@ Each `src/<module>/` follows the same hexagonal shape:
 ## Payment/WhatsApp credentials (dashboard Settings)
 
 Razorpay and WhatsApp credentials are per-merchant, not app-wide config — `PUT /api/v1/payments/settings` and `PUT /api/v1/onboarding/whatsapp` (both dashboard-authenticated). Real credentials aren't required to develop against: `payments/adapters/gateway_selector.py` picks a real `RazorpayGateway` only when a merchant's key_id has a genuine `rzp_test_`/`rzp_live_` prefix, otherwise it falls back to `DummyPaymentGateway`, which fabricates a checkout link instead of calling Razorpay and verifies webhooks with the exact same HMAC-SHA256 algorithm Razorpay's real webhooks use. See `IMPLEMENTATION_PLAN.md`'s Phase 5 for the full rationale and how to simulate a webhook locally.
+
+## WhatsApp conversation + ordering webview
+
+`conversation/` handles inbound WhatsApp webhooks (`/api/v1/whatsapp/webhook`) — tenant resolution by `phone_number_id`, message dedup, and intent routing (place order / track order / talk to restaurant). No live WhatsApp Business connection is required to develop against it: `conversation/adapters/whatsapp_client.py`'s `GraphApiWhatsAppSender` always attempts a real Graph API call but treats any failure (dummy token, no live WABA, network error) as a logged no-op rather than an exception, so the whole inbound path is testable regardless.
+
+There's no WhatsApp Flow integration — see `IMPLEMENTATION_PLAN.md`'s Phase 6 for why, and for the webview fallback it uses instead. `ordering_flow/api/router.py` serves that webview's backend: `GET /api/v1/ordering-flow/{merchant_id}/menu` and `POST /api/v1/ordering-flow/{merchant_id}/checkout`, both public/unauthenticated and scoped by `merchant_id` in the URL, since the customer has no dashboard account. Both the webview checkout and the dashboard's test-checkout (Phase 5) go through the same `ordering_flow/domain/checkout.py::perform_checkout`, so they can't drift apart.

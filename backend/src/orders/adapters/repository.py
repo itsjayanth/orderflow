@@ -130,6 +130,18 @@ class OrderRepository:
         await self._session.flush()
         return order
 
+    async def list_for_customer(
+        self, tenant: TenantContext, customer_id: uuid.UUID, limit: int = 10
+    ) -> builtins.list[Order]:
+        result = await self._session.execute(
+            select(Order)
+            .where(Order.merchant_id == tenant.merchant_id, Order.customer_id == customer_id)
+            .options(selectinload(Order.items))
+            .order_by(Order.placed_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def list_stale_awaiting_payment(
         self, older_than: datetime.datetime
     ) -> builtins.list[Order]:

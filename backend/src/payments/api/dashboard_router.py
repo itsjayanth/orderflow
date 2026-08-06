@@ -1,18 +1,8 @@
 from fastapi import APIRouter, HTTPException, status
 
-from catalog.adapters.repository import MenuItemRepository
-from customers.adapters.repository import CustomerRepository
-from orders.adapters.repository import OrderItemInput, OrderRepository
-from orders.domain.events import OrderConfirmedCOD, publish
-from payments.adapters.gateway_selector import (
-    REAL_KEY_PREFIXES,
-    get_payment_gateway,
-    resolve_credentials,
-)
-from payments.adapters.repository import (
-    MerchantPaymentCredentialsRepository,
-    PaymentEventRepository,
-)
+from ordering_flow.domain.checkout import CheckoutItem, MenuItemNotFoundError, perform_checkout
+from payments.adapters.gateway_selector import REAL_KEY_PREFIXES
+from payments.adapters.repository import MerchantPaymentCredentialsRepository
 from payments.api.schemas import (
     PaymentSettingsOut,
     PaymentSettingsUpdate,
@@ -65,83 +55,30 @@ async def test_checkout(
 ) -> TestCheckoutResponse:
     """Dashboard-only stand-in for Phase 6's real WhatsApp ordering flow --
     lets staff create a test order (with a real payment link, or COD) so
-    the payment/fulfillment loop is exercisable end-to-end before the
-    WhatsApp Conversation Handler exists."""
-    customer = await CustomerRepository(session).find_or_create(
-        tenant, body.customer_whatsapp_number, display_name=body.customer_display_name
-    )
-
-    menu_repo = MenuItemRepository(session)
-    item_inputs: list[OrderItemInput] = []
-    for line in body.items:
-        menu_item = await menu_repo.get(tenant, line.menu_item_id)
-        if menu_item is None:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Menu item {line.menu_item_id} not found"
-            )
-        item_inputs.append(
-            OrderItemInput(
-                menu_item_id=menu_item.menu_item_id,
-                name_snapshot=menu_item.name,
-                price_snapshot=menu_item.price,
-                quantity=line.quantity,
-            )
-        )
-
-    order_repo = OrderRepository(session)
-    payment_event_repo = PaymentEventRepository(session)
-
-    if body.payment_method == "cod":
-        order = await order_repo.create(
+    the payment/fulfillment loop is exercisable end-to-end. Phase 6 added
+    the real customer-facing equivalent (ordering_flow/api/router.py); both
+    go through the same ordering_flow.domain.checkout.perform_checkout."""
+    try:
+        result = await perform_checkout(
+            session,
             tenant,
-            customer_id=customer.customer_id,
+            customer_whatsapp_number=body.customer_whatsapp_number,
+            customer_display_name=body.customer_display_name,
+            items=[
+                CheckoutItem(menu_item_id=line.menu_item_id, quantity=line.quantity)
+                for line in body.items
+            ],
+            payment_method=body.payment_method,
             order_type=body.order_type,
-            payment_method="cod",
-            payment_status="cod_pending",
-            fulfillment_status="new",
             delivery_address_id=body.delivery_address_id,
-            items=item_inputs,
         )
-        await payment_event_repo.create(
-            order_id=order.order_id, provider="cod", event_type="cod_selected"
-        )
-        await session.commit()
-        publish(OrderConfirmedCOD(order_id=order.order_id, merchant_id=tenant.merchant_id))
-        return TestCheckoutResponse(
-            order_id=order.order_id,
-            payment_status=order.payment_status,
-            fulfillment_status=order.fulfillment_status,
-            total=str(order.total),
-            payment_link_url=None,
-        )
-
-    order = await order_repo.create(
-        tenant,
-        customer_id=customer.customer_id,
-        order_type=body.order_type,
-        payment_method="online",
-        payment_status="awaiting_payment",
-        delivery_address_id=body.delivery_address_id,
-        items=item_inputs,
-    )
-
-    credentials = await MerchantPaymentCredentialsRepository(session).get(tenant)
-    key_id, key_secret = resolve_credentials(credentials, tenant.merchant_id)
-    gateway = get_payment_gateway(key_id, key_secret)
-    link = gateway.create_link(order_id=order.order_id, amount=order.total, currency=order.currency)
-
-    await payment_event_repo.create(
-        order_id=order.order_id,
-        provider="razorpay" if _is_real_key(key_id) else "dummy",
-        event_type="link_created",
-        provider_order_id=link.provider_order_id,
-    )
-    await session.commit()
+    except MenuItemNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
     return TestCheckoutResponse(
-        order_id=order.order_id,
-        payment_status=order.payment_status,
-        fulfillment_status=order.fulfillment_status,
-        total=str(order.total),
-        payment_link_url=link.url,
+        order_id=result.order.order_id,
+        payment_status=result.order.payment_status,
+        fulfillment_status=result.order.fulfillment_status,
+        total=str(result.order.total),
+        payment_link_url=result.payment_link_url,
     )

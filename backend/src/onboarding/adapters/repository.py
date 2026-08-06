@@ -19,6 +19,17 @@ class WhatsAppBusinessAccountRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_phone_number_id(self, phone_number_id: str) -> WhatsAppBusinessAccount | None:
+        """Cross-tenant on purpose -- this is how the Conversation Handler
+        resolves *which* merchant an inbound WhatsApp message belongs to
+        (ARCHITECTURE.md Section 2/8), before any TenantContext exists."""
+        result = await self._session.execute(
+            select(WhatsAppBusinessAccount).where(
+                WhatsAppBusinessAccount.phone_number_id == phone_number_id
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def upsert(
         self,
         tenant: TenantContext,

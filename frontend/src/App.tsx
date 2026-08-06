@@ -7,6 +7,7 @@ import { CatalogPage } from '@/features/catalog/CatalogPage'
 import { CustomersPage } from '@/features/customers/CustomersPage'
 import { DashboardHomePage } from '@/features/dashboard/DashboardHomePage'
 import { OnboardingPage } from '@/features/onboarding/OnboardingPage'
+import { OrderingPage } from '@/features/ordering/OrderingPage'
 import { OrderDetailPage } from '@/features/orders/OrderDetailPage'
 import { OrdersPage } from '@/features/orders/OrdersPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
@@ -17,6 +18,8 @@ export function App() {
     <Routes>
       <Route path="login" element={<LoginPage />} />
       <Route path="register" element={<RegisterPage />} />
+      {/* Public customer-facing ordering webview -- no staff auth, no dashboard Layout. */}
+      <Route path="order/:merchantId" element={<OrderingPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route index element={<DashboardHomePage />} />

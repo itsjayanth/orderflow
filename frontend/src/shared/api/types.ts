@@ -106,3 +106,23 @@ export interface TestCheckoutResponse {
   total: string
   payment_link_url: string | null
 }
+
+export interface PublicMenuItemOut {
+  menu_item_id: string
+  category: string
+  name: string
+  price: string
+}
+
+export interface PublicMenuOut {
+  business_name: string
+  items: PublicMenuItemOut[]
+}
+
+export interface OrderingFlowCheckoutResponse {
+  order_id: string
+  payment_status: string
+  fulfillment_status: FulfillmentStatus | null
+  total: string
+  payment_link_url: string | null
+}

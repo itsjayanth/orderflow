@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # MerchantPaymentCredentials and onboarding/domain/models.py's
     # WhatsAppBusinessAccount.
     whatsapp_graph_api_base_url: str = "https://graph.facebook.com/v20.0"
+    # Shared across all merchants -- Meta's webhook verification handshake
+    # is per-app, not per-tenant (the callback URL itself is shared infra).
+    whatsapp_webhook_verify_token: str = "change-me"
+
+    # Where the customer-facing ordering webview lives, for links the bot
+    # sends in-chat (see conversation/domain/handler.py).
+    frontend_base_url: str = "http://localhost:5173"
 
     abandoned_order_timeout_minutes: int = 30
 
