@@ -21,19 +21,37 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(staff_user_id: uuid.UUID, merchant_id: uuid.UUID) -> str:
+def _create_token(
+    staff_user_id: uuid.UUID, merchant_id: uuid.UUID, token_type: str, ttl: datetime.timedelta
+) -> str:
     settings = get_settings()
     now = datetime.datetime.now(datetime.UTC)
     payload = {
         "sub": str(staff_user_id),
         "merchant_id": str(merchant_id),
-        "type": "access",
+        "type": token_type,
         "iat": now,
-        "exp": now + datetime.timedelta(minutes=settings.jwt_access_token_ttl_minutes),
+        "exp": now + ttl,
+        "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
 
-def decode_token(token: str) -> dict[str, str]:
+def create_access_token(staff_user_id: uuid.UUID, merchant_id: uuid.UUID) -> str:
     settings = get_settings()
-    return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+    ttl = datetime.timedelta(minutes=settings.jwt_access_token_ttl_minutes)
+    return _create_token(staff_user_id, merchant_id, "access", ttl)
+
+
+def create_refresh_token(staff_user_id: uuid.UUID, merchant_id: uuid.UUID) -> str:
+    settings = get_settings()
+    ttl = datetime.timedelta(days=settings.jwt_refresh_token_ttl_days)
+    return _create_token(staff_user_id, merchant_id, "refresh", ttl)
+
+
+def decode_token(token: str, expected_type: str) -> dict[str, str]:
+    settings = get_settings()
+    payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+    if payload.get("type") != expected_type:
+        raise jwt.InvalidTokenError(f"expected a {expected_type} token")
+    return payload

@@ -1,5 +1,8 @@
 import { Link, Outlet } from 'react-router-dom'
 
+import { Button } from '@/components/ui/button'
+import { useLogout, useMe } from '@/features/auth/useAuth'
+
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard' },
   { to: '/orders', label: 'Orders' },
@@ -9,6 +12,9 @@ const NAV_ITEMS = [
 ]
 
 export function Layout() {
+  const me = useMe()
+  const logout = useLogout()
+
   return (
     <div className="min-h-svh">
       <header className="border-border border-b">
@@ -23,6 +29,13 @@ export function Layout() {
               {item.label}
             </Link>
           ))}
+          <span className="flex-1" />
+          {me.data && (
+            <span className="text-muted-foreground text-sm">{me.data.merchant.business_name}</span>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => logout.mutate()}>
+            Log out
+          </Button>
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-6 py-8">

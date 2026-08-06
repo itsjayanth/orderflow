@@ -1,5 +1,8 @@
 import { Route, Routes } from 'react-router-dom'
 
+import { LoginPage } from '@/features/auth/LoginPage'
+import { RegisterPage } from '@/features/auth/RegisterPage'
+import { RequireAuth } from '@/features/auth/RequireAuth'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
 import { CustomersPage } from '@/features/customers/CustomersPage'
 import { DashboardHomePage } from '@/features/dashboard/DashboardHomePage'
@@ -10,12 +13,16 @@ import { Layout } from '@/shared/components/Layout'
 export function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<DashboardHomePage />} />
-        <Route path="orders" element={<OrdersPage />} />
-        <Route path="catalog" element={<CatalogPage />} />
-        <Route path="customers" element={<CustomersPage />} />
-        <Route path="onboarding" element={<OnboardingPage />} />
+      <Route path="login" element={<LoginPage />} />
+      <Route path="register" element={<RegisterPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<Layout />}>
+          <Route index element={<DashboardHomePage />} />
+          <Route path="orders" element={<OrdersPage />} />
+          <Route path="catalog" element={<CatalogPage />} />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="onboarding" element={<OnboardingPage />} />
+        </Route>
       </Route>
     </Routes>
   )

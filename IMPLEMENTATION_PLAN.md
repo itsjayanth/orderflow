@@ -21,9 +21,11 @@ Scaffold only: FastAPI app boots, health check, hexagonal folders per module, Al
 
 ---
 
-## Phase 1 — Identity & Access + tenant plumbing
+## Phase 1 — Identity & Access + tenant plumbing ✅ done
 
 Everything downstream is tenant-scoped and dashboard-authenticated, so this unblocks every other phase.
+
+Implemented as described below, with one upgrade beyond the original plan: the refresh token is delivered as an httpOnly cookie scoped to `/api/v1/auth` (rotated on every `/refresh` call) rather than returned in the JSON body, matching `TECH_STACK.md`'s "refresh token in an httpOnly cookie, not localStorage" intent from the start rather than retrofitting it later. `POST /logout` (not in the original plan) clears the cookie.
 
 **Backend**
 - `identity/domain/models.py`: `Merchant`, `StaffUser` SQLAlchemy models (fields per `ARCHITECTURE.md` §1). Add `Merchant.onboarding_status` as a plain string column now (enum values from §5); the state machine logic itself lands in Phase 8 — for now everything created here defaults to `"live"` so downstream phases aren't blocked on onboarding being built.

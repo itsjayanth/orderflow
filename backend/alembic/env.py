@@ -10,11 +10,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+# import every module's models here so Base.metadata sees them for autogenerate
+from identity.domain.models import Merchant, StaffUser  # noqa: E402, F401
 from shared.config import get_settings  # noqa: E402
 from shared.db import Base  # noqa: E402
-
-# import every module's models here so Base.metadata sees them for autogenerate
-# from catalog.domain.models import MenuItem  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
