@@ -47,3 +47,13 @@ export interface AddressOut {
 export interface CustomerWithAddressesOut extends CustomerOut {
   addresses: AddressOut[]
 }
+
+export interface MenuItem {
+  menu_item_id: string
+  category: string
+  name: string
+  price: string
+  is_available: boolean
+  created_at: string
+  updated_at: string
+}
