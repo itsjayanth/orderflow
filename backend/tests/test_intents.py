@@ -1,0 +1,46 @@
+import pytest
+
+from conversation.domain.intents import Intent, classify
+
+
+@pytest.mark.parametrize(
+    "button_id",
+    ["place_order", "track_order", "talk_to_restaurant"],
+)
+def test_button_reply_maps_directly_to_intent(button_id: str) -> None:
+    assert classify(text=None, button_id=button_id) == Intent(button_id)
+
+
+def test_unknown_button_id_falls_back_to_greeting() -> None:
+    assert classify(text=None, button_id="not_a_real_button") == Intent.GREETING
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["I want to order", "menu please", "so hungry right now"],
+)
+def test_place_order_keywords(text: str) -> None:
+    assert classify(text=text, button_id=None) == Intent.PLACE_ORDER
+
+
+@pytest.mark.parametrize("text", ["track my order", "what's the status", "Where is my order?"])
+def test_track_order_keywords(text: str) -> None:
+    assert classify(text=text, button_id=None) == Intent.TRACK_ORDER
+
+
+@pytest.mark.parametrize("text", ["I want to talk to someone", "need help", "is staff there"])
+def test_talk_to_restaurant_keywords(text: str) -> None:
+    assert classify(text=text, button_id=None) == Intent.TALK_TO_RESTAURANT
+
+
+@pytest.mark.parametrize("text", ["hi", "hello", "asdkfjhaskdjf", ""])
+def test_unrecognized_text_falls_back_to_greeting(text: str) -> None:
+    assert classify(text=text, button_id=None) == Intent.GREETING
+
+
+def test_no_text_and_no_button_falls_back_to_greeting() -> None:
+    assert classify(text=None, button_id=None) == Intent.GREETING
+
+
+def test_button_reply_takes_priority_over_text() -> None:
+    assert classify(text="hi", button_id="track_order") == Intent.TRACK_ORDER
