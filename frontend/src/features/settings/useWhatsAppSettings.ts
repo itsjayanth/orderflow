@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { onboardingStatusQueryKey } from '@/features/onboarding/useOnboarding'
 import { apiFetch } from '@/shared/api/client'
 import type { WhatsAppSettingsOut } from '@/shared/api/types'
 
@@ -26,6 +27,11 @@ export function useUpdateWhatsAppSettings() {
         method: 'PUT',
         body: JSON.stringify(input),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: QUERY_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+      // Connecting WhatsApp can advance onboarding_status server-side
+      // (ARCHITECTURE.md Section 5).
+      queryClient.invalidateQueries({ queryKey: onboardingStatusQueryKey })
+    },
   })
 }

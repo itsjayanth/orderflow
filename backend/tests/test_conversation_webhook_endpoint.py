@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import app
 from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_sender
 from conversation.domain.models import ProcessedWhatsAppMessage
+from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from shared.encryption import encrypt
 from shared.tenant import TenantContext
@@ -63,6 +64,16 @@ async def _tenant_for(client: AsyncClient, tokens: dict) -> TenantContext:
     me = await client.get("/api/v1/auth/me", headers=_auth_headers(tokens))
     assert me.status_code == 200
     return TenantContext(merchant_id=uuid.UUID(me.json()["merchant"]["merchant_id"]))
+
+
+async def _mark_live(db_session: AsyncSession, tenant: TenantContext) -> None:
+    """These tests exercise webhook routing/dedup, not onboarding
+    progression -- jump straight to "live" so the handler's onboarding-status
+    guard doesn't reject the inbound message."""
+    merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
+    assert merchant is not None
+    merchant.onboarding_status = "live"
+    await db_session.commit()
 
 
 def _webhook_body(*, phone_number_id: str, message_id: str, from_phone: str, text: str) -> dict:
@@ -129,6 +140,7 @@ async def test_inbound_webhook_routes_to_correct_merchant_and_replies(
         tenant, phone_number_id="PNID_E2E", access_token_encrypted=encrypt("dummy-token")
     )
     await db_session.commit()
+    await _mark_live(db_session, tenant)
 
     sender = _override_sender()
     try:
@@ -177,6 +189,7 @@ async def test_redelivered_webhook_is_deduped(
         tenant, phone_number_id="PNID_DUP", access_token_encrypted=encrypt("dummy-token")
     )
     await db_session.commit()
+    await _mark_live(db_session, tenant)
 
     sender = _override_sender()
     try:

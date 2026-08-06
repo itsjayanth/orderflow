@@ -59,6 +59,11 @@ async def _seed_connected_merchant(db_session: AsyncSession, phone_number_id: st
     await WhatsAppBusinessAccountRepository(db_session).upsert(
         tenant, phone_number_id=phone_number_id, access_token_encrypted=encrypt("dummy-token")
     )
+    # These tests exercise the conversation handler itself, not onboarding
+    # progression (that's test_onboarding_flow.py) -- jump the merchant
+    # straight to "live" so the handler's onboarding-status guard doesn't
+    # reject every inbound message here.
+    merchant.onboarding_status = "live"
     await db_session.commit()
     return merchant, tenant
 

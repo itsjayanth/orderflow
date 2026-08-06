@@ -99,6 +99,30 @@ export interface WhatsAppSettingsOut {
   connection_status: string
 }
 
+export type OnboardingStatus =
+  | 'registered'
+  | 'meta_connected'
+  | 'whatsapp_verified'
+  | 'profile_completed'
+  | 'catalog_ready'
+  | 'live'
+
+export interface OnboardingStatusOut {
+  onboarding_status: OnboardingStatus
+  whatsapp_connected: boolean
+  profile_completed: boolean
+  has_available_menu_item: boolean
+}
+
+export interface KitchenProfileOut {
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  pincode: string | null
+  cuisine_type: string | null
+  fssai_license_no: string | null
+}
+
 export interface TestCheckoutResponse {
   order_id: string
   payment_status: string

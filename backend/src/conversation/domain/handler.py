@@ -8,6 +8,7 @@ from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.intents import Intent, classify
 from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import CustomerRepository
+from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.domain.models import WhatsAppBusinessAccount
 from orders.adapters.repository import OrderRepository
@@ -32,6 +33,7 @@ class HandledMessage:
     reply_sent: bool
     skipped_duplicate: bool = False
     skipped_unknown_number: bool = False
+    skipped_not_live: bool = False
 
 
 async def handle_inbound_message(
@@ -47,6 +49,14 @@ async def handle_inbound_message(
         )
 
     tenant = TenantContext(merchant_id=waba.merchant_id)
+
+    # ARCHITECTURE.md Section 5: `live` is "the gate the Conversation Handler
+    # checks before treating inbound chats as order-capable" -- a merchant
+    # mid-onboarding (or one whose account got deactivated) can still have a
+    # connected WhatsAppBusinessAccount row without being ready for traffic.
+    merchant = await MerchantRepository(session).get(tenant.merchant_id)
+    if merchant is None or merchant.onboarding_status != "live":
+        return HandledMessage(intent=Intent.GREETING, reply_sent=False, skipped_not_live=True)
 
     dedupe_repo = MessageDedupeRepository(session)
     newly_recorded = await dedupe_repo.mark_processed(

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
+import { onboardingStatusQueryKey } from '@/features/onboarding/useOnboarding'
 import { apiFetch } from '@/shared/api/client'
 import type { MenuItem } from '@/shared/api/types'
 
@@ -23,6 +24,7 @@ export function useUpdateMenuItem() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: menuItemsQueryKey })
+      queryClient.invalidateQueries({ queryKey: onboardingStatusQueryKey })
     },
   })
 }

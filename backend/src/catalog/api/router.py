@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from catalog.adapters.repository import MenuItemRepository
 from catalog.api.schemas import MenuItemCreate, MenuItemOut, MenuItemUpdate
+from onboarding.domain.onboarding_service import try_advance_for_catalog_ready
 from shared.deps import CurrentTenant, DbSession
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
@@ -22,6 +23,9 @@ async def create_item(
     item = await MenuItemRepository(session).create(
         tenant, category=body.category, name=body.name, price=body.price
     )
+    # A new item is available by default, so this is the most common way the
+    # onboarding catalog_ready gate (ARCHITECTURE.md Section 5) gets met.
+    await try_advance_for_catalog_ready(session, tenant)
     await session.commit()
     return MenuItemOut.model_validate(item)
 
@@ -35,5 +39,8 @@ async def update_item(
     )
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Menu item not found")
+    # Covers the case where the gate is only met by un-hiding an existing
+    # item (is_available: true) rather than creating a new one.
+    await try_advance_for_catalog_ready(session, tenant)
     await session.commit()
     return MenuItemOut.model_validate(item)
