@@ -1,6 +1,8 @@
 import os
 
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://orderflow:orderflow@localhost:5432/orderflow_test"
+os.environ["DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL", "postgresql+asyncpg://orderflow:orderflow@localhost:5432/orderflow_test"
+)
 
 from collections.abc import AsyncIterator
 
@@ -8,7 +10,11 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import identity.domain.models  # noqa: F401  (registers tables on Base.metadata)
+# Importing `app` (rather than listing individual `<module>.domain.models`
+# imports) registers every module's models on Base.metadata transitively,
+# since app -> dashboard_api's router -> every domain module's router ->
+# that module's models. New modules never need to touch this file.
+from app import app
 from shared.db import Base, SessionFactory, engine
 
 
@@ -22,8 +28,6 @@ async def _reset_db() -> AsyncIterator[None]:
 
 @pytest_asyncio.fixture
 async def client() -> AsyncIterator[AsyncClient]:
-    from app import app
-
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
