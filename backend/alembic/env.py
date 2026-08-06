@@ -10,8 +10,11 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-# import every module's models here so Base.metadata sees them for autogenerate
-from identity.domain.models import Merchant, StaffUser  # noqa: E402, F401
+# Importing `app` (rather than listing individual `<module>.domain.models`
+# imports) registers every module's models on Base.metadata transitively --
+# app -> dashboard_api's router -> every domain module's router -> that
+# module's models. New modules never need to touch this file.
+from app import app  # noqa: E402, F401
 from shared.config import get_settings  # noqa: E402
 from shared.db import Base  # noqa: E402
 

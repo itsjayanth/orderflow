@@ -46,9 +46,9 @@ Implemented as described below, with one upgrade beyond the original plan: the r
 
 ---
 
-## Phase 2 — Catalog (MenuItem)
+## Phase 2 — Catalog (MenuItem) ✅ done
 
-Simplest entity, no dependents — good place to prove the full-stack pattern before tackling the harder domains.
+Simplest entity, no dependents — good place to prove the full-stack pattern before tackling the harder domains. Implemented as described below (soft-delete via `is_available` toggle rather than a separate delete endpoint, matching the plan).
 
 **Backend**
 - `catalog/domain/models.py`: `MenuItem` (per `ARCHITECTURE.md` §1).
@@ -66,7 +66,9 @@ Simplest entity, no dependents — good place to prove the full-stack pattern be
 
 ---
 
-## Phase 3 — Customers & Addresses
+## Phase 3 — Customers & Addresses ✅ done
+
+Implemented as described below. Phases 2 and 3 were built in parallel (independent domains, no shared files once the API routers and UI pages already existed as placeholders) and merged together; the combined `menu_items`/`customers`/`addresses` migration was generated once after merging, rather than per-agent, to avoid a branching migration history.
 
 **Backend**
 - `customers/domain/models.py`: `Customer`, `Address`.
