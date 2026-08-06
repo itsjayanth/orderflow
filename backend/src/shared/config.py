@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +9,22 @@ class Settings(BaseSettings):
 
     env: str = "development"
     database_url: str = "postgresql+asyncpg://orderflow:orderflow@localhost:5432/orderflow"
+
+    @field_validator("database_url")
+    @classmethod
+    def _use_asyncpg_driver(cls, value: str) -> str:
+        """Render's Postgres connection string (like most hosts') comes as
+        `postgres://` or `postgresql://` -- the app needs the `+asyncpg`
+        driver suffix for SQLAlchemy's async engine. Rewritten here once
+        rather than requiring every deploy target to hand-edit the URL."""
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix) and "+asyncpg" not in value:
+                return "postgresql+asyncpg://" + value[len(prefix) :]
+        return value
+
+    @property
+    def is_production(self) -> bool:
+        return self.env != "development"
 
     jwt_secret: str = "change-me"
     jwt_access_token_ttl_minutes: int = 15

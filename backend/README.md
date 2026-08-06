@@ -77,3 +77,26 @@ There's no WhatsApp Flow integration — see `IMPLEMENTATION_PLAN.md`'s Phase 6 
 ## Merchant onboarding
 
 `Merchant.onboarding_status` moves through the six states in `ARCHITECTURE.md` §5 (`registered → meta_connected → whatsapp_verified → profile_completed → catalog_ready → live`), enforced by `onboarding/domain/state_machine.py` (an explicit transition table, same pattern as `orders/domain/state_machine.py`) and driven by `onboarding/domain/onboarding_service.py`. No live Meta app is required: connecting WhatsApp (`PUT /api/v1/onboarding/whatsapp`, Phase 5) advances both `meta_connected` and `whatsapp_verified` at once, since there's no independent Meta OAuth step to trigger blind; `PUT /api/v1/onboarding/profile` saves kitchen details and advances to `profile_completed`; adding (or un-hiding) an available `MenuItem` via `catalog/api/router.py` advances `catalog_ready` straight through to `live`. `GET /api/v1/onboarding/status` returns the current status plus a checklist for the dashboard wizard. `conversation/domain/handler.py` gates inbound WhatsApp messages on `onboarding_status == "live"` — a connected `WhatsAppBusinessAccount` alone isn't enough once a merchant is mid-onboarding. See `IMPLEMENTATION_PLAN.md`'s Phase 8 for the full rationale.
+
+## Deployment (Render, free tier)
+
+Deploys as a single Render **Web Service** built from `Dockerfile` (`render.yaml` at the repo root is a Blueprint that provisions it, plus a free Postgres database, in one step: New → Blueprint in the Render dashboard, point it at this repo). One service is deliberate, not a simplification — Render's free tier has no free background-worker or cron-job service type, and this app doesn't need one: the abandoned-order sweep (`shared/scheduler.py`) already runs in-process via `app.py`'s `lifespan`, inside the same web service, the same way it does locally.
+
+**After the Blueprint syncs**, set these in the service's Environment tab (marked `sync: false` in `render.yaml` so they're never committed):
+
+| Key | Value |
+|---|---|
+| `JWT_SECRET` | any long random string (e.g. `openssl rand -hex 32`) |
+| `SECRETS_ENCRYPTION_KEY` | `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | any string — whatever you configure as the verify token on the Meta webhook subscription |
+| `FRONTEND_BASE_URL` | your Vercel deployment URL, e.g. `https://orderflow.vercel.app` (no trailing slash) |
+| `CORS_ALLOW_ORIGINS` | `["https://orderflow.vercel.app"]` — must match the Vercel URL exactly (scheme + host), or the dashboard's requests will be blocked by CORS |
+
+`DATABASE_URL` is wired automatically from the Blueprint's Postgres resource — Render's connection string comes as `postgres://`/`postgresql://`, which `shared/config.py`'s `Settings` rewrites to `postgresql+asyncpg://` on load, so no manual edit is needed there.
+
+**Free-tier caveats, not code issues — plan around these:**
+- **The free Postgres database expires 30 days after creation** and is deleted. This is a Render account-level limit, not something the app can detect or work around. Before day 30, either upgrade the database to a paid plan in the Render dashboard, or take a backup (`pg_dump`) and restore into a fresh free database — set a reminder.
+- **The free web service spins down after 15 minutes of no traffic** and takes up to ~30-60s to cold-start on the next request — the first WhatsApp webhook or dashboard load after idle time will be slow. There's no code fix for this on the free plan; it goes away on a paid plan.
+- `preDeployCommand: alembic upgrade head` in `render.yaml` runs migrations automatically on every deploy — don't run them manually against the Render database unless troubleshooting.
+
+**Frontend deploy**: see `frontend/README.md`'s Deployment section for the Vercel side — the two must point at each other (`CORS_ALLOW_ORIGINS`/`FRONTEND_BASE_URL` here, `VITE_API_URL` there) or auth and CORS will fail.

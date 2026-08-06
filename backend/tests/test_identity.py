@@ -99,6 +99,44 @@ async def test_refresh_without_cookie_rejected(client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
+async def test_refresh_cookie_is_lax_and_insecure_in_development(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "business_name": "Test Kitchen",
+            "owner_name": "Jane Owner",
+            "owner_contact": "cookie-dev@example.com",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+
+    set_cookie = response.headers.get("set-cookie", "").lower()
+    assert "samesite=lax" in set_cookie
+    assert "secure" not in set_cookie
+
+
+async def test_refresh_cookie_is_samesite_none_and_secure_in_production(
+    client: AsyncClient, monkeypatch
+) -> None:
+    from shared.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "env", "production")
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "business_name": "Test Kitchen",
+            "owner_name": "Jane Owner",
+            "owner_contact": "cookie-prod@example.com",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+
+    set_cookie = response.headers.get("set-cookie", "").lower()
+    assert "samesite=none" in set_cookie
+    assert "secure" in set_cookie
+
+
 async def test_logout_clears_refresh_cookie(client: AsyncClient) -> None:
     await _register(client)
     assert REFRESH_COOKIE_NAME in client.cookies

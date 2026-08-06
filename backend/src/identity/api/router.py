@@ -31,12 +31,19 @@ REFRESH_COOKIE_NAME = "orderflow_refresh_token"
 
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     settings = get_settings()
+    # The dashboard (Vercel) and API (Render) are on different origins in
+    # every deployed environment, so the browser only sends this cookie back
+    # on cross-site fetches if SameSite=None -- which itself requires
+    # Secure. Locally both run on http://localhost, same-site, so Lax
+    # without Secure is correct there (browsers reject Secure cookies over
+    # plain http).
+    cross_site = settings.is_production
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
-        secure=settings.env != "development",
-        samesite="lax",
+        secure=cross_site,
+        samesite="none" if cross_site else "lax",
         max_age=settings.jwt_refresh_token_ttl_days * 24 * 60 * 60,
         path="/api/v1/auth",
     )
