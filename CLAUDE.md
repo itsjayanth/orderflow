@@ -4,11 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-This repository is pre-implementation: it currently contains only `README.md`, `.gitignore`, and `docs/project-brief.txt`. There is no source code, no build system, no dependency manifest, and no test suite yet. Do not assume any framework, language runtime, or file layout beyond what's described below — check current repo state before relying on anything here, since it will go stale fast as the project is built out.
+Backend and frontend scaffolds exist (`backend/`, `frontend/`), following the design in `ARCHITECTURE.md` and the stack decisions in `TECH_STACK.md` — read both before making architecture changes. The scaffold is structural (hexagonal module layout, health check, routing, design-system foundation); most domain logic (entities, state machines, real endpoints) is not implemented yet. Check current repo state before relying on anything beyond this section, since it will go stale as the project is built out.
 
-The `.gitignore` is a stock Python template, which suggests a Python backend is planned, but this has not been confirmed by any actual code yet.
+### Backend (`backend/`)
 
-Since there's no code, there are no build/lint/test commands to document. Update this section once a backend/frontend scaffold exists.
+Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Alembic, `uv` for dependency management. Modular-by-domain under `backend/src/<module>/{domain,adapters,api}` (identity, onboarding, conversation, ordering_flow, catalog, customers, orders, payments, notifications, dashboard_api), plus a `shared/` kernel (config, DB session, `TenantContext`, JWT/Argon2, Fernet encryption). See `backend/README.md`.
+
+```bash
+cd backend
+uv sync
+uv run uvicorn app:app --app-dir src --reload --port 8000   # run
+uv run pytest                                                 # test
+uv run ruff check .                                           # lint
+uv run mypy src                                                # type-check
+uv run alembic revision --autogenerate -m "message" && uv run alembic upgrade head   # migrate
+```
+
+### Frontend (`frontend/`)
+
+React 18 + TypeScript on Vite, Tailwind CSS + shadcn/ui (hand-placed under `src/components/ui/` — the shadcn CLI's registry fetch may be network-blocked in sandboxed environments), TanStack Query for server state, Zustand for client-only UI state, React Router, React Hook Form + Zod, Biome for lint/format. Feature-sliced under `frontend/src/features/`. See `frontend/README.md`.
+
+```bash
+cd frontend
+npm install
+npm run dev         # run (localhost:5173)
+npm run test        # vitest
+npm run lint         # biome check .
+npm run typecheck
+npm run build
+```
 
 ## Product context (from `docs/project-brief.txt`)
 
