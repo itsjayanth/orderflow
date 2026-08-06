@@ -85,3 +85,24 @@ export interface OrderOut {
   completed_at: string | null
   items: OrderItemOut[]
 }
+
+export interface PaymentSettingsOut {
+  razorpay_key_id: string | null
+  razorpay_key_secret_set: boolean
+  using_real_gateway: boolean
+}
+
+export interface WhatsAppSettingsOut {
+  phone_number_id: string | null
+  display_phone_number: string | null
+  access_token_set: boolean
+  connection_status: string
+}
+
+export interface TestCheckoutResponse {
+  order_id: string
+  payment_status: string
+  fulfillment_status: FulfillmentStatus | null
+  total: string
+  payment_link_url: string | null
+}

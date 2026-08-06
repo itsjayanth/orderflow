@@ -48,3 +48,11 @@ mypy_path = "src"
 explicit_package_bases = true
 python_version = "3.12"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "razorpay.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "apscheduler.*"
+ignore_missing_imports = true

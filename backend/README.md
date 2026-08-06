@@ -59,3 +59,7 @@ Each `src/<module>/` follows the same hexagonal shape:
 ## Auth
 
 `identity/` implements register/login/refresh/logout/me (`/api/v1/auth/*`). The access token is a short-lived JWT returned in the response body (send it as `Authorization: Bearer <token>`); the refresh token is a longer-lived JWT set as an httpOnly cookie scoped to `/api/v1/auth`, rotated on every `/refresh` call. See `IMPLEMENTATION_PLAN.md`'s Phase 1 for the design rationale.
+
+## Payment/WhatsApp credentials (dashboard Settings)
+
+Razorpay and WhatsApp credentials are per-merchant, not app-wide config — `PUT /api/v1/payments/settings` and `PUT /api/v1/onboarding/whatsapp` (both dashboard-authenticated). Real credentials aren't required to develop against: `payments/adapters/gateway_selector.py` picks a real `RazorpayGateway` only when a merchant's key_id has a genuine `rzp_test_`/`rzp_live_` prefix, otherwise it falls back to `DummyPaymentGateway`, which fabricates a checkout link instead of calling Razorpay and verifies webhooks with the exact same HMAC-SHA256 algorithm Razorpay's real webhooks use. See `IMPLEMENTATION_PLAN.md`'s Phase 5 for the full rationale and how to simulate a webhook locally.

@@ -107,24 +107,20 @@ The two state machines from `ARCHITECTURE.md` §7 are the highest-risk piece of 
 
 ---
 
-## Phase 5 — Payments (Razorpay)
+## Phase 5 — Payments (Razorpay) ✅ done
 
-Wires real money into the state machine built in Phase 4.
+Wires real money into the state machine built in Phase 4. Built without real Razorpay credentials (none were available) — see the "Per-merchant credentials & Settings page" addition below for how that's handled, and why it doesn't need revisiting when real keys arrive.
 
-**Backend**
-- `payments/domain/models.py`: `PaymentEvent`.
-- `payments/domain/gateway.py`: `PaymentGateway` protocol (`create_link(order) -> PaymentLink`, `verify_webhook(payload, signature) -> PaymentEvent`) — the port `ARCHITECTURE.md` §4 calls for; this is what makes swapping providers later an adapter change.
-- `payments/adapters/razorpay_gateway.py`: concrete `RazorpayGateway` implementing the protocol via the `razorpay` SDK.
-- `payments/adapters/repository.py`: `PaymentEventRepository`, append-only, dedup on `provider_payment_id`.
-- `payments/api/router.py`: `POST /api/v1/payments/webhook/razorpay` — verify signature, write `PaymentEvent`, call `orders` domain's `transition(order, "paid")`, publish `OrderPaid`. Also add `POST /api/v1/orders/{id}/payment-link` (dashboard-callable for now, since the real caller is Phase 6's checkout flow, not yet built) that creates the `Order` in `awaiting_payment` and calls `PaymentGateway.create_link`.
-- `notifications` stub: for now, `OrderPaid`/`OrderConfirmedCOD` handlers just log — real WhatsApp sending is Phase 7. Wire the subscription now so Phase 7 is additive, not a rewire.
-- Background job: APScheduler job (`shared/scheduler.py`, new) for the reconciliation poll (`awaiting_payment` orders past a threshold — sweep to `cancelled`) and the abandoned-order timeout sweep from §7a. Needs the timeout duration decided — flagged as an open question in `ARCHITECTURE.md` §11; pick a default (e.g. 30 min) and make it a `Settings` field so it's a one-line change later.
-- Tests: webhook signature verification (valid/invalid), idempotent replay (`webhook_received_duplicate` no-ops), full order-creation → payment-link → simulated webhook → `paid` transition → event published, integration-style.
+**Deviations from the original plan, and why:**
+- **Razorpay credentials are per-merchant, not global `Settings` fields.** Each merchant's payment link should settle into *their* Razorpay account, not a shared platform one — this is the realistic model for independent restaurants. `payments/domain/models.py`'s `MerchantPaymentCredentials` (1:1 with `Merchant`) holds `razorpay_key_id` (clear text — it's sent to the browser in real Checkout flows anyway) and `razorpay_key_secret_encrypted` (Fernet, via `shared/encryption.py`). `PUT /api/v1/payments/settings` lets a merchant set/update these from the dashboard.
+- **`PaymentGateway` has two adapters, not one.** `payments/adapters/razorpay_gateway.py` (real SDK) and `payments/adapters/dummy_gateway.py` (fabricates a local checkout URL instead of calling Razorpay's API). `payments/adapters/gateway_selector.py`'s `get_payment_gateway(key_id, key_secret)` picks by inspecting the key_id prefix (`rzp_test_`/`rzp_live_` → real, anything else → dummy) — so entering real test-mode keys in Settings is the only thing that flips a merchant over to the real gateway, no code change or redeploy. Critically, `verify_webhook` on *both* adapters does the exact same HMAC-SHA256(body, secret) Razorpay's real webhooks use, so signature-verification logic is fully exercised now regardless of whether the secret on file is real or a placeholder.
+- **The WhatsApp side of the same idea was pulled forward from Phase 8.** `onboarding/domain/models.py`'s `WhatsAppBusinessAccount` (per `ARCHITECTURE.md` §1, built now rather than waiting for the full onboarding wizard) holds per-merchant `phone_number_id` + `access_token_encrypted`, settable via `PUT /api/v1/onboarding/whatsapp`. No Meta OAuth handshake yet (that's still Phase 8) — the merchant pastes these values directly, which is in fact a legitimate WhatsApp Cloud API connection method, not just a stand-in.
+- **A dashboard-only `POST /api/v1/payments/test-checkout` endpoint stands in for order creation**, since Phase 6 (the real WhatsApp ordering flow) doesn't exist yet and Phase 4 deliberately shipped no order-creation endpoint. It identifies the customer by phone number via `find_or_create` (the same call Phase 6 will make), not a pre-existing `customer_id` — no UI exists to create a customer otherwise. Superseded by Phase 6, not extended by it.
+- Reconciliation-against-the-provider (polling Razorpay's payment-status API for stuck orders) was **not** built — there's nothing real to poll against without live credentials. The abandoned-order timeout sweep *was* built (`shared/scheduler.py`, APScheduler, `Settings.abandoned_order_timeout_minutes`, default 30) since it's self-contained (a DB query based on elapsed time, no external call).
 
-**Frontend**
-- No new pages required for MVP (payment happens in WhatsApp per the brief) — but add a manual "Create test order + payment link" action gated behind a dev-only flag if useful for QA, or skip entirely and rely on backend tests + Phase 6's real flow. Recommend skipping unless you want a way to demo payments before WhatsApp is wired.
+**Frontend**: added a Settings page (`features/settings/`) — Razorpay and WhatsApp credential forms side by side, each showing a Live/Test-mode or connection-status badge, per the plan's UI ask. Also added `features/orders/CreateTestOrderForm.tsx` (collapsible, on the Orders page) to exercise `test-checkout` from the dashboard.
 
-**Definition of done**: call the payment-link endpoint, simulate a Razorpay webhook against the local server (Razorpay's test-mode webhook payloads, signed with the test secret), see the order flip to `paid`/`new` and show up on the dashboard.
+**Definition of done** (met): create a test order from the dashboard with a dummy Razorpay key on file, get a fake payment link back, simulate a Razorpay-shaped webhook signed with the same dummy secret, watch the order flip to `paid`/`new` and advance through the full kitchen workflow — verified with a live browser walk, not just backend tests.
 
 ---
 

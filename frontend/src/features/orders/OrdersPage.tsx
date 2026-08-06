@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/table'
 import type { FulfillmentStatus } from '@/shared/api/types'
 
+import { CreateTestOrderForm } from './CreateTestOrderForm'
 import { STATUS_LABELS } from './statusTransitions'
 import { useOrders } from './useOrders'
 
@@ -32,6 +33,8 @@ export function OrdersPage() {
           Updates automatically as new orders come in.
         </p>
       </div>
+
+      <CreateTestOrderForm />
 
       <div className="flex gap-2">
         {FILTERS.map((status) => (

@@ -44,7 +44,15 @@ const sampleOrder: OrderOut = {
   ],
 }
 
-function renderPage() {
+function renderPage(orders: OrderOut[]) {
+  // CreateTestOrderForm also queries the catalog; route each call by path
+  // rather than relying on call order, since both fire on mount.
+  mockedApiFetch.mockImplementation((path: string) => {
+    if (path.startsWith('/api/v1/orders')) return Promise.resolve(orders)
+    if (path.startsWith('/api/v1/catalog/items')) return Promise.resolve([])
+    return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+  })
+
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -63,9 +71,7 @@ describe('OrdersPage', () => {
   })
 
   it('renders orders from the list query', async () => {
-    mockedApiFetch.mockResolvedValueOnce([sampleOrder])
-
-    renderPage()
+    renderPage([sampleOrder])
 
     expect(await screen.findByText('INR 349.00')).toBeInTheDocument()
     // "New" also matches the filter button, so scope to the table.
@@ -73,9 +79,7 @@ describe('OrdersPage', () => {
   })
 
   it('shows an empty state when there are no orders', async () => {
-    mockedApiFetch.mockResolvedValueOnce([])
-
-    renderPage()
+    renderPage([])
 
     expect(await screen.findByText('No orders yet.')).toBeInTheDocument()
   })

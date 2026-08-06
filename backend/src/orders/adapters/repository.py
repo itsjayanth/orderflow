@@ -1,3 +1,5 @@
+import builtins
+import datetime
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
@@ -127,3 +129,17 @@ class OrderRepository:
         )
         await self._session.flush()
         return order
+
+    async def list_stale_awaiting_payment(
+        self, older_than: datetime.datetime
+    ) -> builtins.list[Order]:
+        """Cross-tenant on purpose -- the abandoned-order timeout sweep
+        (shared/scheduler.py) is a system-level maintenance job, not a
+        per-merchant dashboard query, so it's the one legitimate exception
+        to every other method here taking a TenantContext."""
+        result = await self._session.execute(
+            select(Order).where(
+                Order.payment_status == "awaiting_payment", Order.placed_at < older_than
+            )
+        )
+        return list(result.scalars().all())

@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,10 +9,22 @@ from dashboard_api.api.router import router as dashboard_api_router
 from ordering_flow.api.router import router as ordering_flow_router
 from payments.api.router import router as payments_webhook_router
 from shared.config import get_settings
+from shared.scheduler import create_scheduler
 
 settings = get_settings()
 
-app = FastAPI(title="Orderflow API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    scheduler = create_scheduler()
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
+
+
+app = FastAPI(title="Orderflow API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

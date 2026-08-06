@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: '/catalog', label: 'Catalog' },
   { to: '/customers', label: 'Customers' },
   { to: '/onboarding', label: 'Onboarding' },
+  { to: '/settings', label: 'Settings' },
 ]
 
 export function Layout() {

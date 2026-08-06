@@ -9,6 +9,7 @@ import { DashboardHomePage } from '@/features/dashboard/DashboardHomePage'
 import { OnboardingPage } from '@/features/onboarding/OnboardingPage'
 import { OrderDetailPage } from '@/features/orders/OrderDetailPage'
 import { OrdersPage } from '@/features/orders/OrdersPage'
+import { SettingsPage } from '@/features/settings/SettingsPage'
 import { Layout } from '@/shared/components/Layout'
 
 export function App() {
@@ -24,6 +25,7 @@ export function App() {
           <Route path="catalog" element={<CatalogPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="onboarding" element={<OnboardingPage />} />
+          <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>
     </Routes>
