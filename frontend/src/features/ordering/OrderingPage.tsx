@@ -5,6 +5,7 @@ import { useParams } from 'react-router-dom'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { PublicMenuItemOut } from '@/shared/api/types'
@@ -31,14 +32,14 @@ function CartRow({
   onChange: (quantity: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b py-3 last:border-0">
+    <div className="flex items-center justify-between gap-4 border-b px-4 py-4 last:border-0">
       <div>
         <p className="font-medium">{item.name}</p>
         <p className="text-muted-foreground text-sm">
           {item.category} · INR {item.price}
         </p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <Button
           type="button"
           variant="outline"
@@ -47,7 +48,7 @@ function CartRow({
         >
           −
         </Button>
-        <span className="w-6 text-center">{quantity}</span>
+        <span className="w-5 text-center font-medium">{quantity}</span>
         <Button type="button" variant="outline" size="icon" onClick={() => onChange(quantity + 1)}>
           +
         </Button>
@@ -86,11 +87,19 @@ export function OrderingPage() {
   const total = cartLines.reduce((sum, line) => sum + Number(line.item.price) * line.quantity, 0)
 
   if (isLoading) {
-    return <p className="p-8 text-center text-muted-foreground">Loading menu…</p>
+    return (
+      <div className="flex min-h-svh items-center justify-center p-8">
+        <p className="text-muted-foreground text-sm">Loading menu…</p>
+      </div>
+    )
   }
 
   if (isError || !menu) {
-    return <p className="p-8 text-center text-muted-foreground">Restaurant not found.</p>
+    return (
+      <div className="flex min-h-svh items-center justify-center p-8">
+        <p className="text-muted-foreground text-sm">Restaurant not found.</p>
+      </div>
+    )
   }
 
   const onSubmit = (values: CheckoutForm) => {
@@ -107,84 +116,100 @@ export function OrderingPage() {
 
   if (checkout.isSuccess) {
     return (
-      <div className="mx-auto max-w-md space-y-4 p-8 text-center">
-        <h1 className="text-xl font-semibold">Order confirmed!</h1>
-        <p className="text-muted-foreground text-sm">We'll let you know when it's ready.</p>
-        {checkout.data.payment_link_url && (
-          <Button asChild>
-            <a href={checkout.data.payment_link_url} target="_blank" rel="noreferrer">
-              Complete payment
-            </a>
-          </Button>
-        )}
+      <div className="from-background to-secondary/40 flex min-h-svh items-center justify-center bg-gradient-to-b p-6">
+        <Card className="w-full max-w-sm space-y-4 p-8 text-center shadow-lg">
+          <span className="bg-primary text-primary-foreground mx-auto flex size-12 items-center justify-center rounded-full text-xl">
+            ✓
+          </span>
+          <h1 className="font-serif text-xl font-semibold">Order confirmed!</h1>
+          <p className="text-muted-foreground text-sm">We'll let you know when it's ready.</p>
+          {checkout.data.payment_link_url && (
+            <Button asChild className="w-full">
+              <a href={checkout.data.payment_link_url} target="_blank" rel="noreferrer">
+                Complete payment
+              </a>
+            </Button>
+          )}
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6 p-6">
-      <h1 className="text-2xl font-semibold">{menu.business_name}</h1>
+    <div className="from-background to-secondary/30 min-h-svh bg-gradient-to-b">
+      <div className="mx-auto max-w-md space-y-6 px-4 py-8">
+        <div className="space-y-1 text-center">
+          <p className="text-muted-foreground text-xs tracking-wide uppercase">Order from</p>
+          <h1 className="font-serif text-2xl font-semibold">{menu.business_name}</h1>
+        </div>
 
-      <div className="rounded-md border p-2">
-        {menu.items.length === 0 && (
-          <p className="text-muted-foreground p-4 text-center text-sm">
-            No items available right now.
-          </p>
-        )}
-        {menu.items.map((item) => (
-          <CartRow
-            key={item.menu_item_id}
-            item={item}
-            quantity={cart[item.menu_item_id] ?? 0}
-            onChange={(quantity) => setCart((prev) => ({ ...prev, [item.menu_item_id]: quantity }))}
-          />
-        ))}
-      </div>
-
-      {cartLines.length > 0 && (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 rounded-md border p-4">
-          <p className="text-lg font-medium">Total: INR {total.toFixed(2)}</p>
-
-          <div className="space-y-2">
-            <Label htmlFor="customer_whatsapp_number">Your phone number</Label>
-            <Input
-              id="customer_whatsapp_number"
-              placeholder="+919876543210"
-              {...register('customer_whatsapp_number')}
-            />
-            {errors.customer_whatsapp_number && (
-              <p className="text-destructive text-sm">{errors.customer_whatsapp_number.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="customer_display_name">Your name (optional)</Label>
-            <Input id="customer_display_name" {...register('customer_display_name')} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="payment_method">Payment method</Label>
-            <select
-              id="payment_method"
-              className="border-input h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-              {...register('payment_method')}
-            >
-              <option value="online">Pay online</option>
-              <option value="cod">Cash on delivery/pickup</option>
-            </select>
-          </div>
-
-          {checkout.isError && (
-            <p className="text-destructive text-sm">
-              Something went wrong placing your order. Please try again.
+        <Card className="overflow-hidden py-0">
+          {menu.items.length === 0 && (
+            <p className="text-muted-foreground p-6 text-center text-sm">
+              No items available right now.
             </p>
           )}
+          {menu.items.map((item) => (
+            <CartRow
+              key={item.menu_item_id}
+              item={item}
+              quantity={cart[item.menu_item_id] ?? 0}
+              onChange={(quantity) =>
+                setCart((prev) => ({ ...prev, [item.menu_item_id]: quantity }))
+              }
+            />
+          ))}
+        </Card>
 
-          <Button type="submit" className="w-full" disabled={checkout.isPending}>
-            {checkout.isPending ? 'Placing order…' : 'Place order'}
-          </Button>
-        </form>
-      )}
+        {cartLines.length > 0 && (
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <Card className="space-y-4 p-5">
+              <p className="text-lg font-medium">Total: INR {total.toFixed(2)}</p>
+
+              <div className="space-y-2">
+                <Label htmlFor="customer_whatsapp_number">Your phone number</Label>
+                <Input
+                  id="customer_whatsapp_number"
+                  placeholder="+919876543210"
+                  {...register('customer_whatsapp_number')}
+                />
+                {errors.customer_whatsapp_number && (
+                  <p className="text-destructive text-sm">
+                    {errors.customer_whatsapp_number.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="customer_display_name">Your name (optional)</Label>
+                <Input id="customer_display_name" {...register('customer_display_name')} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="payment_method">Payment method</Label>
+                <select
+                  id="payment_method"
+                  className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-full rounded-lg border px-3.5 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
+                  {...register('payment_method')}
+                >
+                  <option value="online">Pay online</option>
+                  <option value="cod">Cash on delivery/pickup</option>
+                </select>
+              </div>
+
+              {checkout.isError && (
+                <p className="text-destructive text-sm">
+                  Something went wrong placing your order. Please try again.
+                </p>
+              )}
+
+              <Button type="submit" size="lg" className="w-full" disabled={checkout.isPending}>
+                {checkout.isPending ? 'Placing order…' : 'Place order'}
+              </Button>
+            </Card>
+          </form>
+        )}
+      </div>
     </div>
   )
 }

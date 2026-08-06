@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useCreateMenuItem } from '@/features/catalog/useCreateMenuItem'
@@ -61,17 +62,19 @@ function Stepper({
               className={`flex items-center gap-2 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
             >
               <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium transition-colors duration-150 ${
                   state === 'done'
-                    ? 'bg-green-600 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : state === 'active'
-                      ? 'bg-foreground text-background'
+                      ? 'bg-brand-gold text-brand-gold-foreground'
                       : 'bg-muted text-muted-foreground'
                 }`}
               >
                 {state === 'done' ? '✓' : index + 1}
               </span>
-              <span className={state === 'upcoming' ? 'text-muted-foreground' : ''}>{label}</span>
+              <span className={state === 'upcoming' ? 'text-muted-foreground' : 'font-medium'}>
+                {label}
+              </span>
             </button>
           </li>
         )
@@ -284,8 +287,11 @@ function AddMenuItemStep() {
 
 function LiveStep() {
   return (
-    <div className="max-w-md space-y-2">
-      <p className="font-medium">You're live!</p>
+    <div className="max-w-md space-y-3">
+      <span className="bg-primary text-primary-foreground flex size-10 items-center justify-center rounded-full text-lg">
+        ✓
+      </span>
+      <p className="font-serif text-lg font-medium">You're live!</p>
       <p className="text-muted-foreground text-sm">
         Customers can now message your WhatsApp number to browse the menu and place orders. Incoming
         orders will show up on the Orders page.
@@ -320,7 +326,7 @@ export function OnboardingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
+      <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Onboarding</h1>
         <p className="text-muted-foreground text-sm">
           Connect WhatsApp, add your kitchen details, and list at least one menu item to go live.
@@ -329,9 +335,9 @@ export function OnboardingPage() {
 
       <Stepper current={currentStep} furthestReached={serverStep} onSelect={setStep} />
 
-      <div className="rounded-md border p-4">
+      <Card className="p-6">
         {currentStep < serverStep && (
-          <div className="mb-4 flex items-center justify-between rounded-md bg-muted p-3 text-sm">
+          <div className="bg-muted mb-4 flex items-center justify-between rounded-lg p-3 text-sm">
             <span>This step is already done -- you're editing it.</span>
             <Button variant="ghost" size="sm" onClick={() => setStep(serverStep)}>
               Back to current step
@@ -342,7 +348,7 @@ export function OnboardingPage() {
         {currentStep === 1 && <KitchenDetailsStep />}
         {currentStep === 2 && <AddMenuItemStep />}
         {currentStep === 3 && <LiveStep />}
-      </div>
+      </Card>
     </div>
   )
 }
