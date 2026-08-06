@@ -21,3 +21,13 @@ export interface MeResponse {
   staff_user: StaffUser
   merchant: Merchant
 }
+
+export interface MenuItem {
+  menu_item_id: string
+  category: string
+  name: string
+  price: string
+  is_available: boolean
+  created_at: string
+  updated_at: string
+}
