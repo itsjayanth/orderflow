@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
+import { OrderflowLogo } from '@/assets/logo'
 import { Button } from '@/components/ui/button'
 import { useLogout, useMe } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', end: true },
+  { to: '/dashboard', label: 'Dashboard', end: true },
   { to: '/orders', label: 'Orders' },
   { to: '/catalog', label: 'Catalog' },
   { to: '/customers', label: 'Customers' },
@@ -30,8 +31,9 @@ export function Layout() {
     <div className="min-h-svh">
       <header className="border-border/70 bg-background/85 sticky top-0 z-10 border-b backdrop-blur-sm">
         <nav className="mx-auto flex max-w-6xl items-center gap-1 px-4 py-3 sm:px-6">
-          <span className="text-primary mr-4 shrink-0 font-serif text-lg tracking-tight">
-            Orderflow
+          <span className="mr-4 flex shrink-0 items-center gap-2">
+            <OrderflowLogo className="size-6" />
+            <span className="text-primary font-serif text-lg tracking-tight">Orderflow</span>
           </span>
           <div className="flex flex-1 items-center gap-1 overflow-x-auto">
             {NAV_ITEMS.map((item) => (

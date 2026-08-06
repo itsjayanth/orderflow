@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 
+import { OrderflowLogo } from '@/assets/logo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -28,13 +29,14 @@ export function LoginPage() {
   } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) })
 
   const onSubmit = (data: LoginForm) => {
-    login.mutate(data, { onSuccess: () => navigate('/', { replace: true }) })
+    login.mutate(data, { onSuccess: () => navigate('/dashboard', { replace: true }) })
   }
 
   return (
     <div className="from-background to-secondary/40 flex min-h-svh items-center justify-center bg-gradient-to-b px-4 py-12">
       <div className="w-full max-w-sm space-y-8">
-        <div className="space-y-1 text-center">
+        <div className="flex items-center justify-center gap-2.5">
+          <OrderflowLogo className="size-8" />
           <p className="text-primary font-serif text-2xl tracking-tight">Orderflow</p>
         </div>
 

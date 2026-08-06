@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/features/auth/authStore'
 import type { AccessTokenResponse } from '@/shared/api/types'
+import { logger } from '@/shared/lib/logger'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const REFRESH_PATH = '/api/v1/auth/refresh'
@@ -47,7 +48,16 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  let response = await rawFetch(path, init)
+  const method = init?.method ?? 'GET'
+  logger.debug(`${method} ${path}`)
+
+  let response: Response
+  try {
+    response = await rawFetch(path, init)
+  } catch (err) {
+    logger.error(`${method} ${path} network error`, err)
+    throw err
+  }
 
   if (response.status === 401 && path !== REFRESH_PATH) {
     const refreshed = await tryRefresh()
@@ -57,8 +67,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, await response.text())
+    const body = await response.text()
+    logger.error(`${method} ${path} -> ${response.status}`, body)
+    throw new ApiError(response.status, body)
   }
+
+  logger.debug(`${method} ${path} -> ${response.status}`)
 
   if (response.status === 204) {
     return undefined as T

@@ -224,3 +224,6 @@ node_modules/
 # Claude Code local state (background-agent worktrees, etc.)
 .claude/
 
+.vercel
+
+LOCAL_DEV.md

@@ -6,6 +6,7 @@ import { RequireAuth } from '@/features/auth/RequireAuth'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
 import { CustomersPage } from '@/features/customers/CustomersPage'
 import { DashboardHomePage } from '@/features/dashboard/DashboardHomePage'
+import { HomePage } from '@/features/marketing/HomePage'
 import { OnboardingPage } from '@/features/onboarding/OnboardingPage'
 import { OrderingPage } from '@/features/ordering/OrderingPage'
 import { OrderDetailPage } from '@/features/orders/OrderDetailPage'
@@ -16,13 +17,15 @@ import { Layout } from '@/shared/components/Layout'
 export function App() {
   return (
     <Routes>
+      {/* Public marketing home page -- no staff auth, no dashboard Layout. */}
+      <Route index element={<HomePage />} />
       <Route path="login" element={<LoginPage />} />
       <Route path="register" element={<RegisterPage />} />
       {/* Public customer-facing ordering webview -- no staff auth, no dashboard Layout. */}
       <Route path="order/:merchantId" element={<OrderingPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
-          <Route index element={<DashboardHomePage />} />
+          <Route path="dashboard" element={<DashboardHomePage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="orders/:orderId" element={<OrderDetailPage />} />
           <Route path="catalog" element={<CatalogPage />} />
