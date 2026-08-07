@@ -20,7 +20,7 @@ class CustomerRepository:
         """Idempotent: repeated calls with the same (merchant_id, whatsapp_number)
         always return the same Customer row, never a duplicate. This is the
         method Phase 6's Conversation Handler calls on every inbound message."""
-        existing = await self._get_by_whatsapp_number(tenant, whatsapp_number)
+        existing = await self.get_by_whatsapp_number(tenant, whatsapp_number)
         if existing is not None:
             return existing
 
@@ -33,9 +33,12 @@ class CustomerRepository:
         await self._session.flush()
         return customer
 
-    async def _get_by_whatsapp_number(
+    async def get_by_whatsapp_number(
         self, tenant: TenantContext, whatsapp_number: str
     ) -> Customer | None:
+        """Exact (merchant_id, whatsapp_number) match -- also used by the
+        public ordering webview's customer-lookup endpoint to prefill a
+        returning customer's name/address without asking again."""
         result = await self._session.execute(
             select(Customer).where(
                 Customer.merchant_id == tenant.merchant_id,
@@ -78,6 +81,23 @@ class AddressRepository:
             .order_by(Address.created_at.asc())
         )
         return list(result.scalars().all())
+
+    async def get_primary_for_customer(
+        self, tenant: TenantContext, customer_id: uuid.UUID
+    ) -> Address | None:
+        """The address the ordering webview should prefill for a returning
+        customer: whichever is marked default, falling back to the most
+        recently added one."""
+        result = await self._session.execute(
+            select(Address)
+            .where(
+                Address.merchant_id == tenant.merchant_id,
+                Address.customer_id == customer_id,
+            )
+            .order_by(Address.is_default.desc(), Address.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def create(
         self,

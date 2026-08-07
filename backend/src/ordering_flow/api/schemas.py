@@ -1,8 +1,8 @@
 import uuid
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class PublicMenuItemOut(BaseModel):
@@ -28,12 +28,48 @@ class OrderingFlowCheckoutItem(BaseModel):
     quantity: int
 
 
+class OrderingFlowDeliveryAddressIn(BaseModel):
+    line1: str = Field(min_length=1, max_length=255)
+    line2: str | None = None
+    landmark: str | None = None
+    city: str = Field(min_length=1, max_length=128)
+    pincode: str = Field(min_length=1, max_length=16)
+
+    @field_validator("line1", "city", "pincode")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
+
 class OrderingFlowCheckoutRequest(BaseModel):
     customer_whatsapp_number: str
-    customer_display_name: str | None = None
+    customer_display_name: str = Field(min_length=1, max_length=255)
     items: list[OrderingFlowCheckoutItem]
     payment_method: Literal["online", "cod"] = "online"
     order_type: Literal["pickup", "delivery"] = "pickup"
+    # Raw address fields rather than a pre-created address id -- the public
+    # webview has no prior address to reference, so checkout is the moment
+    # the Address row gets created (see perform_checkout's
+    # new_delivery_address param, which turns this into a delivery_address_id
+    # on the Order once the Customer row exists).
+    delivery_address: OrderingFlowDeliveryAddressIn | None = None
+
+    @field_validator("customer_display_name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("customer_display_name must not be blank")
+        return stripped
+
+    @model_validator(mode="after")
+    def _delivery_requires_address(self) -> Self:
+        if self.order_type == "delivery" and self.delivery_address is None:
+            raise ValueError("delivery_address is required when order_type is 'delivery'")
+        return self
 
 
 class OrderingFlowCheckoutResponse(BaseModel):
@@ -43,3 +79,24 @@ class OrderingFlowCheckoutResponse(BaseModel):
     fulfillment_status: str | None
     total: str
     payment_link_url: str | None
+
+
+class OrderingFlowAddressOut(BaseModel):
+    line1: str
+    line2: str | None
+    landmark: str | None
+    city: str
+    pincode: str
+
+    model_config = {"from_attributes": True}
+
+
+class OrderingFlowCustomerLookupOut(BaseModel):
+    """Returned by GET /{merchant_id}/customer-lookup for a returning
+    customer so the webview can prefill name + address without asking
+    again -- only ever the merchant's own customer, matched on the exact
+    (merchant_id, whatsapp_number) pair, same scoping as checkout's
+    find_or_create."""
+
+    display_name: str | None
+    address: OrderingFlowAddressOut | None
