@@ -13,8 +13,26 @@ import type { PublicMenuItemOut } from '@/shared/api/types'
 import { useOrderingCheckout } from './useOrderingCheckout'
 import { usePublicMenu } from './usePublicMenu'
 
+// Meta's WhatsApp webhook always reports the sender as country code +
+// local number with no "+", spaces, or leading zero (e.g. "919876543210")
+// -- matching that exactly here is what lets the order confirmation find
+// the same Customer row the inbound chat created, instead of typing
+// mismatched formats into a free-text phone field creating a second one.
+const COUNTRY_CODES = [
+  { code: '91', label: 'India (+91)' },
+  { code: '1', label: 'US/Canada (+1)' },
+  { code: '44', label: 'UK (+44)' },
+  { code: '971', label: 'UAE (+971)' },
+  { code: '65', label: 'Singapore (+65)' },
+  { code: '61', label: 'Australia (+61)' },
+] as const
+
 const checkoutSchema = z.object({
-  customer_whatsapp_number: z.string().min(1, 'Required'),
+  country_code: z.string().min(1, 'Required'),
+  local_number: z
+    .string()
+    .min(1, 'Required')
+    .regex(/^\d{6,12}$/, 'Enter a valid mobile number (digits only)'),
   customer_display_name: z.string().optional(),
   payment_method: z.enum(['online', 'cod']),
 })
@@ -69,7 +87,7 @@ export function OrderingPage() {
     formState: { errors },
   } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
-    defaultValues: { payment_method: 'online' },
+    defaultValues: { payment_method: 'online', country_code: COUNTRY_CODES[0].code },
   })
 
   const cartLines = useMemo(
@@ -104,7 +122,7 @@ export function OrderingPage() {
 
   const onSubmit = (values: CheckoutForm) => {
     checkout.mutate({
-      customer_whatsapp_number: values.customer_whatsapp_number,
+      customer_whatsapp_number: `${values.country_code}${values.local_number}`,
       customer_display_name: values.customer_display_name || undefined,
       payment_method: values.payment_method,
       items: cartLines.map((line) => ({
@@ -167,16 +185,29 @@ export function OrderingPage() {
               <p className="text-lg font-medium">Total: INR {total.toFixed(2)}</p>
 
               <div className="space-y-2">
-                <Label htmlFor="customer_whatsapp_number">Your phone number</Label>
-                <Input
-                  id="customer_whatsapp_number"
-                  placeholder="+919876543210"
-                  {...register('customer_whatsapp_number')}
-                />
-                {errors.customer_whatsapp_number && (
-                  <p className="text-destructive text-sm">
-                    {errors.customer_whatsapp_number.message}
-                  </p>
+                <Label htmlFor="local_number">Your WhatsApp number</Label>
+                <div className="flex gap-2">
+                  <select
+                    id="country_code"
+                    aria-label="Country code"
+                    className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-36 shrink-0 rounded-lg border px-3 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
+                    {...register('country_code')}
+                  >
+                    {COUNTRY_CODES.map(({ code, label }) => (
+                      <option key={code} value={code}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    id="local_number"
+                    inputMode="numeric"
+                    placeholder="9876543210"
+                    {...register('local_number')}
+                  />
+                </div>
+                {errors.local_number && (
+                  <p className="text-destructive text-sm">{errors.local_number.message}</p>
                 )}
               </div>
 

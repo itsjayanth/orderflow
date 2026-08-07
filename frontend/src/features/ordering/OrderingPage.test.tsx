@@ -86,15 +86,18 @@ describe('OrderingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '+' }))
     expect(await screen.findByText('Total: INR 349.00')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Your phone number'), {
-      target: { value: '+919876543210' },
+    fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
+      target: { value: '9876543210' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Place order' }))
 
     await waitFor(() =>
       expect(mockedApiFetch).toHaveBeenCalledWith(
         `/api/v1/ordering-flow/${merchantId}/checkout`,
-        expect.objectContaining({ method: 'POST' }),
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"customer_whatsapp_number":"919876543210"'),
+        }),
       ),
     )
     expect(await screen.findByText('Order confirmed!')).toBeInTheDocument()
