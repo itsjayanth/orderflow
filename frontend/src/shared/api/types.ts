@@ -74,6 +74,8 @@ export interface OrderOut {
   order_id: string
   order_number: number
   customer_id: string
+  customer_name: string | null
+  customer_whatsapp_number: string
   order_type: string
   payment_method: string
   payment_status: string

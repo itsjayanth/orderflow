@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import type { FulfillmentStatus, OrderOut } from '@/shared/api/types'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
+import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
 import { CreateTestOrderForm } from './CreateTestOrderForm'
 import { STATUS_LABELS } from './statusTransitions'
@@ -121,6 +122,7 @@ export function OrdersPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Order</TableHead>
+              <TableHead>Customer</TableHead>
               <TableHead>Placed</TableHead>
               <TableHead>Items</TableHead>
               <TableHead>Total</TableHead>
@@ -131,14 +133,14 @@ export function OrdersPage() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground">
+                <TableCell colSpan={7} className="text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && visibleOrders?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground">
+                <TableCell colSpan={7} className="text-muted-foreground">
                   {tab === 'all'
                     ? 'No orders yet.'
                     : `No ${STATUS_LABELS[tab].toLowerCase()} orders.`}
@@ -154,6 +156,16 @@ export function OrdersPage() {
                   >
                     {formatOrderNumber(order.order_number)}
                   </Link>
+                </TableCell>
+                <TableCell>
+                  <p className="font-medium">
+                    {order.customer_name ?? formatPhoneNumber(order.customer_whatsapp_number)}
+                  </p>
+                  {order.customer_name && (
+                    <p className="text-muted-foreground text-xs">
+                      {formatPhoneNumber(order.customer_whatsapp_number)}
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatDateTime(order.placed_at)}

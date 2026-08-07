@@ -117,7 +117,7 @@ class OrderRepository:
         result = await self._session.execute(
             select(Order)
             .where(Order.order_id == order_id, Order.merchant_id == tenant.merchant_id)
-            .options(selectinload(Order.items))
+            .options(selectinload(Order.items), selectinload(Order.customer))
         )
         return result.scalar_one_or_none()
 
@@ -127,7 +127,7 @@ class OrderRepository:
         stmt = (
             select(Order)
             .where(Order.merchant_id == tenant.merchant_id)
-            .options(selectinload(Order.items))
+            .options(selectinload(Order.items), selectinload(Order.customer))
             .order_by(Order.placed_at.desc())
         )
         if fulfillment_status is not None:

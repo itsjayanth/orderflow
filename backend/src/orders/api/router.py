@@ -3,8 +3,9 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 
 from orders.adapters.repository import OrderNotFoundError, OrderRepository
-from orders.api.schemas import FulfillmentStatusUpdate, OrderOut, OrderSummaryOut
+from orders.api.schemas import FulfillmentStatusUpdate, OrderItemOut, OrderOut, OrderSummaryOut
 from orders.domain.events import OrderCompleted, OrderPreparing, OrderReady, publish
+from orders.domain.models import Order
 from orders.domain.state_machine import IllegalTransitionError
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
 
@@ -17,6 +18,32 @@ _EVENT_BY_STATUS = {
 }
 
 
+def _to_order_out(order: Order) -> OrderOut:
+    """Built manually (rather than pure `OrderOut.model_validate(order,
+    from_attributes=True)`) because customer_name/customer_whatsapp_number
+    are flattened from the eager-loaded `order.customer` relationship, not
+    plain attributes on Order itself."""
+    return OrderOut(
+        order_id=order.order_id,
+        order_number=order.order_number,
+        customer_id=order.customer_id,
+        customer_name=order.customer.display_name,
+        customer_whatsapp_number=order.customer.whatsapp_number,
+        order_type=order.order_type,
+        payment_method=order.payment_method,
+        payment_status=order.payment_status,
+        fulfillment_status=order.fulfillment_status,
+        subtotal=order.subtotal,
+        total=order.total,
+        currency=order.currency,
+        placed_at=order.placed_at,
+        paid_at=order.paid_at,
+        ready_at=order.ready_at,
+        completed_at=order.completed_at,
+        items=[OrderItemOut.model_validate(item) for item in order.items],
+    )
+
+
 @router.get("", response_model=list[OrderOut])
 async def list_orders(
     tenant: CurrentTenant,
@@ -24,7 +51,7 @@ async def list_orders(
     fulfillment_status: str | None = None,
 ) -> list[OrderOut]:
     orders = await OrderRepository(session).list(tenant, fulfillment_status=fulfillment_status)
-    return [OrderOut.model_validate(order) for order in orders]
+    return [_to_order_out(order) for order in orders]
 
 
 @router.get("/summary", response_model=OrderSummaryOut)
@@ -50,7 +77,7 @@ async def get_order(order_id: uuid.UUID, tenant: CurrentTenant, session: DbSessi
     order = await OrderRepository(session).get(tenant, order_id)
     if order is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Order not found")
-    return OrderOut.model_validate(order)
+    return _to_order_out(order)
 
 
 @router.patch("/{order_id}/fulfillment-status", response_model=OrderOut)
@@ -77,4 +104,4 @@ async def update_fulfillment_status(
     if event_cls is not None:
         await publish(event_cls(order_id=order.order_id, merchant_id=tenant.merchant_id))
 
-    return OrderOut.model_validate(order)
+    return _to_order_out(order)

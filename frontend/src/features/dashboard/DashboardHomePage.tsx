@@ -9,6 +9,7 @@ import { useOrders } from '@/features/orders/useOrders'
 import type { FulfillmentStatus } from '@/shared/api/types'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
+import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
 function formatCurrency(value: string | undefined, currency = 'INR'): string {
   const amount = Number(value ?? 0)
@@ -200,6 +201,7 @@ export function DashboardHomePage() {
                   {formatOrderNumber(order.order_number)} · {order.currency} {order.total}
                 </p>
                 <p className="text-muted-foreground text-xs">
+                  {order.customer_name ?? formatPhoneNumber(order.customer_whatsapp_number)} ·{' '}
                   {new Date(order.placed_at).toLocaleString()}
                 </p>
               </div>

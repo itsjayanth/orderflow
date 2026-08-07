@@ -22,6 +22,8 @@ const sampleOrder: OrderOut = {
   order_id: '11111111-1111-1111-1111-111111111111',
   order_number: 7,
   customer_id: '22222222-2222-2222-2222-222222222222',
+  customer_name: 'Asha Rao',
+  customer_whatsapp_number: '919876543210',
   order_type: 'pickup',
   payment_method: 'online',
   payment_status: 'paid',
@@ -77,6 +79,15 @@ describe('OrdersPage', () => {
     expect(await screen.findByText('INR 349.00')).toBeInTheDocument()
     // "New" also matches the filter button, so scope to the table.
     expect(within(screen.getByRole('table')).getByText('New')).toBeInTheDocument()
+    expect(screen.getByText('Asha Rao')).toBeInTheDocument()
+    expect(screen.getByText('+91 98765 43210')).toBeInTheDocument()
+  })
+
+  it('falls back to a formatted phone number when the customer has no display name', async () => {
+    renderPage([{ ...sampleOrder, customer_name: null }])
+
+    expect(await screen.findByText('INR 349.00')).toBeInTheDocument()
+    expect(screen.getByText('+91 98765 43210')).toBeInTheDocument()
   })
 
   it('shows an empty state when there are no orders', async () => {
