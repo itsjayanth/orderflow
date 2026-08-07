@@ -17,6 +17,10 @@ class PublicMenuItemOut(BaseModel):
 class PublicMenuOut(BaseModel):
     business_name: str
     items: list[PublicMenuItemOut]
+    # Null until the merchant has connected WhatsApp (onboarding) -- lets
+    # the webview link back to the chat (e.g. after checkout) since a
+    # website can't programmatically return the customer to WhatsApp itself.
+    merchant_whatsapp_number: str | None = None
 
 
 class OrderingFlowCheckoutItem(BaseModel):

@@ -133,6 +133,12 @@ export function OrderingPage() {
   }
 
   if (checkout.isSuccess) {
+    // A website can't programmatically hand control back to the WhatsApp
+    // app -- that's a platform restriction on both iOS and Android, not
+    // something fixable here -- so this is a one-tap link, not an
+    // automatic return.
+    const whatsappNumber = menu.merchant_whatsapp_number?.replace(/\D/g, '')
+
     return (
       <div className="from-background to-secondary/40 flex min-h-svh items-center justify-center bg-gradient-to-b p-6">
         <Card className="w-full max-w-sm space-y-4 p-8 text-center shadow-lg">
@@ -146,6 +152,11 @@ export function OrderingPage() {
               <a href={checkout.data.payment_link_url} target="_blank" rel="noreferrer">
                 Complete payment
               </a>
+            </Button>
+          )}
+          {whatsappNumber && (
+            <Button asChild variant="outline" className="w-full">
+              <a href={`https://wa.me/${whatsappNumber}`}>Return to WhatsApp chat</a>
             </Button>
           )}
         </Card>

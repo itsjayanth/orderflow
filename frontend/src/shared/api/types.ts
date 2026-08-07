@@ -152,6 +152,7 @@ export interface PublicMenuItemOut {
 export interface PublicMenuOut {
   business_name: string
   items: PublicMenuItemOut[]
+  merchant_whatsapp_number: string | null
 }
 
 export interface OrderingFlowCheckoutResponse {

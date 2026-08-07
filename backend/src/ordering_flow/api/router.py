@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, status
 from catalog.adapters.repository import MenuItemRepository
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
+from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.api.schemas import (
     OrderingFlowCheckoutRequest,
     OrderingFlowCheckoutResponse,
@@ -33,9 +34,11 @@ async def get_public_menu(merchant_id: uuid.UUID, session: DbSession) -> PublicM
     merchant = await _get_merchant_or_404(session, merchant_id)
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+    waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
     return PublicMenuOut(
         business_name=merchant.business_name,
         items=[PublicMenuItemOut.model_validate(item) for item in items],
+        merchant_whatsapp_number=waba.display_phone_number if waba else None,
     )
 
 

@@ -30,6 +30,7 @@ const sampleMenu: PublicMenuOut = {
       price: '349.00',
     },
   ],
+  merchant_whatsapp_number: '+91 90000 00000',
 }
 
 function renderPage() {
@@ -104,6 +105,10 @@ describe('OrderingPage', () => {
     expect(screen.getByRole('link', { name: 'Complete payment' })).toHaveAttribute(
       'href',
       checkoutResponse.payment_link_url,
+    )
+    expect(screen.getByRole('link', { name: 'Return to WhatsApp chat' })).toHaveAttribute(
+      'href',
+      'https://wa.me/919000000000',
     )
   })
 })
