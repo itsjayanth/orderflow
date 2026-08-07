@@ -21,6 +21,10 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      // Bypasses ngrok's free-tier browser-warning interstitial (ERR_NGROK_6024),
+      // which otherwise intercepts every request with a real browser User-Agent
+      // and returns an HTML page instead of forwarding to the backend.
+      'ngrok-skip-browser-warning': 'true',
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...init?.headers,
     },

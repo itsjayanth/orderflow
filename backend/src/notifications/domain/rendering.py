@@ -12,7 +12,7 @@ _VARIABLE_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 # kind populates every variable (e.g. a template for "order_confirmed" using
 # {{ready_at}} would just render literally, since that key isn't in context
 # yet at confirmation time).
-TEMPLATE_VARIABLES = ("business_name", "customer_name", "order_id", "total", "currency")
+TEMPLATE_VARIABLES = ("business_name", "customer_name", "order_id", "total", "currency", "items")
 
 
 def render_template(body: str, context: dict[str, str]) -> str:

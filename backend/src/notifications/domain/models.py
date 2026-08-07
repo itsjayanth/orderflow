@@ -17,7 +17,8 @@ NOTIFICATION_KINDS = ("order_confirmed", "order_ready", "order_completed")
 # (notifications/api/router.py, which shows these as the starting point for
 # a merchant editing a template for the first time).
 DEFAULT_MESSAGES: dict[str, str] = {
-    "order_confirmed": "Order confirmed! We'll let you know when it's ready.",
+    "order_confirmed": "Order confirmed!\n{{items}}\nTotal: {{currency}} {{total}}\n"
+    "We'll let you know when it's ready.",
     "order_ready": "Your order is ready!",
     "order_completed": "Your order is complete. Enjoy your meal!",
 }

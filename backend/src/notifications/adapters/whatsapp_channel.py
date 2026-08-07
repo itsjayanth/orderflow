@@ -38,18 +38,25 @@ class WhatsAppNotificationChannel:
 
             merchant = await MerchantRepository(session).get(tenant.merchant_id)
 
+            items = "\n".join(
+                f"{item.quantity}x {item.name_snapshot} - {order.currency} {item.line_total}"
+                for item in order.items
+            )
+            context = {
+                "business_name": merchant.business_name if merchant else "",
+                "customer_name": customer.display_name or "",
+                "order_id": str(order.order_id),
+                "total": str(order.total),
+                "currency": order.currency,
+                "items": items,
+            }
             template = await NotificationTemplateRepository(session).get(tenant, kind)
-            if template is not None and template.is_active:
-                context = {
-                    "business_name": merchant.business_name if merchant else "",
-                    "customer_name": customer.display_name or "",
-                    "order_id": str(order.order_id),
-                    "total": str(order.total),
-                    "currency": order.currency,
-                }
-                message = render_template(template.body, context)
-            else:
-                message = DEFAULT_MESSAGES[kind]
+            template_body = (
+                template.body
+                if template is not None and template.is_active
+                else DEFAULT_MESSAGES[kind]
+            )
+            message = render_template(template_body, context)
 
             return await self._sender.send_text(
                 phone_number_id=waba.phone_number_id,
