@@ -99,6 +99,7 @@ async def test_public_checkout_online_creates_order_with_link(
 
     assert response.status_code == 201, response.text
     body = response.json()
+    assert body["order_number"] == 1
     assert body["payment_status"] == "awaiting_payment"
     assert body["payment_link_url"].startswith("https://dummy-checkout.orderflow.local/pay/")
 

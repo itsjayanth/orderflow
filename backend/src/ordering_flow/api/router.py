@@ -75,6 +75,7 @@ async def checkout(
 
     return OrderingFlowCheckoutResponse(
         order_id=result.order.order_id,
+        order_number=result.order.order_number,
         payment_status=result.order.payment_status,
         fulfillment_status=result.order.fulfillment_status,
         total=str(result.order.total),

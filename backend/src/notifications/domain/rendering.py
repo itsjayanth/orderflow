@@ -16,7 +16,7 @@ TEMPLATE_VARIABLES = (
     "business_name",
     "customer_name",
     "order_id",
-    "order_short_id",
+    "order_number",
     "total",
     "currency",
     "items",

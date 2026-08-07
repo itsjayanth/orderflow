@@ -21,14 +21,14 @@ NOTIFICATION_KINDS = ("order_confirmed", "order_preparing", "order_ready", "orde
 # support basic markdown (*bold*, _italic_), used here for a more polished
 # look than a bare sentence.
 DEFAULT_MESSAGES: dict[str, str] = {
-    "order_confirmed": "✅ *Order confirmed!*\n\n{{items}}\n\nTotal: {{currency}} {{total}}\n\n"
-    "_We'll let you know when it's ready._",
-    "order_preparing": "🍳 *Your order is being prepared!*\n\nOrder #{{order_short_id}}\n"
-    "{{items}}\n\n_We'll notify you the moment it's ready._",
-    "order_ready": "🎉 *Your order is ready!*\n\nIt's on its way — you should be expecting it "
-    "soon! 🛵\n\nOrder #{{order_short_id}}",
-    "order_completed": "✅ *Order complete!*\n\nThanks for ordering from {{business_name}} — "
-    "enjoy your meal! 🍽️",
+    "order_confirmed": "✅ *Order #{{order_number}} confirmed!*\n\n{{items}}\n\n"
+    "Total: {{currency}} {{total}}\n\n_We'll let you know when it's ready._",
+    "order_preparing": "🍳 *Order #{{order_number}} is being prepared!*\n\n{{items}}\n\n"
+    "_We'll notify you the moment it's ready._",
+    "order_ready": "🎉 *Order #{{order_number}} is ready!*\n\nIt's on its way — you should be "
+    "expecting it soon! 🛵",
+    "order_completed": "✅ *Order #{{order_number}} complete!*\n\nThanks for ordering from "
+    "{{business_name}} — enjoy your meal! 🍽️",
 }
 
 

@@ -35,6 +35,7 @@ class TestCheckoutRequest(BaseModel):
 
 class TestCheckoutResponse(BaseModel):
     order_id: uuid.UUID
+    order_number: int
     payment_status: str
     fulfillment_status: str | None
     total: str

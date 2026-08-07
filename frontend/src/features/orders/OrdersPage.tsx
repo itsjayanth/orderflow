@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { FulfillmentStatus, OrderOut } from '@/shared/api/types'
 import { StatusBadge } from '@/shared/components/StatusBadge'
+import { formatOrderNumber } from '@/shared/lib/orderNumber'
 
 import { CreateTestOrderForm } from './CreateTestOrderForm'
 import { STATUS_LABELS } from './statusTransitions'
@@ -119,6 +120,7 @@ export function OrdersPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Order</TableHead>
               <TableHead>Placed</TableHead>
               <TableHead>Items</TableHead>
               <TableHead>Total</TableHead>
@@ -129,14 +131,14 @@ export function OrdersPage() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
+                <TableCell colSpan={6} className="text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && visibleOrders?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
+                <TableCell colSpan={6} className="text-muted-foreground">
                   {tab === 'all'
                     ? 'No orders yet.'
                     : `No ${STATUS_LABELS[tab].toLowerCase()} orders.`}
@@ -150,8 +152,11 @@ export function OrdersPage() {
                     to={`/orders/${order.order_id}`}
                     className="text-primary font-medium hover:underline"
                   >
-                    {formatDateTime(order.placed_at)}
+                    {formatOrderNumber(order.order_number)}
                   </Link>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {formatDateTime(order.placed_at)}
                 </TableCell>
                 <TableCell>{order.items.length}</TableCell>
                 <TableCell className="font-medium">

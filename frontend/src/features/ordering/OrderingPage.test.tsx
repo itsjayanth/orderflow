@@ -74,6 +74,7 @@ describe('OrderingPage', () => {
     mockedApiFetch.mockResolvedValueOnce(sampleMenu)
     const checkoutResponse: OrderingFlowCheckoutResponse = {
       order_id: '33333333-3333-3333-3333-333333333333',
+      order_number: 12,
       payment_status: 'awaiting_payment',
       fulfillment_status: null,
       total: '349.00',
@@ -101,7 +102,7 @@ describe('OrderingPage', () => {
         }),
       ),
     )
-    expect(await screen.findByText('Order confirmed!')).toBeInTheDocument()
+    expect(await screen.findByText('Order #0012 confirmed!')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Complete payment' })).toHaveAttribute(
       'href',
       checkoutResponse.payment_link_url,

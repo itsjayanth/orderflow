@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { PublicMenuItemOut } from '@/shared/api/types'
+import { formatOrderNumber } from '@/shared/lib/orderNumber'
 
 import { useOrderingCheckout } from './useOrderingCheckout'
 import { usePublicMenu } from './usePublicMenu'
@@ -145,7 +146,9 @@ export function OrderingPage() {
           <span className="bg-primary text-primary-foreground mx-auto flex size-12 items-center justify-center rounded-full text-xl">
             ✓
           </span>
-          <h1 className="font-serif text-xl font-semibold">Order confirmed!</h1>
+          <h1 className="font-serif text-xl font-semibold">
+            Order {formatOrderNumber(checkout.data.order_number)} confirmed!
+          </h1>
           <p className="text-muted-foreground text-sm">We'll let you know when it's ready.</p>
           {checkout.data.payment_link_url && (
             <Button asChild className="w-full">

@@ -94,6 +94,30 @@ async def test_create_snapshots_items_and_computes_total(db_session: AsyncSessio
     assert order.total == Decimal("698.00")
 
 
+async def test_order_numbers_increment_sequentially_per_merchant(
+    db_session: AsyncSession,
+) -> None:
+    tenant = await _make_tenant(db_session)
+    first = await _seed_order(db_session, tenant)
+    second = await _seed_order(db_session, tenant)
+    third = await _seed_order(db_session, tenant)
+
+    assert [first.order_number, second.order_number, third.order_number] == [1, 2, 3]
+
+
+async def test_order_numbers_isolated_per_merchant(db_session: AsyncSession) -> None:
+    tenant_a = await _make_tenant(db_session, business_name="Kitchen A")
+    tenant_b = await _make_tenant(db_session, business_name="Kitchen B")
+
+    order_a1 = await _seed_order(db_session, tenant_a)
+    order_b1 = await _seed_order(db_session, tenant_b)
+    order_a2 = await _seed_order(db_session, tenant_a)
+
+    assert order_a1.order_number == 1
+    assert order_b1.order_number == 1
+    assert order_a2.order_number == 2
+
+
 # --- repository-level "defense in depth" transition test --------------------
 
 
@@ -162,6 +186,7 @@ async def test_list_orders_returns_seeded_order(
     body = response.json()
     assert len(body) == 1
     assert body[0]["order_id"] == str(order.order_id)
+    assert body[0]["order_number"] == order.order_number
     assert body[0]["fulfillment_status"] == "new"
 
 

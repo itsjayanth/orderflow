@@ -46,7 +46,7 @@ class WhatsAppNotificationChannel:
                 "business_name": merchant.business_name if merchant else "",
                 "customer_name": customer.display_name or "",
                 "order_id": str(order.order_id),
-                "order_short_id": str(order.order_id)[:8],
+                "order_number": f"{order.order_number:04d}",
                 "total": str(order.total),
                 "currency": order.currency,
                 "items": items,

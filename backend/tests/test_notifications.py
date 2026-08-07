@@ -126,6 +126,7 @@ async def test_notify_order_confirmed_sends_expected_message(db_session: AsyncSe
     assert sender.calls[0]["phone_number_id"] == "PNID1"
     assert sender.calls[0]["access_token"] == "dummy-token"
     assert "confirmed" in sender.calls[0]["body"].lower()
+    assert f"#{order.order_number:04d}" in sender.calls[0]["body"]
 
 
 async def test_notify_order_preparing_sends_expected_message(db_session: AsyncSession) -> None:

@@ -2,18 +2,43 @@ import datetime
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.db import Base
 
 
+class MerchantOrderCounter(Base):
+    """One row per merchant, tracking the next order_number to hand out.
+    Order.order_number is assigned by an atomic upsert against this table
+    (see orders/adapters/repository.py's `_next_order_number`) rather than
+    e.g. `SELECT MAX(order_number) + 1 FROM orders`, which isn't safe
+    against concurrent inserts without extra locking. A per-merchant
+    sequence (not a global one, and not a Postgres SEQUENCE object, which
+    can't be created per-merchant without dynamic DDL) keeps each
+    merchant's numbers starting at 1 and gap-free under normal operation."""
+
+    __tablename__ = "merchant_order_counters"
+
+    merchant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("merchants.merchant_id"), primary_key=True
+    )
+    next_order_number: Mapped[int] = mapped_column(default=1)
+
+
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (UniqueConstraint("merchant_id", "order_number"),)
 
     order_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.customer_id"), index=True)
+
+    # Human-facing sequential reference (per merchant, starts at 1, never
+    # reused/reset) -- shown in the dashboard, order detail pages, and
+    # WhatsApp messages instead of the UUID primary key. See
+    # MerchantOrderCounter above for how it's assigned.
+    order_number: Mapped[int] = mapped_column()
 
     order_type: Mapped[str] = mapped_column(String(16))  # "pickup" | "delivery"
     delivery_address_id: Mapped[uuid.UUID | None] = mapped_column(

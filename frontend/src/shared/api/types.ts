@@ -71,6 +71,7 @@ export interface OrderItemOut {
 
 export interface OrderOut {
   order_id: string
+  order_number: number
   customer_id: string
   order_type: string
   payment_method: string
@@ -152,6 +153,7 @@ export interface NotificationTemplateOut {
 
 export interface TestCheckoutResponse {
   order_id: string
+  order_number: number
   payment_status: string
   fulfillment_status: FulfillmentStatus | null
   total: string
@@ -173,6 +175,7 @@ export interface PublicMenuOut {
 
 export interface OrderingFlowCheckoutResponse {
   order_id: string
+  order_number: number
   payment_status: string
   fulfillment_status: FulfillmentStatus | null
   total: string

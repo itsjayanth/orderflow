@@ -36,6 +36,7 @@ const meResponse: MeResponse = {
 
 const sampleOrder: OrderOut = {
   order_id: '22222222-2222-2222-2222-222222222222',
+  order_number: 3,
   customer_id: '33333333-3333-3333-3333-333333333333',
   order_type: 'pickup',
   payment_method: 'online',

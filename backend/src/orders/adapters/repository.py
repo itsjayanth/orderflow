@@ -5,10 +5,11 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from orders.domain.models import Order, OrderItem, OrderStatusEvent
+from orders.domain.models import MerchantOrderCounter, Order, OrderItem, OrderStatusEvent
 from orders.domain.state_machine import transition_fulfillment_status
 from shared.tenant import TenantContext
 
@@ -42,6 +43,27 @@ class OrderRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def _next_order_number(self, merchant_id: uuid.UUID) -> int:
+        """Atomically hands out the next per-merchant order_number via a
+        single upsert -- safe under concurrent order creation without a
+        separate SELECT ... FOR UPDATE round trip. The counter row stores
+        the *next* number to assign; a fresh merchant gets an implicit
+        starting value of 2 on first insert so `next_order_number - 1`
+        (i.e. 1) is what's returned and assigned to their first order."""
+        stmt = (
+            pg_insert(MerchantOrderCounter)
+            .values(merchant_id=merchant_id, next_order_number=2)
+            .on_conflict_do_update(
+                index_elements=[MerchantOrderCounter.merchant_id],
+                set_={
+                    "next_order_number": MerchantOrderCounter.__table__.c.next_order_number + 1
+                },
+            )
+            .returning(MerchantOrderCounter.next_order_number)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one() - 1
+
     async def create(
         self,
         tenant: TenantContext,
@@ -71,9 +93,11 @@ class OrderRepository:
             for item in items
         ]
         subtotal = sum((oi.line_total for oi in order_items), start=Decimal("0"))
+        order_number = await self._next_order_number(tenant.merchant_id)
 
         order = Order(
             merchant_id=tenant.merchant_id,
+            order_number=order_number,
             customer_id=customer_id,
             order_type=order_type,
             delivery_address_id=delivery_address_id,

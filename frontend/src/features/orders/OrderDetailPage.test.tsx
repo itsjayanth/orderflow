@@ -20,6 +20,7 @@ const mockedApiFetch = vi.mocked(apiFetch)
 
 const sampleOrder: OrderOut = {
   order_id: '11111111-1111-1111-1111-111111111111',
+  order_number: 42,
   customer_id: '22222222-2222-2222-2222-222222222222',
   order_type: 'pickup',
   payment_method: 'online',
@@ -80,6 +81,7 @@ describe('OrderDetailPage', () => {
     renderPage()
 
     expect(await screen.findByText('Butter Chicken')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Order #0042' })).toBeInTheDocument()
     expect(await screen.findByText('Asha', { exact: false })).toBeInTheDocument()
     // "new" -> only "preparing" and "cancelled" are legal.
     expect(screen.getByRole('button', { name: 'Mark Preparing' })).toBeInTheDocument()
