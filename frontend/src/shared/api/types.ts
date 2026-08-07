@@ -181,3 +181,16 @@ export interface OrderingFlowCheckoutResponse {
   total: string
   payment_link_url: string | null
 }
+
+export interface OrderingFlowAddressOut {
+  line1: string
+  line2: string | null
+  landmark: string | null
+  city: string
+  pincode: string
+}
+
+export interface OrderingFlowCustomerLookupOut {
+  display_name: string | null
+  address: OrderingFlowAddressOut | null
+}

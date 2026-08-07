@@ -3,16 +3,24 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 
 from catalog.adapters.repository import MenuItemRepository
+from customers.adapters.repository import AddressRepository, CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.api.schemas import (
+    OrderingFlowAddressOut,
     OrderingFlowCheckoutRequest,
     OrderingFlowCheckoutResponse,
+    OrderingFlowCustomerLookupOut,
     PublicMenuItemOut,
     PublicMenuOut,
 )
-from ordering_flow.domain.checkout import CheckoutItem, MenuItemNotFoundError, perform_checkout
+from ordering_flow.domain.checkout import (
+    CheckoutItem,
+    MenuItemNotFoundError,
+    NewDeliveryAddress,
+    perform_checkout,
+)
 from shared.deps import DbSession
 from shared.tenant import TenantContext
 
@@ -42,6 +50,34 @@ async def get_public_menu(merchant_id: uuid.UUID, session: DbSession) -> PublicM
     )
 
 
+@router.get("/{merchant_id}/customer-lookup", response_model=OrderingFlowCustomerLookupOut)
+async def customer_lookup(
+    merchant_id: uuid.UUID, whatsapp_number: str, session: DbSession
+) -> OrderingFlowCustomerLookupOut:
+    """Public and unauthenticated, matching the rest of this module's
+    security model (checkout already creates customers by phone number
+    with no auth) -- lets the webview prefill a returning customer's name
+    and saved address once they finish entering their WhatsApp number,
+    instead of asking every time. Strictly scoped to this merchant_id, so
+    one merchant's customers never surface through another merchant's
+    ordering page. 404s for a customer that doesn't exist yet -- that's
+    the normal new-customer case, not an error."""
+    merchant = await _get_merchant_or_404(session, merchant_id)
+    tenant = TenantContext(merchant_id=merchant.merchant_id)
+
+    customer = await CustomerRepository(session).get_by_whatsapp_number(tenant, whatsapp_number)
+    if customer is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Customer not found")
+
+    address = await AddressRepository(session).get_primary_for_customer(
+        tenant, customer.customer_id
+    )
+    return OrderingFlowCustomerLookupOut(
+        display_name=customer.display_name,
+        address=OrderingFlowAddressOut.model_validate(address) if address else None,
+    )
+
+
 @router.post(
     "/{merchant_id}/checkout",
     response_model=OrderingFlowCheckoutResponse,
@@ -57,6 +93,18 @@ async def checkout(
     merchant = await _get_merchant_or_404(session, merchant_id)
     tenant = TenantContext(merchant_id=merchant.merchant_id)
 
+    new_delivery_address = (
+        NewDeliveryAddress(
+            line1=body.delivery_address.line1,
+            city=body.delivery_address.city,
+            pincode=body.delivery_address.pincode,
+            line2=body.delivery_address.line2,
+            landmark=body.delivery_address.landmark,
+        )
+        if body.delivery_address is not None
+        else None
+    )
+
     try:
         result = await perform_checkout(
             session,
@@ -69,6 +117,7 @@ async def checkout(
             ],
             payment_method=body.payment_method,
             order_type=body.order_type,
+            new_delivery_address=new_delivery_address,
         )
     except MenuItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc

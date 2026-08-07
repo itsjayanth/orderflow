@@ -5,7 +5,7 @@ from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from catalog.adapters.repository import MenuItemRepository
-from customers.adapters.repository import CustomerRepository
+from customers.adapters.repository import AddressRepository, CustomerRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
 from orders.domain.events import OrderConfirmedCOD, publish
 from orders.domain.models import Order
@@ -34,6 +34,21 @@ class CheckoutItem:
 
 
 @dataclass(frozen=True, slots=True)
+class NewDeliveryAddress:
+    """Raw address fields for a delivery order placed through the public
+    webview, which has no pre-existing Address row to point at. Kept
+    separate from delivery_address_id (an already-created address, e.g.
+    one a future dashboard flow might pick from a customer's saved
+    addresses) so both entry points can share perform_checkout."""
+
+    line1: str
+    city: str
+    pincode: str
+    line2: str | None = None
+    landmark: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CheckoutResult:
     order: Order
     payment_link_url: str | None
@@ -49,6 +64,7 @@ async def perform_checkout(
     order_type: Literal["pickup", "delivery"] = "pickup",
     customer_display_name: str | None = None,
     delivery_address_id: uuid.UUID | None = None,
+    new_delivery_address: NewDeliveryAddress | None = None,
     whatsapp_conversation_ref: str | None = None,
 ) -> CheckoutResult:
     """The one place cart -> Order (+ payment link, if online) happens --
@@ -61,6 +77,25 @@ async def perform_checkout(
     customer = await CustomerRepository(session).find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
     )
+
+    if new_delivery_address is not None:
+        # The customer's saved address is always re-submitted (and
+        # editable) from the webview rather than referenced by id, so each
+        # delivery order gets its own fresh Address row here -- simplest
+        # way to let a customer change the address for just this order
+        # without mutating a previously saved one.
+        address = await AddressRepository(session).create(
+            tenant,
+            customer_id=customer.customer_id,
+            label="Delivery",
+            line1=new_delivery_address.line1,
+            city=new_delivery_address.city,
+            pincode=new_delivery_address.pincode,
+            line2=new_delivery_address.line2,
+            landmark=new_delivery_address.landmark,
+            is_default=True,
+        )
+        delivery_address_id = address.address_id
 
     menu_repo = MenuItemRepository(session)
     item_inputs: list[OrderItemInput] = []

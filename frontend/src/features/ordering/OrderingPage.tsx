@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useParams } from 'react-router-dom'
 import { z } from 'zod'
@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { PublicMenuItemOut } from '@/shared/api/types'
+import { cn } from '@/lib/utils'
+import { apiFetch } from '@/shared/api/client'
+import type { OrderingFlowCustomerLookupOut, PublicMenuItemOut } from '@/shared/api/types'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 
 import { useOrderingCheckout } from './useOrderingCheckout'
@@ -28,18 +30,78 @@ const COUNTRY_CODES = [
   { code: '61', label: 'Australia (+61)' },
 ] as const
 
-const checkoutSchema = z.object({
-  country_code: z.string().min(1, 'Required'),
-  local_number: z
-    .string()
-    .min(1, 'Required')
-    .regex(/^\d{6,12}$/, 'Enter a valid mobile number (digits only)'),
-  customer_display_name: z.string().optional(),
-  payment_method: z.enum(['online', 'cod']),
-})
+const checkoutSchema = z
+  .object({
+    country_code: z.string().min(1, 'Required'),
+    local_number: z
+      .string()
+      .min(1, 'Required')
+      .regex(/^\d{6,12}$/, 'Enter a valid mobile number (digits only)'),
+    customer_display_name: z.string().trim().min(1, 'Please enter your name'),
+    payment_method: z.enum(['online', 'cod']),
+    order_type: z.enum(['pickup', 'delivery']),
+    address_line1: z.string().optional(),
+    address_line2: z.string().optional(),
+    address_landmark: z.string().optional(),
+    address_city: z.string().optional(),
+    address_pincode: z.string().optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.order_type !== 'delivery') {
+      return
+    }
+    if (!values.address_line1?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['address_line1'],
+        message: 'Required for delivery',
+      })
+    }
+    if (!values.address_city?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['address_city'],
+        message: 'Required for delivery',
+      })
+    }
+    if (!values.address_pincode?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['address_pincode'],
+        message: 'Required for delivery',
+      })
+    }
+  })
 type CheckoutForm = z.infer<typeof checkoutSchema>
 
 type Cart = Record<string, number>
+
+type MenuSection = { category: string; items: PublicMenuItemOut[] }
+
+function groupByCategory(items: PublicMenuItemOut[]): MenuSection[] {
+  const sections: MenuSection[] = []
+  const indexByCategory = new Map<string, number>()
+  for (const item of items) {
+    const category = item.category.trim() || 'Other'
+    const existingIndex = indexByCategory.get(category)
+    if (existingIndex === undefined) {
+      indexByCategory.set(category, sections.length)
+      sections.push({ category, items: [item] })
+    } else {
+      sections[existingIndex]?.items.push(item)
+    }
+  }
+  return sections
+}
+
+function categoryAnchor(category: string): string {
+  const slug = category
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+  return `menu-category-${slug || 'other'}`
+}
 
 function CartRow({
   item,
@@ -51,12 +113,15 @@ function CartRow({
   onChange: (quantity: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b px-4 py-4 last:border-0">
+    <div
+      className={cn(
+        'flex items-center justify-between gap-4 border-b px-4 py-4 transition-colors duration-150 last:border-0',
+        quantity > 0 && 'bg-primary/5',
+      )}
+    >
       <div>
         <p className="font-medium">{item.name}</p>
-        <p className="text-muted-foreground text-sm">
-          {item.category} · INR {item.price}
-        </p>
+        <p className="text-muted-foreground text-sm">INR {item.price}</p>
       </div>
       <div className="flex items-center gap-3">
         <Button
@@ -81,15 +146,60 @@ export function OrderingPage() {
   const { data: menu, isLoading, isError } = usePublicMenu(merchantId ?? '')
   const checkout = useOrderingCheckout(merchantId ?? '')
   const [cart, setCart] = useState<Cart>({})
+  const formSectionRef = useRef<HTMLDivElement>(null)
 
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
+    getValues,
     formState: { errors },
   } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
-    defaultValues: { payment_method: 'online', country_code: COUNTRY_CODES[0].code },
+    defaultValues: {
+      payment_method: 'online',
+      country_code: COUNTRY_CODES[0].code,
+      order_type: 'pickup',
+    },
   })
+
+  const orderType = watch('order_type')
+  const localNumberField = register('local_number')
+
+  // Fires once the customer finishes entering their WhatsApp number --
+  // returning customers get their saved name/address prefilled (still
+  // editable) instead of typing it in again every order. A brand-new
+  // number 404s, which is the normal case, not an error worth surfacing.
+  const handlePhoneBlur = async () => {
+    const countryCode = getValues('country_code')
+    const localNumber = getValues('local_number')
+    if (!merchantId || !/^\d{6,12}$/.test(localNumber)) {
+      return
+    }
+    try {
+      const result = await apiFetch<OrderingFlowCustomerLookupOut>(
+        `/api/v1/ordering-flow/${merchantId}/customer-lookup?whatsapp_number=${encodeURIComponent(
+          `${countryCode}${localNumber}`,
+        )}`,
+      )
+      if (result.display_name) {
+        setValue('customer_display_name', result.display_name)
+      }
+      if (result.address) {
+        setValue('address_line1', result.address.line1)
+        setValue('address_line2', result.address.line2 ?? '')
+        setValue('address_landmark', result.address.landmark ?? '')
+        setValue('address_city', result.address.city)
+        setValue('address_pincode', result.address.pincode)
+      }
+    } catch {
+      // New customer, or a transient lookup failure -- this is a
+      // convenience prefill, not a required step, so fail silently.
+    }
+  }
+
+  const menuSections = useMemo(() => groupByCategory(menu?.items ?? []), [menu])
 
   const cartLines = useMemo(
     () =>
@@ -103,6 +213,7 @@ export function OrderingPage() {
     [cart, menu],
   )
 
+  const cartItemCount = cartLines.reduce((sum, line) => sum + line.quantity, 0)
   const total = cartLines.reduce((sum, line) => sum + Number(line.item.price) * line.quantity, 0)
 
   if (isLoading) {
@@ -124,12 +235,24 @@ export function OrderingPage() {
   const onSubmit = (values: CheckoutForm) => {
     checkout.mutate({
       customer_whatsapp_number: `${values.country_code}${values.local_number}`,
-      customer_display_name: values.customer_display_name || undefined,
+      customer_display_name: values.customer_display_name,
       payment_method: values.payment_method,
+      order_type: values.order_type,
       items: cartLines.map((line) => ({
         menu_item_id: line.item.menu_item_id,
         quantity: line.quantity,
       })),
+      ...(values.order_type === 'delivery'
+        ? {
+            delivery_address: {
+              line1: (values.address_line1 ?? '').trim(),
+              line2: values.address_line2?.trim() || undefined,
+              landmark: values.address_landmark?.trim() || undefined,
+              city: (values.address_city ?? '').trim(),
+              pincode: (values.address_pincode ?? '').trim(),
+            },
+          }
+        : {}),
     })
   }
 
@@ -169,92 +292,226 @@ export function OrderingPage() {
 
   return (
     <div className="from-background to-secondary/30 min-h-svh bg-gradient-to-b">
-      <div className="mx-auto max-w-md space-y-6 px-4 py-8">
+      <div className={cn('mx-auto max-w-md space-y-6 px-4 py-8', cartLines.length > 0 && 'pb-28')}>
         <div className="space-y-1 text-center">
           <p className="text-muted-foreground text-xs tracking-wide uppercase">Order from</p>
           <h1 className="font-serif text-2xl font-semibold">{menu.business_name}</h1>
         </div>
 
-        <Card className="overflow-hidden py-0">
-          {menu.items.length === 0 && (
-            <p className="text-muted-foreground p-6 text-center text-sm">
-              No items available right now.
-            </p>
-          )}
-          {menu.items.map((item) => (
-            <CartRow
-              key={item.menu_item_id}
-              item={item}
-              quantity={cart[item.menu_item_id] ?? 0}
-              onChange={(quantity) =>
-                setCart((prev) => ({ ...prev, [item.menu_item_id]: quantity }))
-              }
-            />
+        {menuSections.length > 1 && (
+          <nav className="bg-background/95 supports-[backdrop-filter]:backdrop-blur sticky top-0 z-10 -mx-4 flex gap-2 overflow-x-auto border-b px-4 py-2.5 sm:mx-0 sm:rounded-xl sm:border">
+            {menuSections.map((section) => (
+              <a
+                key={section.category}
+                href={`#${categoryAnchor(section.category)}`}
+                className="border-border bg-card text-muted-foreground hover:border-brand-gold/50 hover:text-foreground shrink-0 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-150"
+              >
+                {section.category}
+              </a>
+            ))}
+          </nav>
+        )}
+
+        {menuSections.length === 0 && (
+          <Card className="p-6 text-center">
+            <p className="text-muted-foreground text-sm">No items available right now.</p>
+          </Card>
+        )}
+
+        <div className="space-y-8">
+          {menuSections.map((section) => (
+            <section
+              key={section.category}
+              id={categoryAnchor(section.category)}
+              className="scroll-mt-16"
+            >
+              <div className="mb-3 flex items-baseline gap-3">
+                <h2 className="font-serif text-lg font-semibold">{section.category}</h2>
+                <span className="bg-border h-px flex-1" />
+                <span className="text-muted-foreground text-xs">
+                  {section.items.length} item{section.items.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <Card className="divide-border overflow-hidden py-0">
+                {section.items.map((item) => (
+                  <CartRow
+                    key={item.menu_item_id}
+                    item={item}
+                    quantity={cart[item.menu_item_id] ?? 0}
+                    onChange={(quantity) =>
+                      setCart((prev) => ({ ...prev, [item.menu_item_id]: quantity }))
+                    }
+                  />
+                ))}
+              </Card>
+            </section>
           ))}
-        </Card>
+        </div>
 
         {cartLines.length > 0 && (
-          <form onSubmit={handleSubmit(onSubmit)}>
-            <Card className="space-y-4 p-5">
-              <p className="text-lg font-medium">Total: INR {total.toFixed(2)}</p>
+          <div ref={formSectionRef} className="scroll-mt-16">
+            <form onSubmit={handleSubmit(onSubmit)}>
+              <Card className="space-y-4 p-5">
+                <p className="text-lg font-medium">Total: INR {total.toFixed(2)}</p>
 
-              <div className="space-y-2">
-                <Label htmlFor="local_number">Your WhatsApp number</Label>
-                <div className="flex gap-2">
-                  <select
-                    id="country_code"
-                    aria-label="Country code"
-                    className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-36 shrink-0 rounded-lg border px-3 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
-                    {...register('country_code')}
-                  >
-                    {COUNTRY_CODES.map(({ code, label }) => (
-                      <option key={code} value={code}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <Input
-                    id="local_number"
-                    inputMode="numeric"
-                    placeholder="9876543210"
-                    {...register('local_number')}
-                  />
+                <div className="space-y-2">
+                  <Label htmlFor="local_number">Your WhatsApp number</Label>
+                  <div className="flex gap-2">
+                    <select
+                      id="country_code"
+                      aria-label="Country code"
+                      className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-36 shrink-0 rounded-lg border px-3 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
+                      {...register('country_code')}
+                    >
+                      {COUNTRY_CODES.map(({ code, label }) => (
+                        <option key={code} value={code}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      id="local_number"
+                      inputMode="numeric"
+                      placeholder="9876543210"
+                      {...localNumberField}
+                      onBlur={(event) => {
+                        void localNumberField.onBlur(event)
+                        void handlePhoneBlur()
+                      }}
+                    />
+                  </div>
+                  {errors.local_number && (
+                    <p className="text-destructive text-sm">{errors.local_number.message}</p>
+                  )}
                 </div>
-                {errors.local_number && (
-                  <p className="text-destructive text-sm">{errors.local_number.message}</p>
+
+                <div className="space-y-2">
+                  <Label htmlFor="customer_display_name">Your name</Label>
+                  <Input id="customer_display_name" {...register('customer_display_name')} />
+                  {errors.customer_display_name && (
+                    <p className="text-destructive text-sm">
+                      {errors.customer_display_name.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Order type</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setValue('order_type', 'pickup', { shouldValidate: true })}
+                      className={cn(
+                        'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors duration-150',
+                        orderType === 'pickup'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
+                      )}
+                    >
+                      Pickup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setValue('order_type', 'delivery', { shouldValidate: true })}
+                      className={cn(
+                        'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors duration-150',
+                        orderType === 'delivery'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
+                      )}
+                    >
+                      Delivery
+                    </button>
+                  </div>
+                </div>
+
+                {orderType === 'delivery' && (
+                  <div className="border-border space-y-3 rounded-lg border border-dashed p-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="address_line1">Address line 1</Label>
+                      <Input
+                        id="address_line1"
+                        placeholder="House / flat no., building, street"
+                        {...register('address_line1')}
+                      />
+                      {errors.address_line1 && (
+                        <p className="text-destructive text-sm">{errors.address_line1.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address_line2">Address line 2 (optional)</Label>
+                      <Input id="address_line2" {...register('address_line2')} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address_landmark">Landmark (optional)</Label>
+                      <Input id="address_landmark" {...register('address_landmark')} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="address_city">City</Label>
+                        <Input id="address_city" {...register('address_city')} />
+                        {errors.address_city && (
+                          <p className="text-destructive text-sm">{errors.address_city.message}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="address_pincode">Pincode</Label>
+                        <Input
+                          id="address_pincode"
+                          inputMode="numeric"
+                          {...register('address_pincode')}
+                        />
+                        {errors.address_pincode && (
+                          <p className="text-destructive text-sm">
+                            {errors.address_pincode.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="customer_display_name">Your name (optional)</Label>
-                <Input id="customer_display_name" {...register('customer_display_name')} />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment_method">Payment method</Label>
+                  <select
+                    id="payment_method"
+                    className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-full rounded-lg border px-3.5 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
+                    {...register('payment_method')}
+                  >
+                    <option value="online">Pay online</option>
+                    <option value="cod">Cash on delivery/pickup</option>
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="payment_method">Payment method</Label>
-                <select
-                  id="payment_method"
-                  className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-full rounded-lg border px-3.5 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
-                  {...register('payment_method')}
-                >
-                  <option value="online">Pay online</option>
-                  <option value="cod">Cash on delivery/pickup</option>
-                </select>
-              </div>
+                {checkout.isError && (
+                  <p className="text-destructive text-sm">
+                    Something went wrong placing your order. Please try again.
+                  </p>
+                )}
 
-              {checkout.isError && (
-                <p className="text-destructive text-sm">
-                  Something went wrong placing your order. Please try again.
-                </p>
-              )}
-
-              <Button type="submit" size="lg" className="w-full" disabled={checkout.isPending}>
-                {checkout.isPending ? 'Placing order…' : 'Place order'}
-              </Button>
-            </Card>
-          </form>
+                <Button type="submit" size="lg" className="w-full" disabled={checkout.isPending}>
+                  {checkout.isPending ? 'Placing order…' : 'Place order'}
+                </Button>
+              </Card>
+            </form>
+          </div>
         )}
       </div>
+
+      {cartLines.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card/95 p-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur">
+          <button
+            type="button"
+            onClick={() => formSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            className="bg-primary text-primary-foreground mx-auto flex w-full max-w-md items-center justify-between rounded-lg px-4 py-3 text-sm font-medium shadow-sm transition-all duration-150 active:scale-[0.98]"
+          >
+            <span>
+              {cartItemCount} item{cartItemCount === 1 ? '' : 's'} in cart
+            </span>
+            <span>INR {total.toFixed(2)} · Review order →</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }
