@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { Card } from '@/components/ui/card'
@@ -11,22 +11,46 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import type { FulfillmentStatus } from '@/shared/api/types'
+import type { FulfillmentStatus, OrderOut } from '@/shared/api/types'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 
 import { CreateTestOrderForm } from './CreateTestOrderForm'
 import { STATUS_LABELS } from './statusTransitions'
 import { useOrders } from './useOrders'
 
-const FILTERS: (FulfillmentStatus | 'all')[] = ['all', 'new', 'preparing', 'ready', 'completed']
+// The lifecycle tabs a restaurant owner actively monitors -- "cancelled"
+// stays out of the tab bar (still visible under "All") since it's not part
+// of the day-to-day new -> preparing -> ready -> completed flow.
+const TABS: (FulfillmentStatus | 'all')[] = ['all', 'new', 'preparing', 'ready', 'completed']
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString()
 }
 
+function countByStatus(orders: OrderOut[] | undefined): Record<FulfillmentStatus | 'all', number> {
+  const counts: Record<FulfillmentStatus | 'all', number> = {
+    all: orders?.length ?? 0,
+    new: 0,
+    preparing: 0,
+    ready: 0,
+    completed: 0,
+    cancelled: 0,
+  }
+  for (const order of orders ?? []) {
+    if (order.fulfillment_status) counts[order.fulfillment_status] += 1
+  }
+  return counts
+}
+
 export function OrdersPage() {
-  const [filter, setFilter] = useState<FulfillmentStatus | 'all'>('all')
-  const { data: orders, isLoading } = useOrders(filter === 'all' ? undefined : filter)
+  const [tab, setTab] = useState<FulfillmentStatus | 'all'>('all')
+  const { data: orders, isLoading } = useOrders()
+
+  const counts = useMemo(() => countByStatus(orders), [orders])
+  const visibleOrders = useMemo(
+    () => (tab === 'all' ? orders : orders?.filter((order) => order.fulfillment_status === tab)),
+    [orders, tab],
+  )
 
   return (
     <div className="space-y-6">
@@ -39,20 +63,28 @@ export function OrdersPage() {
 
       <CreateTestOrderForm />
 
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((status) => (
+      <div className="border-border flex flex-wrap gap-1 border-b">
+        {TABS.map((status) => (
           <button
             key={status}
             type="button"
-            onClick={() => setFilter(status)}
+            onClick={() => setTab(status)}
             className={cn(
-              'rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all duration-150',
-              filter === status
-                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent border-border',
+              'flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium transition-all duration-150',
+              tab === status
+                ? 'border-primary text-foreground'
+                : 'text-muted-foreground hover:text-foreground border-transparent',
             )}
           >
             {status === 'all' ? 'All' : STATUS_LABELS[status]}
+            <span
+              className={cn(
+                'rounded-full px-1.5 py-0.5 text-xs font-semibold',
+                tab === status ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {counts[status]}
+            </span>
           </button>
         ))}
       </div>
@@ -76,14 +108,16 @@ export function OrdersPage() {
                 </TableCell>
               </TableRow>
             )}
-            {!isLoading && orders?.length === 0 && (
+            {!isLoading && visibleOrders?.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="text-muted-foreground">
-                  No orders yet.
+                  {tab === 'all'
+                    ? 'No orders yet.'
+                    : `No ${STATUS_LABELS[tab].toLowerCase()} orders.`}
                 </TableCell>
               </TableRow>
             )}
-            {orders?.map((order) => (
+            {visibleOrders?.map((order) => (
               <TableRow key={order.order_id}>
                 <TableCell>
                   <Link

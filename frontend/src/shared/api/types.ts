@@ -123,7 +123,11 @@ export interface KitchenProfileOut {
   fssai_license_no: string | null
 }
 
-export type NotificationKind = 'order_confirmed' | 'order_ready' | 'order_completed'
+export type NotificationKind =
+  | 'order_confirmed'
+  | 'order_preparing'
+  | 'order_ready'
+  | 'order_completed'
 
 export interface NotificationTemplateOut {
   notification_kind: NotificationKind

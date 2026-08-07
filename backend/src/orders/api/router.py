@@ -4,13 +4,14 @@ from fastapi import APIRouter, HTTPException, status
 
 from orders.adapters.repository import OrderNotFoundError, OrderRepository
 from orders.api.schemas import FulfillmentStatusUpdate, OrderOut
-from orders.domain.events import OrderCompleted, OrderReady, publish
+from orders.domain.events import OrderCompleted, OrderPreparing, OrderReady, publish
 from orders.domain.state_machine import IllegalTransitionError
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 _EVENT_BY_STATUS = {
+    "preparing": OrderPreparing,
     "ready": OrderReady,
     "completed": OrderCompleted,
 }

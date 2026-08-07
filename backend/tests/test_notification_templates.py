@@ -204,6 +204,7 @@ async def test_list_templates_defaults_to_unconfigured(client: AsyncClient) -> N
     body = response.json()
     assert {t["notification_kind"] for t in body} == {
         "order_confirmed",
+        "order_preparing",
         "order_ready",
         "order_completed",
     }

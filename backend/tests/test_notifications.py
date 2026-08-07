@@ -14,6 +14,7 @@ from orders.domain.events import (
     OrderCompleted,
     OrderConfirmedCOD,
     OrderPaid,
+    OrderPreparing,
     OrderReady,
     publish,
 )
@@ -54,11 +55,16 @@ class FakeSender:
 class RecordingChannel:
     def __init__(self) -> None:
         self.confirmed: list[tuple[uuid.UUID, uuid.UUID]] = []
+        self.preparing: list[tuple[uuid.UUID, uuid.UUID]] = []
         self.ready: list[tuple[uuid.UUID, uuid.UUID]] = []
         self.completed: list[tuple[uuid.UUID, uuid.UUID]] = []
 
     async def notify_order_confirmed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         self.confirmed.append((merchant_id, order_id))
+        return True
+
+    async def notify_order_preparing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        self.preparing.append((merchant_id, order_id))
         return True
 
     async def notify_order_ready(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
@@ -120,6 +126,19 @@ async def test_notify_order_confirmed_sends_expected_message(db_session: AsyncSe
     assert sender.calls[0]["phone_number_id"] == "PNID1"
     assert sender.calls[0]["access_token"] == "dummy-token"
     assert "confirmed" in sender.calls[0]["body"].lower()
+
+
+async def test_notify_order_preparing_sends_expected_message(db_session: AsyncSession) -> None:
+    tenant, order = await _seed_order(db_session)
+    sender = FakeSender()
+    channel = WhatsAppNotificationChannel(sender)
+
+    result = await channel.notify_order_preparing(
+        merchant_id=tenant.merchant_id, order_id=order.order_id
+    )
+
+    assert result is True
+    assert "prepar" in sender.calls[0]["body"].lower()
 
 
 async def test_notify_order_ready_sends_expected_message(db_session: AsyncSession) -> None:
@@ -211,6 +230,22 @@ async def test_order_paid_and_confirmed_cod_both_route_to_confirmed_notification
         wiring.set_notification_channel(real_channel)
 
     assert recording.confirmed == [(merchant_id, order_id), (merchant_id, order_id)]
+
+
+async def test_order_preparing_routes_to_preparing_notification() -> None:
+    real_channel = wiring.get_notification_channel()
+    recording = RecordingChannel()
+    wiring.set_notification_channel(recording)
+    try:
+        merchant_id, order_id = uuid.uuid4(), uuid.uuid4()
+        await publish(OrderPreparing(order_id=order_id, merchant_id=merchant_id))
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert recording.preparing == [(merchant_id, order_id)]
+    assert recording.confirmed == []
+    assert recording.ready == []
+    assert recording.completed == []
 
 
 async def test_order_ready_routes_to_ready_notification() -> None:

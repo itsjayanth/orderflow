@@ -21,6 +21,11 @@ class OrderConfirmedCOD(OrderEvent):
 
 
 @dataclass(frozen=True, slots=True)
+class OrderPreparing(OrderEvent):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class OrderReady(OrderEvent):
     pass
 

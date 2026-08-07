@@ -6,21 +6,29 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base
 
-# The three notification kinds Phase 7 sends (orders/domain/events.py's
-# OrderPaid/OrderConfirmedCOD both map to "order_confirmed").
-NOTIFICATION_KINDS = ("order_confirmed", "order_ready", "order_completed")
+# The four notification kinds sent over an order's lifecycle
+# (orders/domain/events.py's OrderPaid/OrderConfirmedCOD both map to
+# "order_confirmed"; "order_preparing" fires on the new -> preparing
+# fulfillment transition).
+NOTIFICATION_KINDS = ("order_confirmed", "order_preparing", "order_ready", "order_completed")
 
 # What actually goes out when a merchant hasn't configured (or has
 # deactivated) their own template for a kind -- the Phase 7 behavior,
 # unchanged. Single source of truth shared by the sending channel
 # (notifications/adapters/whatsapp_channel.py) and the templates API
 # (notifications/api/router.py, which shows these as the starting point for
-# a merchant editing a template for the first time).
+# a merchant editing a template for the first time). WhatsApp text messages
+# support basic markdown (*bold*, _italic_), used here for a more polished
+# look than a bare sentence.
 DEFAULT_MESSAGES: dict[str, str] = {
-    "order_confirmed": "Order confirmed!\n{{items}}\nTotal: {{currency}} {{total}}\n"
-    "We'll let you know when it's ready.",
-    "order_ready": "Your order is ready!",
-    "order_completed": "Your order is complete. Enjoy your meal!",
+    "order_confirmed": "✅ *Order confirmed!*\n\n{{items}}\n\nTotal: {{currency}} {{total}}\n\n"
+    "_We'll let you know when it's ready._",
+    "order_preparing": "🍳 *Your order is being prepared!*\n\nOrder #{{order_short_id}}\n"
+    "{{items}}\n\n_We'll notify you the moment it's ready._",
+    "order_ready": "🎉 *Your order is ready!*\n\nIt's on its way — you should be expecting it "
+    "soon! 🛵\n\nOrder #{{order_short_id}}",
+    "order_completed": "✅ *Order complete!*\n\nThanks for ordering from {{business_name}} — "
+    "enjoy your meal! 🍽️",
 }
 
 
@@ -40,7 +48,7 @@ class NotificationTemplate(Base):
     template_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
 
-    # "order_confirmed" | "order_ready" | "order_completed"
+    # "order_confirmed" | "order_preparing" | "order_ready" | "order_completed"
     notification_kind: Mapped[str] = mapped_column(String(32))
     template_name: Mapped[str] = mapped_column(String(255))
     language_code: Mapped[str] = mapped_column(String(16), default="en")
