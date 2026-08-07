@@ -7,6 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
 import { useCustomers } from './useCustomers'
 
@@ -52,8 +53,10 @@ export function CustomersPage() {
               ) : (
                 customers.map((customer) => (
                   <TableRow key={customer.customer_id}>
-                    <TableCell>{customer.display_name ?? customer.whatsapp_number}</TableCell>
-                    <TableCell>{customer.whatsapp_number}</TableCell>
+                    <TableCell>
+                      {customer.display_name ?? formatPhoneNumber(customer.whatsapp_number)}
+                    </TableCell>
+                    <TableCell>{formatPhoneNumber(customer.whatsapp_number)}</TableCell>
                     <TableCell>{formatDate(customer.last_order_at)}</TableCell>
                   </TableRow>
                 ))

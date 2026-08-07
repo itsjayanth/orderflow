@@ -38,6 +38,8 @@ const sampleOrder: OrderOut = {
   order_id: '22222222-2222-2222-2222-222222222222',
   order_number: 3,
   customer_id: '33333333-3333-3333-3333-333333333333',
+  customer_name: 'Asha Rao',
+  customer_whatsapp_number: '919876543210',
   order_type: 'pickup',
   payment_method: 'online',
   payment_status: 'paid',
@@ -119,6 +121,7 @@ describe('DashboardHomePage', () => {
     // the summary) and in the recent-orders row (raw order.total) -- assert
     // presence, not uniqueness.
     expect(screen.getAllByText('INR 349.00').length).toBeGreaterThan(0)
+    expect(screen.getByText(/Asha Rao/)).toBeInTheDocument()
   })
 
   it('shows a setup nudge when onboarding is not yet live', async () => {

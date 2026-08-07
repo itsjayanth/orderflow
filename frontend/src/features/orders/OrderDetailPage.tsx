@@ -14,6 +14,7 @@ import {
 import { apiFetch } from '@/shared/api/client'
 import type { CustomerWithAddressesOut, FulfillmentStatus } from '@/shared/api/types'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
+import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
 import { legalNextStatuses, STATUS_LABELS } from './statusTransitions'
 import { useOrder } from './useOrder'
@@ -50,8 +51,10 @@ export function OrderDetailPage() {
           Order {formatOrderNumber(order.order_number)}
         </h1>
         <p className="text-muted-foreground text-sm">
-          {customer.data?.display_name ?? customer.data?.whatsapp_number ?? '—'} ·{' '}
-          {new Date(order.placed_at).toLocaleString()}
+          {customer.data
+            ? (customer.data.display_name ?? formatPhoneNumber(customer.data.whatsapp_number))
+            : '—'}{' '}
+          · {new Date(order.placed_at).toLocaleString()}
         </p>
       </div>
 

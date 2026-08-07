@@ -22,6 +22,8 @@ const sampleOrder: OrderOut = {
   order_id: '11111111-1111-1111-1111-111111111111',
   order_number: 42,
   customer_id: '22222222-2222-2222-2222-222222222222',
+  customer_name: 'Asha',
+  customer_whatsapp_number: '919876543210',
   order_type: 'pickup',
   payment_method: 'online',
   payment_status: 'paid',

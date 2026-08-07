@@ -23,6 +23,8 @@ class OrderOut(BaseModel):
     order_id: uuid.UUID
     order_number: int
     customer_id: uuid.UUID
+    customer_name: str | None
+    customer_whatsapp_number: str
     order_type: str
     payment_method: str
     payment_status: str

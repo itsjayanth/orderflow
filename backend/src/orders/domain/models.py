@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from customers.domain.models import Customer
 from shared.db import Base
 
 
@@ -77,6 +78,9 @@ class Order(Base):
     )
 
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order")
+    # No back_populates on Customer -- nothing there needs the reverse
+    # collection today, and adding it would be an unused surface.
+    customer: Mapped["Customer"] = relationship()
 
 
 class OrderItem(Base):

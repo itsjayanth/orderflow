@@ -50,10 +50,11 @@ describe('CustomersPage', () => {
     renderPage()
 
     expect(await screen.findByText('Asha')).toBeInTheDocument()
-    // Customer c2 has no display_name, so its phone number appears twice:
-    // once as the name-column fallback, once in the phone column.
-    expect(screen.getAllByText('+919876543211')).toHaveLength(2)
-    expect(screen.getAllByText('+919876543210')).toHaveLength(1)
+    // Customer c2 has no display_name, so its formatted phone number
+    // appears twice: once as the name-column fallback, once in the phone
+    // column.
+    expect(screen.getAllByText('+91 98765 43211')).toHaveLength(2)
+    expect(screen.getAllByText('+91 98765 43210')).toHaveLength(1)
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 

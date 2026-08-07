@@ -55,8 +55,12 @@ async def _seed_order(
     payment_status: str = "paid",
     fulfillment_status: str | None = "new",
     payment_method: str = "online",
+    customer_whatsapp_number: str = "+919876543210",
+    customer_display_name: str | None = None,
 ):
-    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    customer = await CustomerRepository(db_session).find_or_create(
+        tenant, customer_whatsapp_number, display_name=customer_display_name
+    )
     menu_item = await MenuItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
@@ -178,7 +182,7 @@ async def test_list_orders_returns_seeded_order(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    order = await _seed_order(db_session, tenant)
+    order = await _seed_order(db_session, tenant, customer_display_name="Asha Rao")
 
     response = await client.get("/api/v1/orders", headers=_auth_headers(tokens))
 
@@ -188,6 +192,24 @@ async def test_list_orders_returns_seeded_order(
     assert body[0]["order_id"] == str(order.order_id)
     assert body[0]["order_number"] == order.order_number
     assert body[0]["fulfillment_status"] == "new"
+    assert body[0]["customer_name"] == "Asha Rao"
+    assert body[0]["customer_whatsapp_number"] == "+919876543210"
+
+
+async def test_list_orders_customer_name_null_when_no_display_name_set(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _seed_order(db_session, tenant, customer_display_name=None)
+
+    response = await client.get("/api/v1/orders", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["customer_name"] is None
+    assert body[0]["customer_whatsapp_number"] == "+919876543210"
 
 
 async def test_list_orders_filtered_by_fulfillment_status(
@@ -213,7 +235,7 @@ async def test_get_order_detail_includes_items(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    order = await _seed_order(db_session, tenant)
+    order = await _seed_order(db_session, tenant, customer_display_name="Asha Rao")
 
     response = await client.get(f"/api/v1/orders/{order.order_id}", headers=_auth_headers(tokens))
 
@@ -221,6 +243,23 @@ async def test_get_order_detail_includes_items(
     body = response.json()
     assert len(body["items"]) == 1
     assert body["items"][0]["name_snapshot"] == "Butter Chicken"
+    assert body["customer_name"] == "Asha Rao"
+    assert body["customer_whatsapp_number"] == "+919876543210"
+
+
+async def test_get_order_detail_customer_name_null_when_no_display_name_set(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(db_session, tenant, customer_display_name=None)
+
+    response = await client.get(f"/api/v1/orders/{order.order_id}", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["customer_name"] is None
+    assert body["customer_whatsapp_number"] == "+919876543210"
 
 
 async def test_get_order_not_found(client: AsyncClient) -> None:
