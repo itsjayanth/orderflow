@@ -40,3 +40,15 @@ class OrderOut(BaseModel):
 
 class FulfillmentStatusUpdate(BaseModel):
     to_status: FulfillmentStatus
+
+
+class OrderSummaryOut(BaseModel):
+    total_orders: int
+    revenue_generated: Decimal
+    amount_collected: Decimal
+    cod_orders: int
+    new_orders: int
+    preparing_orders: int
+    ready_orders: int
+    completed_orders: int
+    cancelled_orders: int

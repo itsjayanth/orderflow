@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 
 from orders.adapters.repository import OrderNotFoundError, OrderRepository
-from orders.api.schemas import FulfillmentStatusUpdate, OrderOut
+from orders.api.schemas import FulfillmentStatusUpdate, OrderOut, OrderSummaryOut
 from orders.domain.events import OrderCompleted, OrderPreparing, OrderReady, publish
 from orders.domain.state_machine import IllegalTransitionError
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
@@ -25,6 +25,24 @@ async def list_orders(
 ) -> list[OrderOut]:
     orders = await OrderRepository(session).list(tenant, fulfillment_status=fulfillment_status)
     return [OrderOut.model_validate(order) for order in orders]
+
+
+@router.get("/summary", response_model=OrderSummaryOut)
+async def get_order_summary(tenant: CurrentTenant, session: DbSession) -> OrderSummaryOut:
+    # Must stay above /{order_id} -- FastAPI matches routes in declaration
+    # order, and a UUID path converter would otherwise swallow "summary".
+    summary = await OrderRepository(session).get_summary(tenant)
+    return OrderSummaryOut(
+        total_orders=summary.total_orders,
+        revenue_generated=summary.revenue_generated,
+        amount_collected=summary.amount_collected,
+        cod_orders=summary.cod_orders,
+        new_orders=summary.new_orders,
+        preparing_orders=summary.preparing_orders,
+        ready_orders=summary.ready_orders,
+        completed_orders=summary.completed_orders,
+        cancelled_orders=summary.cancelled_orders,
+    )
 
 
 @router.get("/{order_id}", response_model=OrderOut)

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/features/auth/authStore'
 import { apiFetch } from '@/shared/api/client'
-import type { MeResponse, OnboardingStatusOut, OrderOut } from '@/shared/api/types'
+import type { MeResponse, OnboardingStatusOut, OrderOut, OrderSummaryOut } from '@/shared/api/types'
 
 import { DashboardHomePage } from './DashboardHomePage'
 
@@ -51,12 +51,26 @@ const sampleOrder: OrderOut = {
   items: [],
 }
 
+const sampleSummary: OrderSummaryOut = {
+  total_orders: 1,
+  revenue_generated: '349.00',
+  amount_collected: '349.00',
+  cod_orders: 0,
+  new_orders: 1,
+  preparing_orders: 0,
+  ready_orders: 0,
+  completed_orders: 0,
+  cancelled_orders: 0,
+}
+
 function mockRoutes(overrides: {
   onboardingStatus?: OnboardingStatusOut['onboarding_status']
   orders?: OrderOut[]
+  summary?: OrderSummaryOut
 }) {
   const onboardingStatus = overrides.onboardingStatus ?? 'live'
   const orders = overrides.orders ?? [sampleOrder]
+  const summary = overrides.summary ?? sampleSummary
   mockedApiFetch.mockImplementation((path: string) => {
     if (path === '/api/v1/auth/me') return Promise.resolve(meResponse)
     if (path === '/api/v1/onboarding/status') {
@@ -67,6 +81,8 @@ function mockRoutes(overrides: {
         has_available_menu_item: true,
       })
     }
+    // Must come before the generic /api/v1/orders prefix check below.
+    if (path === '/api/v1/orders/summary') return Promise.resolve(summary)
     if (path.startsWith('/api/v1/orders')) return Promise.resolve(orders)
     return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
   })
@@ -98,7 +114,10 @@ describe('DashboardHomePage', () => {
 
     expect(await screen.findByText('Welcome back, Test Kitchen')).toBeInTheDocument()
     expect(screen.getByText("Today's orders")).toBeInTheDocument()
-    expect(screen.getByText('INR 349.00')).toBeInTheDocument()
+    // "INR 349.00" appears both in the revenue hero card (formatted from
+    // the summary) and in the recent-orders row (raw order.total) -- assert
+    // presence, not uniqueness.
+    expect(screen.getAllByText('INR 349.00').length).toBeGreaterThan(0)
   })
 
   it('shows a setup nudge when onboarding is not yet live', async () => {

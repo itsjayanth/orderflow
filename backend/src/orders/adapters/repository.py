@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -23,6 +23,19 @@ class OrderItemInput:
     name_snapshot: str
     price_snapshot: Decimal
     quantity: int
+
+
+@dataclass(frozen=True, slots=True)
+class OrderSummary:
+    total_orders: int
+    revenue_generated: Decimal
+    amount_collected: Decimal
+    cod_orders: int
+    new_orders: int
+    preparing_orders: int
+    ready_orders: int
+    completed_orders: int
+    cancelled_orders: int
 
 
 class OrderRepository:
@@ -141,6 +154,48 @@ class OrderRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_summary(self, tenant: TenantContext) -> OrderSummary:
+        """One aggregate query for the dashboard's summary cards -- avoids
+        loading every Order row (with items) into Python just to count/sum
+        them. "revenue_generated" excludes cancelled orders (never real
+        revenue); "amount_collected" is narrower still -- only orders whose
+        payment_status shows money actually in hand (paid online, or COD
+        marked collected), not merely placed."""
+
+        def _sum_when(condition: ColumnElement[bool]) -> ColumnElement[Decimal]:
+            return func.coalesce(func.sum(case((condition, Order.total), else_=0)), 0)
+
+        def _count_when(condition: ColumnElement[bool]) -> ColumnElement[int]:
+            return func.count(case((condition, 1), else_=None))
+
+        not_cancelled = Order.fulfillment_status != "cancelled"
+        collected = Order.payment_status.in_(("paid", "cod_collected"))
+
+        stmt = select(
+            func.count(),
+            _sum_when(not_cancelled),
+            _sum_when(collected),
+            _count_when(Order.payment_method == "cod"),
+            _count_when(Order.fulfillment_status == "new"),
+            _count_when(Order.fulfillment_status == "preparing"),
+            _count_when(Order.fulfillment_status == "ready"),
+            _count_when(Order.fulfillment_status == "completed"),
+            _count_when(Order.fulfillment_status == "cancelled"),
+        ).where(Order.merchant_id == tenant.merchant_id)
+
+        row = (await self._session.execute(stmt)).one()
+        return OrderSummary(
+            total_orders=row[0],
+            revenue_generated=row[1],
+            amount_collected=row[2],
+            cod_orders=row[3],
+            new_orders=row[4],
+            preparing_orders=row[5],
+            ready_orders=row[6],
+            completed_orders=row[7],
+            cancelled_orders=row[8],
+        )
 
     async def list_stale_awaiting_payment(
         self, older_than: datetime.datetime

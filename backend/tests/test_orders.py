@@ -54,6 +54,7 @@ async def _seed_order(
     *,
     payment_status: str = "paid",
     fulfillment_status: str | None = "new",
+    payment_method: str = "online",
 ):
     customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
     menu_item = await MenuItemRepository(db_session).create(
@@ -63,7 +64,7 @@ async def _seed_order(
         tenant,
         customer_id=customer.customer_id,
         order_type="pickup",
-        payment_method="online",
+        payment_method=payment_method,
         payment_status=payment_status,
         fulfillment_status=fulfillment_status,
         items=[
@@ -294,3 +295,66 @@ async def test_orders_isolated_between_merchants(
         headers=_auth_headers(tokens_b),
     )
     assert update_response.status_code == 404
+
+
+# --- Dashboard summary --------------------------------------------------
+
+
+async def test_get_summary_aggregates_across_orders(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    # Each seeded order is 2x Butter Chicken @ 349.00 = 698.00.
+    await _seed_order(
+        db_session, tenant, payment_status="paid", fulfillment_status="new", payment_method="online"
+    )
+    await _seed_order(
+        db_session,
+        tenant,
+        payment_status="cod_collected",
+        fulfillment_status="completed",
+        payment_method="cod",
+    )
+    await _seed_order(
+        db_session,
+        tenant,
+        payment_status="cod_pending",
+        fulfillment_status="preparing",
+        payment_method="cod",
+    )
+    await _seed_order(
+        db_session, tenant, payment_status="cancelled", fulfillment_status="cancelled"
+    )
+
+    response = await client.get("/api/v1/orders/summary", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_orders"] == 4
+    # Generated excludes the cancelled order: 3 * 698.00 = 2094.00.
+    assert body["revenue_generated"] == "2094.00"
+    # Collected is narrower still -- only paid + cod_collected: 2 * 698.00.
+    assert body["amount_collected"] == "1396.00"
+    assert body["cod_orders"] == 2
+    assert body["new_orders"] == 1
+    assert body["preparing_orders"] == 1
+    assert body["ready_orders"] == 0
+    assert body["completed_orders"] == 1
+    assert body["cancelled_orders"] == 1
+
+
+async def test_get_summary_isolated_between_merchants(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens_a = await _register(client, owner_contact="summary-a@example.com")
+    tenant_a = await _tenant_for(client, tokens_a)
+    tokens_b = await _register(client, owner_contact="summary-b@example.com")
+    await _seed_order(db_session, tenant_a)
+
+    response = await client.get("/api/v1/orders/summary", headers=_auth_headers(tokens_b))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_orders"] == 0
+    assert Decimal(body["revenue_generated"]) == 0

@@ -4,9 +4,45 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useMe } from '@/features/auth/useAuth'
 import { useOnboardingStatus } from '@/features/onboarding/useOnboarding'
+import { useOrderSummary } from '@/features/orders/useOrderSummary'
 import { useOrders } from '@/features/orders/useOrders'
 import type { FulfillmentStatus } from '@/shared/api/types'
 import { StatusBadge } from '@/shared/components/StatusBadge'
+
+function formatCurrency(value: string | undefined, currency = 'INR'): string {
+  const amount = Number(value ?? 0)
+  const formatted = new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+  return `${currency} ${formatted}`
+}
+
+type LifecycleCard = {
+  label: string
+  status: FulfillmentStatus
+  count: number
+  hint: string
+}
+
+function LifecycleStatCard({ label, status, count, hint }: LifecycleCard) {
+  return (
+    <Link
+      to={`/orders?status=${status}`}
+      title={hint}
+      className="group border-border bg-card hover:border-primary/40 relative overflow-hidden rounded-xl border p-5 shadow-sm transition-all duration-150 hover:shadow-md"
+    >
+      <div className="flex items-start justify-between">
+        <p className="text-muted-foreground text-sm font-medium">{label}</p>
+        <StatusBadge status={status} />
+      </div>
+      <p className="mt-3 font-serif text-3xl">{count}</p>
+      <p className="text-muted-foreground mt-2 text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        {hint} · View orders →
+      </p>
+    </Link>
+  )
+}
 
 function isToday(isoDate: string): boolean {
   const date = new Date(isoDate)
@@ -18,33 +54,51 @@ function isToday(isoDate: string): boolean {
   )
 }
 
-function StatCard({ label, value, tone }: { label: string; value: number; tone?: 'gold' }) {
-  return (
-    <Card className="p-5">
-      <p className="text-muted-foreground text-sm">{label}</p>
-      <p
-        className={`mt-1 font-serif text-3xl ${tone === 'gold' ? 'text-brand-gold-foreground' : ''}`}
-      >
-        {value}
-      </p>
-    </Card>
-  )
-}
-
 export function DashboardHomePage() {
   const me = useMe()
   const onboarding = useOnboardingStatus()
   const { data: orders, isLoading } = useOrders()
+  const { data: summary } = useOrderSummary()
 
   const todaysOrders = orders?.filter((o) => isToday(o.placed_at)) ?? []
-  const countByStatus = (status: FulfillmentStatus) =>
-    orders?.filter((o) => o.fulfillment_status === status).length ?? 0
-
   const recentOrders = [...(orders ?? [])]
     .sort((a, b) => new Date(b.placed_at).getTime() - new Date(a.placed_at).getTime())
     .slice(0, 5)
 
   const businessName = me.data?.merchant.business_name
+
+  const lifecycleCards: LifecycleCard[] = [
+    {
+      label: 'New',
+      status: 'new',
+      count: summary?.new_orders ?? 0,
+      hint: 'Just placed, not yet started',
+    },
+    {
+      label: 'Preparing',
+      status: 'preparing',
+      count: summary?.preparing_orders ?? 0,
+      hint: 'In the kitchen right now',
+    },
+    {
+      label: 'Ready',
+      status: 'ready',
+      count: summary?.ready_orders ?? 0,
+      hint: 'Waiting for pickup/delivery',
+    },
+    {
+      label: 'Delivered',
+      status: 'completed',
+      count: summary?.completed_orders ?? 0,
+      hint: 'Successfully completed',
+    },
+    {
+      label: 'Failed',
+      status: 'cancelled',
+      count: summary?.cancelled_orders ?? 0,
+      hint: 'Cancelled before completion',
+    },
+  ]
 
   return (
     <div className="space-y-8">
@@ -70,11 +124,53 @@ export function DashboardHomePage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Today's orders" value={todaysOrders.length} />
-        <StatCard label="New" value={countByStatus('new')} tone="gold" />
-        <StatCard label="Preparing" value={countByStatus('preparing')} />
-        <StatCard label="Ready" value={countByStatus('ready')} />
+      {/* Hero revenue card -- the number the owner actually cares about,
+          given more visual weight than any operational stat below it. */}
+      <div className="from-brand-gold/15 via-brand-gold/5 border-brand-gold/30 relative overflow-hidden rounded-2xl border bg-gradient-to-br to-transparent p-8 shadow-sm">
+        <div className="grid gap-8 sm:grid-cols-[2fr_1fr]">
+          <div>
+            <p className="text-muted-foreground text-sm font-medium tracking-wide uppercase">
+              Total revenue generated
+            </p>
+            <p className="font-serif text-5xl font-semibold tracking-tight">
+              {formatCurrency(summary?.revenue_generated)}
+            </p>
+            <p className="text-muted-foreground mt-2 text-sm">
+              Across {summary?.total_orders ?? 0} orders (excludes cancelled)
+            </p>
+          </div>
+          <div className="border-border/60 flex flex-col justify-center gap-1 border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
+            <p className="text-muted-foreground text-sm font-medium">Amount collected</p>
+            <p className="font-serif text-2xl font-semibold">
+              {formatCurrency(summary?.amount_collected)}
+            </p>
+            <p className="text-muted-foreground mt-3 text-sm font-medium">Today's orders</p>
+            <p className="font-serif text-2xl font-semibold">{todaysOrders.length}</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-lg font-medium">Order lifecycle</h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {lifecycleCards.map((card) => (
+            <LifecycleStatCard key={card.status} {...card} />
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <Link
+          to="/orders"
+          title="Orders paid by cash/UPI on pickup or delivery"
+          className="group border-border bg-card hover:border-primary/40 rounded-xl border p-5 shadow-sm transition-all duration-150 hover:shadow-md"
+        >
+          <p className="text-muted-foreground text-sm font-medium">COD orders</p>
+          <p className="mt-1 font-serif text-2xl">{summary?.cod_orders ?? 0}</p>
+          <p className="text-muted-foreground mt-1 text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            View all orders →
+          </p>
+        </Link>
       </div>
 
       <div className="space-y-3">

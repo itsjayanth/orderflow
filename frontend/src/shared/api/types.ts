@@ -86,6 +86,18 @@ export interface OrderOut {
   items: OrderItemOut[]
 }
 
+export interface OrderSummaryOut {
+  total_orders: number
+  revenue_generated: string
+  amount_collected: string
+  cod_orders: number
+  new_orders: number
+  preparing_orders: number
+  ready_orders: number
+  completed_orders: number
+  cancelled_orders: number
+}
+
 export interface PaymentSettingsOut {
   razorpay_key_id: string | null
   razorpay_key_secret_set: boolean

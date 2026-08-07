@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { Card } from '@/components/ui/card'
 import {
@@ -18,10 +18,27 @@ import { CreateTestOrderForm } from './CreateTestOrderForm'
 import { STATUS_LABELS } from './statusTransitions'
 import { useOrders } from './useOrders'
 
-// The lifecycle tabs a restaurant owner actively monitors -- "cancelled"
-// stays out of the tab bar (still visible under "All") since it's not part
-// of the day-to-day new -> preparing -> ready -> completed flow.
-const TABS: (FulfillmentStatus | 'all')[] = ['all', 'new', 'preparing', 'ready', 'completed']
+// The full lifecycle, including "cancelled" -- a restaurant owner monitoring
+// failed/undelivered orders needs it as a first-class tab too, and it's
+// what the dashboard's "Failed" card links to.
+const TABS: (FulfillmentStatus | 'all')[] = [
+  'all',
+  'new',
+  'preparing',
+  'ready',
+  'completed',
+  'cancelled',
+]
+
+function isFulfillmentStatus(value: string | null): value is FulfillmentStatus {
+  return (
+    value === 'new' ||
+    value === 'preparing' ||
+    value === 'ready' ||
+    value === 'completed' ||
+    value === 'cancelled'
+  )
+}
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString()
@@ -43,8 +60,17 @@ function countByStatus(orders: OrderOut[] | undefined): Record<FulfillmentStatus
 }
 
 export function OrdersPage() {
-  const [tab, setTab] = useState<FulfillmentStatus | 'all'>('all')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const statusParam = searchParams.get('status')
+  const [tab, setTab] = useState<FulfillmentStatus | 'all'>(
+    isFulfillmentStatus(statusParam) ? statusParam : 'all',
+  )
   const { data: orders, isLoading } = useOrders()
+
+  function selectTab(next: FulfillmentStatus | 'all') {
+    setTab(next)
+    setSearchParams(next === 'all' ? {} : { status: next })
+  }
 
   const counts = useMemo(() => countByStatus(orders), [orders])
   const visibleOrders = useMemo(
@@ -68,7 +94,7 @@ export function OrdersPage() {
           <button
             key={status}
             type="button"
-            onClick={() => setTab(status)}
+            onClick={() => selectTab(status)}
             className={cn(
               'flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium transition-all duration-150',
               tab === status
