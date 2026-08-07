@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class MenuItemOut(BaseModel):
     menu_item_id: uuid.UUID
+    item_number: int
     category: str
     name: str
     price: Decimal

@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
@@ -16,10 +17,23 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ApiError } from '@/shared/api/client'
+import type { MenuItem } from '@/shared/api/types'
+import { formatItemNumber } from '@/shared/lib/itemNumber'
 
 import { useCreateMenuItem } from './useCreateMenuItem'
 import { useMenuItems } from './useMenuItems'
 import { useUpdateMenuItem } from './useUpdateMenuItem'
+
+function matchesSearch(item: MenuItem, query: string): boolean {
+  const q = query.trim().toLowerCase().replace(/^#/, '')
+  if (!q) return true
+  return (
+    item.name.toLowerCase().includes(q) ||
+    item.category.toLowerCase().includes(q) ||
+    String(item.item_number).includes(q) ||
+    formatItemNumber(item.item_number).toLowerCase().includes(q)
+  )
+}
 
 const addItemSchema = z.object({
   category: z.string().min(1, 'Required'),
@@ -36,6 +50,7 @@ export function CatalogPage() {
   const { data: items, isLoading } = useMenuItems()
   const createMenuItem = useCreateMenuItem()
   const updateMenuItem = useUpdateMenuItem()
+  const [search, setSearch] = useState('')
 
   const {
     register,
@@ -48,6 +63,11 @@ export function CatalogPage() {
     createMenuItem.mutate(data, { onSuccess: () => reset() })
   }
 
+  const visibleItems = useMemo(
+    () => items?.filter((item) => matchesSearch(item, search)),
+    [items, search],
+  )
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -57,10 +77,20 @@ export function CatalogPage() {
         </p>
       </div>
 
+      <Input
+        type="search"
+        placeholder="Search by item #, name, or category…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="max-w-sm"
+        aria-label="Search menu items"
+      />
+
       <Card className="overflow-hidden py-0">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Item #</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Price</TableHead>
@@ -70,20 +100,30 @@ export function CatalogPage() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={4} className="text-muted-foreground">
+                <TableCell colSpan={5} className="text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && items?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-muted-foreground">
+                <TableCell colSpan={5} className="text-muted-foreground">
                   No menu items yet. Add one below.
                 </TableCell>
               </TableRow>
             )}
-            {items?.map((item) => (
+            {!isLoading && items && items.length > 0 && visibleItems?.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-muted-foreground">
+                  No items match "{search}".
+                </TableCell>
+              </TableRow>
+            )}
+            {visibleItems?.map((item) => (
               <TableRow key={item.menu_item_id}>
+                <TableCell className="text-muted-foreground font-mono text-sm">
+                  {formatItemNumber(item.item_number)}
+                </TableCell>
                 <TableCell>{item.name}</TableCell>
                 <TableCell>{item.category}</TableCell>
                 <TableCell>{item.price}</TableCell>

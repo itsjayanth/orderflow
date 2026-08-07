@@ -50,6 +50,7 @@ export interface CustomerWithAddressesOut extends CustomerOut {
 
 export interface MenuItem {
   menu_item_id: string
+  item_number: number
   category: string
   name: string
   price: string

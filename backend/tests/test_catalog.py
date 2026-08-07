@@ -33,12 +33,48 @@ async def test_create_then_list_menu_item(client: AsyncClient) -> None:
     assert created["name"] == "Butter Chicken"
     assert created["price"] == "349.00"
     assert created["is_available"] is True
+    assert created["item_number"] == 1
 
     list_response = await client.get("/api/v1/catalog/items", headers=_auth_headers(tokens))
     assert list_response.status_code == 200
     items = list_response.json()
     assert len(items) == 1
     assert items[0]["menu_item_id"] == created["menu_item_id"]
+
+
+async def test_item_numbers_increment_sequentially_per_merchant(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    numbers = []
+    for name in ("Butter Chicken", "Naan", "Dal Makhani"):
+        response = await client.post(
+            "/api/v1/catalog/items",
+            json={"category": "Mains", "name": name, "price": "100.00"},
+            headers=_auth_headers(tokens),
+        )
+        assert response.status_code == 201, response.text
+        numbers.append(response.json()["item_number"])
+
+    assert numbers == [1, 2, 3]
+
+
+async def test_item_numbers_isolated_per_merchant(client: AsyncClient) -> None:
+    tokens_a = await _register(client, owner_contact="owner-a@example.com")
+    tokens_b = await _register(client, owner_contact="owner-b@example.com")
+
+    response_a = await client.post(
+        "/api/v1/catalog/items",
+        json={"category": "Mains", "name": "Butter Chicken", "price": "100.00"},
+        headers=_auth_headers(tokens_a),
+    )
+    response_b = await client.post(
+        "/api/v1/catalog/items",
+        json={"category": "Mains", "name": "Paneer Tikka", "price": "100.00"},
+        headers=_auth_headers(tokens_b),
+    )
+
+    assert response_a.json()["item_number"] == 1
+    assert response_b.json()["item_number"] == 1
 
 
 async def test_update_menu_item(client: AsyncClient) -> None:

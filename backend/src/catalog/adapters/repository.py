@@ -2,15 +2,36 @@ import uuid
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.domain.models import MenuItem
+from catalog.domain.models import MenuItem, MerchantMenuItemCounter
 from shared.tenant import TenantContext
 
 
 class MenuItemRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def _next_item_number(self, merchant_id: uuid.UUID) -> int:
+        """Atomic per-merchant counter upsert -- see
+        orders/adapters/repository.py's `_next_order_number` for the exact
+        same pattern and why it's safe under concurrent creation."""
+        stmt = (
+            pg_insert(MerchantMenuItemCounter)
+            .values(merchant_id=merchant_id, next_item_number=2)
+            .on_conflict_do_update(
+                index_elements=[MerchantMenuItemCounter.merchant_id],
+                set_={
+                    "next_item_number": (
+                        MerchantMenuItemCounter.__table__.c.next_item_number + 1
+                    )
+                },
+            )
+            .returning(MerchantMenuItemCounter.next_item_number)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one() - 1
 
     async def list(
         self, tenant: TenantContext, include_unavailable: bool = True
@@ -24,8 +45,13 @@ class MenuItemRepository:
     async def create(
         self, tenant: TenantContext, category: str, name: str, price: Decimal
     ) -> MenuItem:
+        item_number = await self._next_item_number(tenant.merchant_id)
         menu_item = MenuItem(
-            merchant_id=tenant.merchant_id, category=category, name=name, price=price
+            merchant_id=tenant.merchant_id,
+            item_number=item_number,
+            category=category,
+            name=name,
+            price=price,
         )
         self._session.add(menu_item)
         await self._session.flush()
