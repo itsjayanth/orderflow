@@ -55,6 +55,13 @@ class GraphApiWhatsAppSender:
                     "WhatsApp send failed (status=%s): %s", response.status_code, response.text
                 )
                 return False
+            # A 200 only means Meta accepted the request -- it still echoes
+            # back the phone number it actually resolved the recipient to
+            # (contacts[].wa_id/input), which is worth logging since a
+            # mismatch there (wrong number typed at checkout, formatting
+            # difference from the number the customer messages from) is a
+            # silent, non-erroring delivery failure otherwise invisible here.
+            logger.info("WhatsApp send accepted: %s", response.text)
             return True
         except httpx.HTTPError as exc:
             logger.warning("WhatsApp send failed: %s", exc)
