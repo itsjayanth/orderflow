@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -155,5 +155,36 @@ describe('DashboardHomePage', () => {
         "No orders yet -- they'll show up here the moment a customer checks out.",
       ),
     ).toBeInTheDocument()
+  })
+
+  it('re-fetches the summary and order list with date-range params when a preset is selected', async () => {
+    mockRoutes({})
+
+    renderPage()
+
+    await screen.findByText('Welcome back, Test Kitchen')
+    mockedApiFetch.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }))
+
+    await waitFor(() => {
+      const summaryCall = mockedApiFetch.mock.calls.find(([path]) =>
+        (path as string).startsWith('/api/v1/orders/summary'),
+      )
+      expect(summaryCall).toBeDefined()
+      const [summaryPath] = summaryCall as [string]
+      expect(summaryPath).toContain('from_date=')
+      expect(summaryPath).toContain('to_date=')
+
+      const ordersCall = mockedApiFetch.mock.calls.find(
+        ([path]) =>
+          (path as string).startsWith('/api/v1/orders') &&
+          !(path as string).startsWith('/api/v1/orders/summary'),
+      )
+      expect(ordersCall).toBeDefined()
+      const [ordersPath] = ordersCall as [string]
+      expect(ordersPath).toContain('from_date=')
+      expect(ordersPath).toContain('to_date=')
+    })
   })
 })

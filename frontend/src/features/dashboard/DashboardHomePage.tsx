@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,7 @@ import { useOnboardingStatus } from '@/features/onboarding/useOnboarding'
 import { useOrderSummary } from '@/features/orders/useOrderSummary'
 import { useOrders } from '@/features/orders/useOrders'
 import type { FulfillmentStatus } from '@/shared/api/types'
+import { DateRangeFilter, type DateRangeValue } from '@/shared/components/DateRangeFilter'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
@@ -19,6 +21,13 @@ function formatCurrency(value: string | undefined, currency = 'INR'): string {
   }).format(amount)
   return `${currency} ${formatted}`
 }
+
+// One consistent numeric scale used everywhere on the page -- the hero
+// revenue figure is the largest step up from this base, everything else
+// (lifecycle cards, COD card) shares it, rather than each card picking its
+// own size/weight ad hoc.
+const STAT_NUMBER_CLASS = 'font-serif font-bold tabular-nums tracking-tight text-foreground'
+const STAT_LABEL_CLASS = 'text-muted-foreground text-xs font-semibold tracking-wide uppercase'
 
 type LifecycleCard = {
   label: string
@@ -35,10 +44,10 @@ function LifecycleStatCard({ label, status, count, hint }: LifecycleCard) {
       className="group border-border bg-card hover:border-primary/40 relative overflow-hidden rounded-xl border p-5 shadow-sm transition-all duration-150 hover:shadow-md"
     >
       <div className="flex items-start justify-between">
-        <p className="text-muted-foreground text-sm font-medium">{label}</p>
+        <p className={STAT_LABEL_CLASS}>{label}</p>
         <StatusBadge status={status} />
       </div>
-      <p className="mt-3 font-serif text-3xl">{count}</p>
+      <p className={`${STAT_NUMBER_CLASS} mt-3 text-4xl`}>{count}</p>
       <p className="text-muted-foreground mt-2 text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100">
         {hint} · View orders →
       </p>
@@ -59,8 +68,9 @@ function isToday(isoDate: string): boolean {
 export function DashboardHomePage() {
   const me = useMe()
   const onboarding = useOnboardingStatus()
-  const { data: orders, isLoading } = useOrders()
-  const { data: summary } = useOrderSummary()
+  const [range, setRange] = useState<DateRangeValue>({})
+  const { data: orders, isLoading } = useOrders(range)
+  const { data: summary } = useOrderSummary(range)
 
   const todaysOrders = orders?.filter((o) => isToday(o.placed_at)) ?? []
   const recentOrders = [...(orders ?? [])]
@@ -104,11 +114,14 @@ export function DashboardHomePage() {
 
   return (
     <div className="space-y-8">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">
-          {businessName ? `Welcome back, ${businessName}` : 'Dashboard'}
-        </h1>
-        <p className="text-muted-foreground text-sm">Here's what's happening today.</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold">
+            {businessName ? `Welcome back, ${businessName}` : 'Dashboard'}
+          </h1>
+          <p className="text-muted-foreground text-sm">Here's what's happening today.</p>
+        </div>
+        <DateRangeFilter value={range} onChange={setRange} />
       </div>
 
       {onboarding.data && onboarding.data.onboarding_status !== 'live' && (
@@ -131,10 +144,8 @@ export function DashboardHomePage() {
       <div className="from-brand-gold/15 via-brand-gold/5 border-brand-gold/30 relative overflow-hidden rounded-2xl border bg-gradient-to-br to-transparent p-8 shadow-sm">
         <div className="grid gap-8 sm:grid-cols-[2fr_1fr]">
           <div>
-            <p className="text-muted-foreground text-sm font-medium tracking-wide uppercase">
-              Total revenue generated
-            </p>
-            <p className="font-serif text-5xl font-semibold tracking-tight">
+            <p className={STAT_LABEL_CLASS}>Total revenue generated</p>
+            <p className={`${STAT_NUMBER_CLASS} text-primary mt-1 text-6xl sm:text-7xl`}>
               {formatCurrency(summary?.revenue_generated)}
             </p>
             <p className="text-muted-foreground mt-2 text-sm">
@@ -142,12 +153,12 @@ export function DashboardHomePage() {
             </p>
           </div>
           <div className="border-border/60 flex flex-col justify-center gap-1 border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
-            <p className="text-muted-foreground text-sm font-medium">Amount collected</p>
-            <p className="font-serif text-2xl font-semibold">
+            <p className={STAT_LABEL_CLASS}>Amount collected</p>
+            <p className={`${STAT_NUMBER_CLASS} text-3xl`}>
               {formatCurrency(summary?.amount_collected)}
             </p>
-            <p className="text-muted-foreground mt-3 text-sm font-medium">Today's orders</p>
-            <p className="font-serif text-2xl font-semibold">{todaysOrders.length}</p>
+            <p className={`${STAT_LABEL_CLASS} mt-3`}>Today's orders</p>
+            <p className={`${STAT_NUMBER_CLASS} text-3xl`}>{todaysOrders.length}</p>
           </div>
         </div>
       </div>
@@ -167,9 +178,9 @@ export function DashboardHomePage() {
           title="Orders paid by cash/UPI on pickup or delivery"
           className="group border-border bg-card hover:border-primary/40 rounded-xl border p-5 shadow-sm transition-all duration-150 hover:shadow-md"
         >
-          <p className="text-muted-foreground text-sm font-medium">COD orders</p>
-          <p className="mt-1 font-serif text-2xl">{summary?.cod_orders ?? 0}</p>
-          <p className="text-muted-foreground mt-1 text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <p className={STAT_LABEL_CLASS}>COD orders</p>
+          <p className={`${STAT_NUMBER_CLASS} mt-3 text-4xl`}>{summary?.cod_orders ?? 0}</p>
+          <p className="text-muted-foreground mt-2 text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100">
             View all orders →
           </p>
         </Link>

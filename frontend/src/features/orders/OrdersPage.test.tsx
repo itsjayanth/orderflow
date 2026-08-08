@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -47,7 +47,7 @@ const sampleOrder: OrderOut = {
   ],
 }
 
-function renderPage(orders: OrderOut[]) {
+function renderPage(orders: OrderOut[], initialEntries: string[] = ['/orders']) {
   // CreateTestOrderForm also queries the catalog; route each call by path
   // rather than relying on call order, since both fire on mount.
   mockedApiFetch.mockImplementation((path: string) => {
@@ -61,7 +61,7 @@ function renderPage(orders: OrderOut[]) {
   })
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <OrdersPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -94,5 +94,49 @@ describe('OrdersPage', () => {
     renderPage([])
 
     expect(await screen.findByText('No orders yet.')).toBeInTheDocument()
+  })
+
+  it('re-fetches orders with date-range params when a preset is selected', async () => {
+    renderPage([sampleOrder])
+
+    await screen.findByText('INR 349.00')
+    mockedApiFetch.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last 30 days' }))
+
+    await waitFor(() => {
+      const ordersCall = mockedApiFetch.mock.calls.find(([path]) =>
+        (path as string).startsWith('/api/v1/orders?'),
+      )
+      expect(ordersCall).toBeDefined()
+      const [ordersPath] = ordersCall as [string]
+      expect(ordersPath).toContain('from_date=')
+      expect(ordersPath).toContain('to_date=')
+    })
+  })
+
+  it('combines the date-range filter with the existing status filter in the URL', async () => {
+    // sampleOrder is "new", so under the "preparing" tab the table renders
+    // its empty state -- wait on that instead of the order row.
+    renderPage([sampleOrder], ['/orders?status=preparing'])
+
+    await screen.findByText('No preparing orders.')
+    mockedApiFetch.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+
+    await waitFor(() => {
+      const ordersCall = mockedApiFetch.mock.calls.find(([path]) =>
+        (path as string).startsWith('/api/v1/orders?'),
+      )
+      expect(ordersCall).toBeDefined()
+      const [ordersPath] = ordersCall as [string]
+      expect(ordersPath).toContain('from_date=')
+      expect(ordersPath).toContain('to_date=')
+    })
+
+    // The status tab (URL-driven, filtered client-side) is untouched by
+    // picking a date preset -- both filters compose independently.
+    expect(screen.getByRole('button', { name: /Preparing/ })).toHaveClass('border-primary')
   })
 })

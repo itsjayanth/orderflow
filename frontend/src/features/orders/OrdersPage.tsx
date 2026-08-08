@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import type { FulfillmentStatus, OrderOut } from '@/shared/api/types'
+import { DateRangeFilter, type DateRangeValue } from '@/shared/components/DateRangeFilter'
 import { StatusBadge } from '@/shared/components/StatusBadge'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
@@ -67,11 +68,30 @@ export function OrdersPage() {
   const [tab, setTab] = useState<FulfillmentStatus | 'all'>(
     isFulfillmentStatus(statusParam) ? statusParam : 'all',
   )
-  const { data: orders, isLoading } = useOrders()
+  // Date range lives in URL search params the same way `?status=` already
+  // does -- a normal, bookmarkable/shareable query-string convention, not
+  // special-cased local state.
+  const range: DateRangeValue = {
+    from_date: searchParams.get('from_date') ?? undefined,
+    to_date: searchParams.get('to_date') ?? undefined,
+  }
+  const { data: orders, isLoading } = useOrders(range)
 
   function selectTab(next: FulfillmentStatus | 'all') {
     setTab(next)
-    setSearchParams(next === 'all' ? {} : { status: next })
+    const params = new URLSearchParams(searchParams)
+    if (next === 'all') params.delete('status')
+    else params.set('status', next)
+    setSearchParams(params)
+  }
+
+  function selectRange(next: DateRangeValue) {
+    const params = new URLSearchParams(searchParams)
+    if (next.from_date) params.set('from_date', next.from_date)
+    else params.delete('from_date')
+    if (next.to_date) params.set('to_date', next.to_date)
+    else params.delete('to_date')
+    setSearchParams(params)
   }
 
   const counts = useMemo(() => countByStatus(orders), [orders])
@@ -82,11 +102,14 @@ export function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Orders</h1>
-        <p className="text-muted-foreground text-sm">
-          Updates automatically as new orders come in.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold">Orders</h1>
+          <p className="text-muted-foreground text-sm">
+            Updates automatically as new orders come in.
+          </p>
+        </div>
+        <DateRangeFilter value={range} onChange={selectRange} />
       </div>
 
       <CreateTestOrderForm />

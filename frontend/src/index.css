@@ -1,5 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* Fraunces -- a warm, editorial display serif (wide optical-size + weight
+   range) for headings and large numeric displays, replacing the generic
+   browser default serif. Chosen over something like Playfair for its
+   "soft-serif" warmth that reads more artisanal-restaurant than
+   luxury-fashion, and because its optical sizing axis gets progressively
+   bolder/more characterful at display sizes -- exactly where the hero
+   revenue figure needs to pop. */
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -58,6 +66,10 @@
 }
 
 @theme inline {
+  /* Wired into Tailwind's `font-serif` utility -- every existing use
+     (h1/h2/h3, and the dashboard's stat numbers) picks up the premium
+     display font automatically, with no per-element font-family styles. */
+  --font-serif: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
