@@ -24,7 +24,12 @@ async def test_create_then_list_menu_item(client: AsyncClient) -> None:
 
     create_response = await client.post(
         "/api/v1/catalog/items",
-        json={"category": "Mains", "name": "Butter Chicken", "price": "349.00"},
+        json={
+            "category": "Mains",
+            "name": "Butter Chicken",
+            "price": "349.00",
+            "image_url": "https://example.com/butter-chicken.jpg",
+        },
         headers=_auth_headers(tokens),
     )
     assert create_response.status_code == 201, create_response.text
@@ -34,12 +39,26 @@ async def test_create_then_list_menu_item(client: AsyncClient) -> None:
     assert created["price"] == "349.00"
     assert created["is_available"] is True
     assert created["item_number"] == 1
+    assert created["image_url"] == "https://example.com/butter-chicken.jpg"
 
     list_response = await client.get("/api/v1/catalog/items", headers=_auth_headers(tokens))
     assert list_response.status_code == 200
     items = list_response.json()
     assert len(items) == 1
     assert items[0]["menu_item_id"] == created["menu_item_id"]
+    assert items[0]["image_url"] == "https://example.com/butter-chicken.jpg"
+
+
+async def test_create_menu_item_without_image_url_defaults_to_none(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    create_response = await client.post(
+        "/api/v1/catalog/items",
+        json={"category": "Mains", "name": "Butter Chicken", "price": "349.00"},
+        headers=_auth_headers(tokens),
+    )
+    assert create_response.status_code == 201, create_response.text
+    assert create_response.json()["image_url"] is None
 
 
 async def test_item_numbers_increment_sequentially_per_merchant(client: AsyncClient) -> None:
@@ -89,7 +108,11 @@ async def test_update_menu_item(client: AsyncClient) -> None:
 
     update_response = await client.patch(
         f"/api/v1/catalog/items/{menu_item_id}",
-        json={"is_available": False, "price": "399.00"},
+        json={
+            "is_available": False,
+            "price": "399.00",
+            "image_url": "https://example.com/butter-chicken.jpg",
+        },
         headers=_auth_headers(tokens),
     )
     assert update_response.status_code == 200, update_response.text
@@ -97,6 +120,7 @@ async def test_update_menu_item(client: AsyncClient) -> None:
     assert updated["is_available"] is False
     assert updated["price"] == "399.00"
     assert updated["name"] == "Butter Chicken"
+    assert updated["image_url"] == "https://example.com/butter-chicken.jpg"
 
 
 async def test_update_nonexistent_menu_item_returns_404(client: AsyncClient) -> None:

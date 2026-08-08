@@ -12,6 +12,7 @@ interface UpdateMenuItemInput {
   name?: string
   price?: string
   is_available?: boolean
+  image_url?: string
 }
 
 export function useUpdateMenuItem() {

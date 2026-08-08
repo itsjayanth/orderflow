@@ -32,6 +32,7 @@ const sampleMenu: PublicMenuOut = {
       category: 'Mains',
       name: 'Butter Chicken',
       price: '349.00',
+      image_url: 'https://example.com/butter-chicken.jpg',
     },
   ],
   merchant_whatsapp_number: '+91 90000 00000',
@@ -45,12 +46,14 @@ const multiCategoryMenu: PublicMenuOut = {
       category: 'Mains',
       name: 'Butter Chicken',
       price: '349.00',
+      image_url: null,
     },
     {
       menu_item_id: '44444444-4444-4444-4444-444444444444',
       category: 'Desserts',
       name: 'Gulab Jamun',
       price: '99.00',
+      image_url: null,
     },
   ],
   merchant_whatsapp_number: '+91 90000 00000',
@@ -83,6 +86,30 @@ describe('OrderingPage', () => {
 
     expect(await screen.findByText('Test Kitchen')).toBeInTheDocument()
     expect(screen.getByText('Butter Chicken')).toBeInTheDocument()
+  })
+
+  it('shows the item photo when image_url is set', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    expect(screen.getByRole('img', { name: 'Butter Chicken' })).toHaveAttribute(
+      'src',
+      'https://example.com/butter-chicken.jpg',
+    )
+  })
+
+  it('falls back to an initial-letter tile when image_url is not set', async () => {
+    mockedApiFetch.mockResolvedValueOnce(multiCategoryMenu)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    // Neither item in multiCategoryMenu has image_url set -- falls back to
+    // an initial-letter tile rather than a broken <img>.
+    expect(screen.queryByRole('img', { name: 'Butter Chicken' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Gulab Jamun' })).not.toBeInTheDocument()
   })
 
   it('shows a not-found message for an unknown restaurant', async () => {

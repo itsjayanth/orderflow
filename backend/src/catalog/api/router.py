@@ -21,7 +21,7 @@ async def create_item(
     body: MenuItemCreate, tenant: CurrentTenant, session: DbSession
 ) -> MenuItemOut:
     item = await MenuItemRepository(session).create(
-        tenant, category=body.category, name=body.name, price=body.price
+        tenant, category=body.category, name=body.name, price=body.price, image_url=body.image_url
     )
     # A new item is available by default, so this is the most common way the
     # onboarding catalog_ready gate (ARCHITECTURE.md Section 5) gets met.

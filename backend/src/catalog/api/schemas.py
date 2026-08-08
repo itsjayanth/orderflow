@@ -12,6 +12,7 @@ class MenuItemOut(BaseModel):
     name: str
     price: Decimal
     is_available: bool
+    image_url: str | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
@@ -22,6 +23,7 @@ class MenuItemCreate(BaseModel):
     category: str = Field(min_length=1)
     name: str = Field(min_length=1)
     price: Decimal = Field(gt=0)
+    image_url: str | None = Field(default=None, max_length=2048)
 
 
 class MenuItemUpdate(BaseModel):
@@ -29,3 +31,4 @@ class MenuItemUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     price: Decimal | None = Field(default=None, gt=0)
     is_available: bool | None = None
+    image_url: str | None = Field(default=None, max_length=2048)

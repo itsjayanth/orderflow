@@ -10,6 +10,7 @@ interface CreateMenuItemInput {
   category: string
   name: string
   price: string
+  image_url?: string
 }
 
 export function useCreateMenuItem() {

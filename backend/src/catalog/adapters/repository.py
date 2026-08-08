@@ -43,7 +43,12 @@ class MenuItemRepository:
         return list(result.scalars().all())
 
     async def create(
-        self, tenant: TenantContext, category: str, name: str, price: Decimal
+        self,
+        tenant: TenantContext,
+        category: str,
+        name: str,
+        price: Decimal,
+        image_url: str | None = None,
     ) -> MenuItem:
         item_number = await self._next_item_number(tenant.merchant_id)
         menu_item = MenuItem(
@@ -52,6 +57,7 @@ class MenuItemRepository:
             category=category,
             name=name,
             price=price,
+            image_url=image_url,
         )
         self._session.add(menu_item)
         await self._session.flush()
@@ -72,6 +78,7 @@ class MenuItemRepository:
         name: str | None = None,
         price: Decimal | None = None,
         is_available: bool | None = None,
+        image_url: str | None = None,
     ) -> MenuItem | None:
         menu_item = await self.get(tenant, menu_item_id)
         if menu_item is None:
@@ -85,6 +92,8 @@ class MenuItemRepository:
             menu_item.price = price
         if is_available is not None:
             menu_item.is_available = is_available
+        if image_url is not None:
+            menu_item.image_url = image_url
 
         await self._session.flush()
         return menu_item
