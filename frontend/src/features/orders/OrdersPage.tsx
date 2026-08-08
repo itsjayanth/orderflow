@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils'
 import type { FulfillmentStatus, OrderOut } from '@/shared/api/types'
 import { DateRangeFilter, type DateRangeValue } from '@/shared/components/DateRangeFilter'
 import { StatusBadge } from '@/shared/components/StatusBadge'
+import { formatCustomerNumber } from '@/shared/lib/customerNumber'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
@@ -47,6 +49,17 @@ function formatDateTime(value: string): string {
   return new Date(value).toLocaleString()
 }
 
+function matchesSearch(order: OrderOut, query: string): boolean {
+  const q = query.trim().toLowerCase().replace(/^#/, '')
+  if (!q) return true
+  return (
+    String(order.order_number).includes(q) ||
+    formatOrderNumber(order.order_number).toLowerCase().includes(q) ||
+    String(order.customer_number).includes(q) ||
+    formatCustomerNumber(order.customer_number).toLowerCase().includes(q)
+  )
+}
+
 function countByStatus(orders: OrderOut[] | undefined): Record<FulfillmentStatus | 'all', number> {
   const counts: Record<FulfillmentStatus | 'all', number> = {
     all: orders?.length ?? 0,
@@ -76,6 +89,7 @@ export function OrdersPage() {
     to_date: searchParams.get('to_date') ?? undefined,
   }
   const { data: orders, isLoading } = useOrders(range)
+  const [search, setSearch] = useState('')
 
   function selectTab(next: FulfillmentStatus | 'all') {
     setTab(next)
@@ -96,9 +110,13 @@ export function OrdersPage() {
 
   const counts = useMemo(() => countByStatus(orders), [orders])
   const visibleOrders = useMemo(
-    () => (tab === 'all' ? orders : orders?.filter((order) => order.fulfillment_status === tab)),
-    [orders, tab],
+    () =>
+      orders
+        ?.filter((order) => tab === 'all' || order.fulfillment_status === tab)
+        .filter((order) => matchesSearch(order, search)),
+    [orders, tab, search],
   )
+  const isSearching = search.trim() !== ''
 
   return (
     <div className="space-y-6">
@@ -113,6 +131,15 @@ export function OrdersPage() {
       </div>
 
       <CreateTestOrderForm />
+
+      <Input
+        type="search"
+        placeholder="Search by order ID or customer ID…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="max-w-sm"
+        aria-label="Search orders"
+      />
 
       <div className="border-border flex flex-wrap gap-1 border-b">
         {TABS.map((status) => (
@@ -164,9 +191,11 @@ export function OrdersPage() {
             {!isLoading && visibleOrders?.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="text-muted-foreground">
-                  {tab === 'all'
-                    ? 'No orders yet.'
-                    : `No ${STATUS_LABELS[tab].toLowerCase()} orders.`}
+                  {isSearching
+                    ? `No orders match "${search}".`
+                    : tab === 'all'
+                      ? 'No orders yet.'
+                      : `No ${STATUS_LABELS[tab].toLowerCase()} orders.`}
                 </TableCell>
               </TableRow>
             )}
@@ -184,11 +213,12 @@ export function OrdersPage() {
                   <p className="font-medium">
                     {order.customer_name ?? formatPhoneNumber(order.customer_whatsapp_number)}
                   </p>
-                  {order.customer_name && (
-                    <p className="text-muted-foreground text-xs">
-                      {formatPhoneNumber(order.customer_whatsapp_number)}
-                    </p>
-                  )}
+                  <p className="text-muted-foreground flex gap-1.5 text-xs">
+                    <span>{formatCustomerNumber(order.customer_number)}</span>
+                    {order.customer_name && (
+                      <span>{formatPhoneNumber(order.customer_whatsapp_number)}</span>
+                    )}
+                  </p>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatDateTime(order.placed_at)}

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import type { CustomerOut } from '@/shared/api/types'
+import { formatCustomerNumber } from '@/shared/lib/customerNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
 import { useCustomers } from './useCustomers'
@@ -31,10 +32,13 @@ function isTimelineFilter(value: string | null): value is TimelineFilter {
 }
 
 function matchesSearch(customer: CustomerOut, query: string): boolean {
-  const q = query.trim().toLowerCase()
+  const q = query.trim().toLowerCase().replace(/^#/, '')
   if (!q) return true
 
   const nameMatch = customer.display_name?.toLowerCase().includes(q) ?? false
+  const idMatch =
+    String(customer.customer_number).includes(q) ||
+    formatCustomerNumber(customer.customer_number).toLowerCase().includes(q)
 
   // Strip non-digits so "98765", "+91 98765", and "9876543210" all match
   // against the raw stored number the same way CatalogPage strips a
@@ -43,7 +47,7 @@ function matchesSearch(customer: CustomerOut, query: string): boolean {
   const phoneMatch =
     digitsQuery.length > 0 && customer.whatsapp_number.replace(/\D/g, '').includes(digitsQuery)
 
-  return nameMatch || phoneMatch
+  return nameMatch || idMatch || phoneMatch
 }
 
 function matchesTimeline(customer: CustomerOut, filter: TimelineFilter, now: Date): boolean {
@@ -103,7 +107,7 @@ export function CustomersPage() {
             <div className="flex flex-wrap items-center gap-3">
               <Input
                 type="search"
-                placeholder="Search by name or phone…"
+                placeholder="Search by customer ID, name, or phone…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="max-w-sm"
@@ -130,6 +134,7 @@ export function CustomersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Customer ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Last order</TableHead>
@@ -138,13 +143,13 @@ export function CustomersPage() {
               <TableBody>
                 {customers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-muted-foreground text-center">
+                    <TableCell colSpan={4} className="text-muted-foreground text-center">
                       No customers yet.
                     </TableCell>
                   </TableRow>
                 ) : visibleCustomers?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-muted-foreground text-center">
+                    <TableCell colSpan={4} className="text-muted-foreground text-center">
                       {isFiltering
                         ? 'No customers match your search or filter.'
                         : 'No customers yet.'}
@@ -153,6 +158,9 @@ export function CustomersPage() {
                 ) : (
                   visibleCustomers?.map((customer) => (
                     <TableRow key={customer.customer_id}>
+                      <TableCell className="text-muted-foreground font-mono text-sm">
+                        {formatCustomerNumber(customer.customer_number)}
+                      </TableCell>
                       <TableCell>
                         {customer.display_name ?? formatPhoneNumber(customer.whatsapp_number)}
                       </TableCell>

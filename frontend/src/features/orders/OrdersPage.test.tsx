@@ -22,6 +22,7 @@ const sampleOrder: OrderOut = {
   order_id: '11111111-1111-1111-1111-111111111111',
   order_number: 7,
   customer_id: '22222222-2222-2222-2222-222222222222',
+  customer_number: 3,
   customer_name: 'Asha Rao',
   customer_whatsapp_number: '919876543210',
   order_type: 'pickup',
@@ -88,6 +89,27 @@ describe('OrdersPage', () => {
 
     expect(await screen.findByText('INR 349.00')).toBeInTheDocument()
     expect(screen.getByText('+91 98765 43210')).toBeInTheDocument()
+  })
+
+  it('filters by order ID or customer ID via the search input', async () => {
+    const otherOrder: OrderOut = {
+      ...sampleOrder,
+      order_id: '99999999-9999-9999-9999-999999999999',
+      order_number: 12,
+      customer_number: 9,
+      customer_name: 'Ravi Kumar',
+    }
+    renderPage([sampleOrder, otherOrder])
+    await screen.findByText('Asha Rao')
+    expect(screen.getByText('Ravi Kumar')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Search orders'), { target: { value: '#0007' } })
+    expect(screen.getByText('Asha Rao')).toBeInTheDocument()
+    expect(screen.queryByText('Ravi Kumar')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Search orders'), { target: { value: '#0009' } })
+    expect(screen.queryByText('Asha Rao')).not.toBeInTheDocument()
+    expect(screen.getByText('Ravi Kumar')).toBeInTheDocument()
   })
 
   it('shows an empty state when there are no orders', async () => {

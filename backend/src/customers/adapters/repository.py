@@ -1,15 +1,36 @@
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from customers.domain.models import Address, Customer
+from customers.domain.models import Address, Customer, MerchantCustomerCounter
 from shared.tenant import TenantContext
 
 
 class CustomerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def _next_customer_number(self, merchant_id: uuid.UUID) -> int:
+        """Atomic per-merchant counter upsert -- see
+        orders/adapters/repository.py's `_next_order_number` for the exact
+        same pattern and why it's safe under concurrent creation."""
+        stmt = (
+            pg_insert(MerchantCustomerCounter)
+            .values(merchant_id=merchant_id, next_customer_number=2)
+            .on_conflict_do_update(
+                index_elements=[MerchantCustomerCounter.merchant_id],
+                set_={
+                    "next_customer_number": (
+                        MerchantCustomerCounter.__table__.c.next_customer_number + 1
+                    )
+                },
+            )
+            .returning(MerchantCustomerCounter.next_customer_number)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one() - 1
 
     async def find_or_create(
         self,
@@ -24,8 +45,10 @@ class CustomerRepository:
         if existing is not None:
             return existing
 
+        customer_number = await self._next_customer_number(tenant.merchant_id)
         customer = Customer(
             merchant_id=tenant.merchant_id,
+            customer_number=customer_number,
             whatsapp_number=whatsapp_number,
             display_name=display_name,
         )

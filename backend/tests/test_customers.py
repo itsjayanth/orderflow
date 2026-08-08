@@ -66,6 +66,33 @@ async def test_find_or_create_idempotent(db_session: AsyncSession) -> None:
     assert len(rows) == 1
 
 
+async def test_customer_numbers_increment_sequentially_per_merchant(
+    db_session: AsyncSession,
+) -> None:
+    tenant = await _make_tenant(db_session)
+    repo = CustomerRepository(db_session)
+
+    first = await repo.find_or_create(tenant, "+919876543210", display_name="Asha")
+    second = await repo.find_or_create(tenant, "+919876543211", display_name="Priya")
+    third = await repo.find_or_create(tenant, "+919876543212", display_name="Vikram")
+
+    assert [first.customer_number, second.customer_number, third.customer_number] == [1, 2, 3]
+
+
+async def test_customer_numbers_isolated_per_merchant(db_session: AsyncSession) -> None:
+    tenant_a = await _make_tenant(db_session, business_name="Kitchen A")
+    tenant_b = await _make_tenant(db_session, business_name="Kitchen B")
+    repo = CustomerRepository(db_session)
+
+    customer_a1 = await repo.find_or_create(tenant_a, "+919876543210")
+    customer_b1 = await repo.find_or_create(tenant_b, "+919876543210")
+    customer_a2 = await repo.find_or_create(tenant_a, "+919876543211")
+
+    assert customer_a1.customer_number == 1
+    assert customer_b1.customer_number == 1
+    assert customer_a2.customer_number == 2
+
+
 async def test_find_or_create_different_merchants_get_different_customers(
     db_session: AsyncSession,
 ) -> None:
@@ -154,6 +181,7 @@ async def test_list_customers_returns_seeded_customer(
     assert len(body) == 1
     assert body[0]["display_name"] == "Asha"
     assert body[0]["whatsapp_number"] == "+919876543210"
+    assert body[0]["customer_number"] == 1
 
 
 async def test_get_customer_detail_includes_addresses(

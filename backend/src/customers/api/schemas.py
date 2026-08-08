@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class CustomerOut(BaseModel):
     customer_id: uuid.UUID
+    customer_number: int
     whatsapp_number: str
     display_name: str | None
     first_seen_at: datetime.datetime

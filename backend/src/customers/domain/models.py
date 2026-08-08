@@ -7,14 +7,34 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from shared.db import Base
 
 
+class MerchantCustomerCounter(Base):
+    """One row per merchant, tracking the next customer_number to hand out
+    -- same pattern as orders/domain/models.py's MerchantOrderCounter and
+    catalog/domain/models.py's MerchantMenuItemCounter (see either for why
+    a dedicated counter table beats MAX()+1 or a Postgres SEQUENCE here)."""
+
+    __tablename__ = "merchant_customer_counters"
+
+    merchant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("merchants.merchant_id"), primary_key=True
+    )
+    next_customer_number: Mapped[int] = mapped_column(default=1)
+
+
 class Customer(Base):
     __tablename__ = "customers"
     __table_args__ = (
         UniqueConstraint("merchant_id", "whatsapp_number", name="uq_customers_merchant_whatsapp"),
+        UniqueConstraint("merchant_id", "customer_number", name="uq_customers_merchant_number"),
     )
 
     customer_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
+    # Human-facing sequential reference (per merchant, starts at 1, never
+    # reused/reset) -- same role order_number/item_number play for orders
+    # and menu items. Shown in the dashboard, orders, and customers UI, and
+    # usable as a search filter, instead of the raw customer_id UUID.
+    customer_number: Mapped[int] = mapped_column()
     whatsapp_number: Mapped[str] = mapped_column(String(32))
     display_name: Mapped[str | None] = mapped_column(String(255), default=None)
     first_seen_at: Mapped[datetime.datetime] = mapped_column(

@@ -23,6 +23,7 @@ function daysAgo(days: number): string {
 const customers: CustomerOut[] = [
   {
     customer_id: 'c1',
+    customer_number: 1,
     whatsapp_number: '+919876543210',
     display_name: 'Asha',
     first_seen_at: daysAgo(10),
@@ -30,6 +31,7 @@ const customers: CustomerOut[] = [
   },
   {
     customer_id: 'c2',
+    customer_number: 2,
     whatsapp_number: '+919876543211',
     display_name: null,
     first_seen_at: daysAgo(9),
@@ -37,6 +39,7 @@ const customers: CustomerOut[] = [
   },
   {
     customer_id: 'c3',
+    customer_number: 3,
     whatsapp_number: '+919812340000',
     display_name: 'Ravi Kumar',
     first_seen_at: daysAgo(90),
@@ -107,6 +110,18 @@ describe('CustomersPage', () => {
     // the name-column fallback, once in the phone column.
     expect(screen.getAllByText('+91 98765 43211')).toHaveLength(2)
     expect(screen.queryByText('Ravi Kumar')).not.toBeInTheDocument()
+  })
+
+  it('filters by customer ID via the search input', async () => {
+    apiFetchMock.mockResolvedValueOnce(customers)
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    fireEvent.change(screen.getByLabelText('Search customers'), { target: { value: '#0003' } })
+
+    expect(screen.getByText('Ravi Kumar')).toBeInTheDocument()
+    expect(screen.queryByText('Asha')).not.toBeInTheDocument()
   })
 
   it('filters by the last-7-days timeline preset', async () => {

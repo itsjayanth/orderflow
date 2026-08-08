@@ -198,6 +198,7 @@ async def test_list_orders_returns_seeded_order(
     assert body[0]["fulfillment_status"] == "new"
     assert body[0]["customer_name"] == "Asha Rao"
     assert body[0]["customer_whatsapp_number"] == "+919876543210"
+    assert body[0]["customer_number"] == 1
 
 
 async def test_list_orders_customer_name_null_when_no_display_name_set(

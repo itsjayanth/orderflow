@@ -55,16 +55,6 @@ function LifecycleStatCard({ label, status, count, hint }: LifecycleCard) {
   )
 }
 
-function isToday(isoDate: string): boolean {
-  const date = new Date(isoDate)
-  const now = new Date()
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  )
-}
-
 export function DashboardHomePage() {
   const me = useMe()
   const onboarding = useOnboardingStatus()
@@ -72,7 +62,6 @@ export function DashboardHomePage() {
   const { data: orders, isLoading } = useOrders(range)
   const { data: summary } = useOrderSummary(range)
 
-  const todaysOrders = orders?.filter((o) => isToday(o.placed_at)) ?? []
   const recentOrders = [...(orders ?? [])]
     .sort((a, b) => new Date(b.placed_at).getTime() - new Date(a.placed_at).getTime())
     .slice(0, 5)
@@ -140,25 +129,21 @@ export function DashboardHomePage() {
       )}
 
       {/* Hero revenue card -- the number the owner actually cares about,
-          given more visual weight than any operational stat below it. */}
+          given more visual weight than any operational stat below it.
+          Deliberately just these two figures -- amount collected (a
+          narrower, payment-status-gated subset of revenue) was cut per
+          product feedback as one number too many here. */}
       <div className="from-brand-gold/15 via-brand-gold/5 border-brand-gold/30 relative overflow-hidden rounded-2xl border bg-gradient-to-br to-transparent p-8 shadow-sm">
         <div className="grid gap-8 sm:grid-cols-[2fr_1fr]">
           <div>
-            <p className={STAT_LABEL_CLASS}>Total revenue generated</p>
+            <p className={STAT_LABEL_CLASS}>Total revenue made</p>
             <p className={`${STAT_NUMBER_CLASS} text-primary mt-1 text-6xl sm:text-7xl`}>
               {formatCurrency(summary?.revenue_generated)}
             </p>
-            <p className="text-muted-foreground mt-2 text-sm">
-              Across {summary?.total_orders ?? 0} orders (excludes cancelled)
-            </p>
           </div>
           <div className="border-border/60 flex flex-col justify-center gap-1 border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
-            <p className={STAT_LABEL_CLASS}>Amount collected</p>
-            <p className={`${STAT_NUMBER_CLASS} text-3xl`}>
-              {formatCurrency(summary?.amount_collected)}
-            </p>
-            <p className={`${STAT_LABEL_CLASS} mt-3`}>Today's orders</p>
-            <p className={`${STAT_NUMBER_CLASS} text-3xl`}>{todaysOrders.length}</p>
+            <p className={STAT_LABEL_CLASS}>Total orders</p>
+            <p className={`${STAT_NUMBER_CLASS} text-5xl`}>{summary?.total_orders ?? 0}</p>
           </div>
         </div>
       </div>

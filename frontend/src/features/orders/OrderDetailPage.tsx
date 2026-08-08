@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/table'
 import { apiFetch } from '@/shared/api/client'
 import type { CustomerWithAddressesOut, FulfillmentStatus } from '@/shared/api/types'
+import { formatCustomerNumber } from '@/shared/lib/customerNumber'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
@@ -54,7 +55,8 @@ export function OrderDetailPage() {
           {customer.data
             ? (customer.data.display_name ?? formatPhoneNumber(customer.data.whatsapp_number))
             : '—'}{' '}
-          · {new Date(order.placed_at).toLocaleString()}
+          ({formatCustomerNumber(order.customer_number)}) ·{' '}
+          {new Date(order.placed_at).toLocaleString()}
         </p>
       </div>
 

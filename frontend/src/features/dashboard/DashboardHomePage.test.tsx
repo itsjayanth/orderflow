@@ -38,6 +38,7 @@ const sampleOrder: OrderOut = {
   order_id: '22222222-2222-2222-2222-222222222222',
   order_number: 3,
   customer_id: '33333333-3333-3333-3333-333333333333',
+  customer_number: 5,
   customer_name: 'Asha Rao',
   customer_whatsapp_number: '919876543210',
   order_type: 'pickup',
@@ -116,7 +117,7 @@ describe('DashboardHomePage', () => {
     renderPage()
 
     expect(await screen.findByText('Welcome back, Test Kitchen')).toBeInTheDocument()
-    expect(screen.getByText("Today's orders")).toBeInTheDocument()
+    expect(screen.getByText('Total orders')).toBeInTheDocument()
     // "INR 349.00" appears both in the revenue hero card (formatted from
     // the summary) and in the recent-orders row (raw order.total) -- assert
     // presence, not uniqueness.

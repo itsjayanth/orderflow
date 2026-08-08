@@ -24,6 +24,7 @@ export interface MeResponse {
 
 export interface CustomerOut {
   customer_id: string
+  customer_number: number
   whatsapp_number: string
   display_name: string | null
   first_seen_at: string
@@ -75,6 +76,7 @@ export interface OrderOut {
   order_id: string
   order_number: number
   customer_id: string
+  customer_number: number
   customer_name: string | null
   customer_whatsapp_number: string
   order_type: string

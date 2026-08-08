@@ -28,6 +28,7 @@ def _to_order_out(order: Order) -> OrderOut:
         order_id=order.order_id,
         order_number=order.order_number,
         customer_id=order.customer_id,
+        customer_number=order.customer.customer_number,
         customer_name=order.customer.display_name,
         customer_whatsapp_number=order.customer.whatsapp_number,
         order_type=order.order_type,
