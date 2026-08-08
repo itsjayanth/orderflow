@@ -1,3 +1,4 @@
+import datetime
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
@@ -49,16 +50,27 @@ async def list_orders(
     tenant: CurrentTenant,
     session: DbSession,
     fulfillment_status: str | None = None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
 ) -> list[OrderOut]:
-    orders = await OrderRepository(session).list(tenant, fulfillment_status=fulfillment_status)
+    orders = await OrderRepository(session).list(
+        tenant, fulfillment_status=fulfillment_status, from_date=from_date, to_date=to_date
+    )
     return [_to_order_out(order) for order in orders]
 
 
 @router.get("/summary", response_model=OrderSummaryOut)
-async def get_order_summary(tenant: CurrentTenant, session: DbSession) -> OrderSummaryOut:
+async def get_order_summary(
+    tenant: CurrentTenant,
+    session: DbSession,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
+) -> OrderSummaryOut:
     # Must stay above /{order_id} -- FastAPI matches routes in declaration
     # order, and a UUID path converter would otherwise swallow "summary".
-    summary = await OrderRepository(session).get_summary(tenant)
+    summary = await OrderRepository(session).get_summary(
+        tenant, from_date=from_date, to_date=to_date
+    )
     return OrderSummaryOut(
         total_orders=summary.total_orders,
         revenue_generated=summary.revenue_generated,

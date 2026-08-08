@@ -1,3 +1,4 @@
+import datetime
 import uuid
 from decimal import Decimal
 
@@ -57,6 +58,7 @@ async def _seed_order(
     payment_method: str = "online",
     customer_whatsapp_number: str = "+919876543210",
     customer_display_name: str | None = None,
+    placed_at: datetime.datetime | None = None,
 ):
     customer = await CustomerRepository(db_session).find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
@@ -80,6 +82,8 @@ async def _seed_order(
             )
         ],
     )
+    if placed_at is not None:
+        order.placed_at = placed_at
     await db_session.commit()
     return order
 
@@ -422,3 +426,182 @@ async def test_get_summary_isolated_between_merchants(
     body = response.json()
     assert body["total_orders"] == 0
     assert Decimal(body["revenue_generated"]) == 0
+
+
+# --- Date-range filtering -------------------------------------------------
+
+
+async def test_list_orders_filtered_by_date_range(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    )
+    in_range = await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC)
+    )
+
+    response = await client.get(
+        "/api/v1/orders",
+        params={"from_date": "2026-01-10", "to_date": "2026-01-20"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["order_id"] == str(in_range.order_id)
+
+
+async def test_list_orders_date_range_is_inclusive_of_to_date(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    # 23:59 on the to_date boundary should still be included -- the filter
+    # covers the whole calendar day, not just midnight.
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 20, 23, 59, tzinfo=datetime.UTC)
+    )
+
+    response = await client.get(
+        "/api/v1/orders",
+        params={"from_date": "2026-01-20", "to_date": "2026-01-20"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+async def test_list_orders_date_range_excluding_all_orders_returns_empty(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    )
+
+    response = await client.get(
+        "/api/v1/orders",
+        params={"from_date": "2026-06-01", "to_date": "2026-06-30"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_list_orders_combines_date_range_with_fulfillment_status(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _seed_order(
+        db_session,
+        tenant,
+        fulfillment_status="new",
+        placed_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
+    )
+    matching = await _seed_order(
+        db_session,
+        tenant,
+        fulfillment_status="preparing",
+        placed_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
+    )
+    await _seed_order(
+        db_session,
+        tenant,
+        fulfillment_status="preparing",
+        placed_at=datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC),
+    )
+
+    response = await client.get(
+        "/api/v1/orders",
+        params={
+            "fulfillment_status": "preparing",
+            "from_date": "2026-01-01",
+            "to_date": "2026-01-31",
+        },
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["order_id"] == str(matching.order_id)
+
+
+async def test_get_summary_filtered_by_date_range(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    # Each seeded order is 2x Butter Chicken @ 349.00 = 698.00.
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC)
+    )
+
+    response = await client.get(
+        "/api/v1/orders/summary",
+        params={"from_date": "2026-01-01", "to_date": "2026-01-31"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_orders"] == 2
+    assert body["revenue_generated"] == "1396.00"
+
+
+async def test_get_summary_date_range_excluding_all_orders_returns_zeroes(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    )
+
+    response = await client.get(
+        "/api/v1/orders/summary",
+        params={"from_date": "2026-06-01", "to_date": "2026-06-30"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_orders"] == 0
+    assert Decimal(body["revenue_generated"]) == 0
+
+
+async def test_get_summary_without_date_params_matches_all_time_behavior(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Omitting from_date/to_date must behave exactly as before this
+    feature -- the all-time aggregate, unfiltered."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    )
+
+    response = await client.get("/api/v1/orders/summary", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    assert response.json()["total_orders"] == 2

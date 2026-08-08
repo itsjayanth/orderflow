@@ -18,6 +18,29 @@ class OrderNotFoundError(Exception):
     pass
 
 
+def _day_range_bounds(
+    from_date: datetime.date | None, to_date: datetime.date | None
+) -> tuple[datetime.datetime | None, datetime.datetime | None]:
+    """Converts inclusive calendar-date bounds into the UTC datetime range
+    used to filter `Order.placed_at` (stored as timezone-aware UTC). Both
+    ends are optional and independent -- omitted means unbounded on that
+    side, matching the pre-filtering "all-time" behavior exactly when both
+    are omitted. `to_date` is treated as inclusive of the whole day, so it's
+    converted to an exclusive upper bound at the start of the next day."""
+    lower = (
+        datetime.datetime.combine(from_date, datetime.time.min, tzinfo=datetime.UTC)
+        if from_date is not None
+        else None
+    )
+    upper = (
+        datetime.datetime.combine(to_date, datetime.time.min, tzinfo=datetime.UTC)
+        + datetime.timedelta(days=1)
+        if to_date is not None
+        else None
+    )
+    return lower, upper
+
+
 @dataclass(frozen=True, slots=True)
 class OrderItemInput:
     menu_item_id: uuid.UUID
@@ -122,7 +145,11 @@ class OrderRepository:
         return result.scalar_one_or_none()
 
     async def list(
-        self, tenant: TenantContext, fulfillment_status: str | None = None
+        self,
+        tenant: TenantContext,
+        fulfillment_status: str | None = None,
+        from_date: datetime.date | None = None,
+        to_date: datetime.date | None = None,
     ) -> list[Order]:
         stmt = (
             select(Order)
@@ -132,6 +159,11 @@ class OrderRepository:
         )
         if fulfillment_status is not None:
             stmt = stmt.where(Order.fulfillment_status == fulfillment_status)
+        lower, upper = _day_range_bounds(from_date, to_date)
+        if lower is not None:
+            stmt = stmt.where(Order.placed_at >= lower)
+        if upper is not None:
+            stmt = stmt.where(Order.placed_at < upper)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -179,13 +211,20 @@ class OrderRepository:
         )
         return list(result.scalars().all())
 
-    async def get_summary(self, tenant: TenantContext) -> OrderSummary:
+    async def get_summary(
+        self,
+        tenant: TenantContext,
+        from_date: datetime.date | None = None,
+        to_date: datetime.date | None = None,
+    ) -> OrderSummary:
         """One aggregate query for the dashboard's summary cards -- avoids
         loading every Order row (with items) into Python just to count/sum
         them. "revenue_generated" excludes cancelled orders (never real
         revenue); "amount_collected" is narrower still -- only orders whose
         payment_status shows money actually in hand (paid online, or COD
-        marked collected), not merely placed."""
+        marked collected), not merely placed. `from_date`/`to_date` are both
+        optional and filter by `placed_at`; omitting both preserves the
+        original all-time aggregate exactly."""
 
         def _sum_when(condition: ColumnElement[bool]) -> ColumnElement[Decimal]:
             return func.coalesce(func.sum(case((condition, Order.total), else_=0)), 0)
@@ -207,6 +246,12 @@ class OrderRepository:
             _count_when(Order.fulfillment_status == "completed"),
             _count_when(Order.fulfillment_status == "cancelled"),
         ).where(Order.merchant_id == tenant.merchant_id)
+
+        lower, upper = _day_range_bounds(from_date, to_date)
+        if lower is not None:
+            stmt = stmt.where(Order.placed_at >= lower)
+        if upper is not None:
+            stmt = stmt.where(Order.placed_at < upper)
 
         row = (await self._session.execute(stmt)).one()
         return OrderSummary(
