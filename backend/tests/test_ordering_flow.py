@@ -36,7 +36,11 @@ async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: Asy
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
     await MenuItemRepository(db_session).create(
-        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+        tenant,
+        category="Mains",
+        name="Butter Chicken",
+        price=Decimal("349.00"),
+        image_url="https://example.com/butter-chicken.jpg",
     )
     await db_session.commit()
 
@@ -47,6 +51,23 @@ async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: Asy
     assert body["business_name"] == "Public Kitchen"
     assert len(body["items"]) == 1
     assert body["items"][0]["name"] == "Butter Chicken"
+    assert body["items"][0]["image_url"] == "https://example.com/butter-chicken.jpg"
+
+
+async def test_public_menu_item_without_image_has_null_image_url(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Dal Makhani", price=Decimal("249.00")
+    )
+    await db_session.commit()
+
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/menu")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["image_url"] is None
 
 
 async def test_public_menu_excludes_unavailable_items(

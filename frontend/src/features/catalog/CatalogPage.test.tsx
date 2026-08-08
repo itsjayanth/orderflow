@@ -26,6 +26,7 @@ const sampleItems: MenuItem[] = [
     name: 'Butter Chicken',
     price: '349.00',
     is_available: true,
+    image_url: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
@@ -36,6 +37,7 @@ const sampleItems: MenuItem[] = [
     name: 'Mango Lassi',
     price: '90.00',
     is_available: true,
+    image_url: 'https://example.com/mango-lassi.jpg',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
@@ -71,7 +73,17 @@ describe('CatalogPage', () => {
     expect(screen.getByText('#0002')).toBeInTheDocument()
   })
 
-  it('filters items by search query, matching name or item number', async () => {
+  it('groups items into one category card per category', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleItems)
+
+    renderPage()
+
+    expect(await screen.findByText('Butter Chicken')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Mains' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Beverages' })).toBeInTheDocument()
+  })
+
+  it('filters items by search query, matching name or item number, hiding empty category cards', async () => {
     mockedApiFetch.mockResolvedValueOnce(sampleItems)
 
     renderPage()
@@ -83,12 +95,42 @@ describe('CatalogPage', () => {
     })
     expect(screen.queryByText('Butter Chicken')).not.toBeInTheDocument()
     expect(screen.getByText('Mango Lassi')).toBeInTheDocument()
+    // The Mains category card has zero matches now, so its heading is gone
+    // entirely rather than rendered as an empty section.
+    expect(screen.queryByRole('heading', { name: 'Mains' })).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Search menu items'), {
       target: { value: '#0001' },
     })
     expect(screen.getByText('Butter Chicken')).toBeInTheDocument()
     expect(screen.queryByText('Mango Lassi')).not.toBeInTheDocument()
+  })
+
+  it('editing an item image URL calls the update mutation with the new image_url', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleItems)
+    mockedApiFetch.mockResolvedValueOnce({
+      ...sampleItems[0],
+      image_url: 'https://example.com/butter-chicken.jpg',
+    })
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByLabelText('Edit image for Butter Chicken'))
+    fireEvent.change(screen.getByLabelText('Image URL for Butter Chicken'), {
+      target: { value: 'https://example.com/butter-chicken.jpg' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        `/api/v1/catalog/items/${sampleItems[0].menu_item_id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ image_url: 'https://example.com/butter-chicken.jpg' }),
+        },
+      ),
+    )
   })
 
   it('submitting the add-item form calls the create mutation with the right payload', async () => {
@@ -107,6 +149,34 @@ describe('CatalogPage', () => {
       expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/catalog/items', {
         method: 'POST',
         body: JSON.stringify({ category: 'Mains', name: 'Butter Chicken', price: '349.00' }),
+      }),
+    )
+  })
+
+  it('includes the image URL in the create payload when provided', async () => {
+    mockedApiFetch.mockResolvedValueOnce([])
+    mockedApiFetch.mockResolvedValueOnce({ ...sampleItems[0] })
+
+    renderPage()
+    await waitFor(() => expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/catalog/items'))
+
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'Mains' } })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Butter Chicken' } })
+    fireEvent.change(screen.getByLabelText('Price'), { target: { value: '349.00' } })
+    fireEvent.change(screen.getByLabelText('Image URL (optional)'), {
+      target: { value: 'https://example.com/butter-chicken.jpg' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /add item/i }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/catalog/items', {
+        method: 'POST',
+        body: JSON.stringify({
+          category: 'Mains',
+          name: 'Butter Chicken',
+          price: '349.00',
+          image_url: 'https://example.com/butter-chicken.jpg',
+        }),
       }),
     )
   })

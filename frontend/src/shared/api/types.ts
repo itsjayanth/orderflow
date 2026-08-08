@@ -55,6 +55,7 @@ export interface MenuItem {
   name: string
   price: string
   is_available: boolean
+  image_url: string | null
   created_at: string
   updated_at: string
 }
@@ -168,6 +169,7 @@ export interface PublicMenuItemOut {
   category: string
   name: string
   price: string
+  image_url: string | null
 }
 
 export interface PublicMenuOut {

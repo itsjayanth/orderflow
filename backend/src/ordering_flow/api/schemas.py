@@ -10,6 +10,7 @@ class PublicMenuItemOut(BaseModel):
     category: str
     name: str
     price: Decimal
+    image_url: str | None = None
 
     model_config = {"from_attributes": True}
 
