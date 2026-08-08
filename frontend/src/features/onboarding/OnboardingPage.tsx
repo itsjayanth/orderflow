@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
@@ -14,7 +14,10 @@ import {
   useOnboardingStatus,
   useUpdateKitchenProfile,
 } from '@/features/onboarding/useOnboarding'
-import { useUpdateWhatsAppSettings } from '@/features/settings/useWhatsAppSettings'
+import {
+  useUpdateWhatsAppSettings,
+  useWhatsAppSettings,
+} from '@/features/settings/useWhatsAppSettings'
 import type { OnboardingStatus } from '@/shared/api/types'
 
 import { useOnboardingWizardStore } from './onboardingWizardStore'
@@ -91,15 +94,39 @@ const whatsappSchema = z.object({
 type WhatsAppForm = z.infer<typeof whatsappSchema>
 
 function ConnectWhatsAppStep() {
+  const { data } = useWhatsAppSettings()
   const update = useUpdateWhatsAppSettings()
+  const [justSaved, setJustSaved] = useState(false)
   const {
     register,
     handleSubmit,
+    resetField,
     formState: { errors },
-  } = useForm<WhatsAppForm>({ resolver: zodResolver(whatsappSchema) })
+  } = useForm<WhatsAppForm>({
+    resolver: zodResolver(whatsappSchema),
+    // Same reasoning as SettingsPage.tsx's WhatsAppSettingsSection: keeps
+    // the phone number ID visible/editable across visits instead of a
+    // blank field every time, which matters when re-pasting an expired
+    // test token means coming back to this step repeatedly.
+    values: {
+      phone_number_id: data?.phone_number_id ?? '',
+      display_phone_number: data?.display_phone_number ?? '',
+      access_token: '',
+    },
+  })
+
+  const onSubmit = (values: WhatsAppForm) => {
+    update.mutate(values, {
+      onSuccess: () => {
+        resetField('access_token')
+        setJustSaved(true)
+        setTimeout(() => setJustSaved(false), 4000)
+      },
+    })
+  }
 
   return (
-    <form onSubmit={handleSubmit((values) => update.mutate(values))} className="max-w-md space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
       <p className="text-muted-foreground text-sm">
         Paste your WhatsApp Business phone number ID and access token. Test/dummy values work fine
         for now -- switching to real credentials later doesn't require redoing this step.
@@ -134,9 +161,22 @@ function ConnectWhatsAppStep() {
       {update.isError && (
         <p className="text-destructive text-sm">Failed to save. Please try again.</p>
       )}
-      <Button type="submit" disabled={update.isPending}>
-        {update.isPending ? 'Connecting…' : 'Connect & continue'}
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={update.isPending}>
+          {update.isPending ? 'Connecting…' : 'Connect & continue'}
+        </Button>
+        {justSaved && !update.isPending && (
+          <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
+            <span
+              className="flex size-4 items-center justify-center rounded-full bg-green-600 text-[10px] text-white"
+              aria-hidden
+            >
+              ✓
+            </span>
+            Saved and connected
+          </p>
+        )}
+      </div>
     </form>
   )
 }

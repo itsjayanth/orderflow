@@ -104,15 +104,36 @@ function PaymentSettingsSection() {
 function WhatsAppSettingsSection() {
   const { data, isLoading } = useWhatsAppSettings()
   const update = useUpdateWhatsAppSettings()
+  const [justSaved, setJustSaved] = useState(false)
   const {
     register,
     handleSubmit,
-    reset,
+    resetField,
     formState: { errors },
-  } = useForm<WhatsAppForm>({ resolver: zodResolver(whatsappSchema) })
+  } = useForm<WhatsAppForm>({
+    resolver: zodResolver(whatsappSchema),
+    // Keeps the phone number ID field in sync with what's actually saved
+    // (re-syncs after the query refetches post-save too) so it's always
+    // visible for reference/copy-paste, not just in the read-only summary
+    // line below -- test tokens expiring hourly means this gets visited
+    // often, and re-typing the same ID every time is friction worth
+    // removing. The access token is deliberately never pre-filled here:
+    // the API only ever reports whether one is set, never the value.
+    values: {
+      phone_number_id: data?.phone_number_id ?? '',
+      display_phone_number: data?.display_phone_number ?? '',
+      access_token: '',
+    },
+  })
 
   const onSubmit = (values: WhatsAppForm) => {
-    update.mutate(values, { onSuccess: () => reset() })
+    update.mutate(values, {
+      onSuccess: () => {
+        resetField('access_token')
+        setJustSaved(true)
+        setTimeout(() => setJustSaved(false), 4000)
+      },
+    })
   }
 
   const tone = data?.connection_status === 'connected' ? 'green' : 'gray'
@@ -167,9 +188,22 @@ function WhatsAppSettingsSection() {
         {update.isError && (
           <p className="text-destructive text-sm">Failed to save. Please try again.</p>
         )}
-        <Button type="submit" disabled={update.isPending}>
-          {update.isPending ? 'Saving…' : 'Save WhatsApp settings'}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={update.isPending}>
+            {update.isPending ? 'Saving…' : 'Save & connect'}
+          </Button>
+          {justSaved && !update.isPending && (
+            <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
+              <span
+                className="flex size-4 items-center justify-center rounded-full bg-green-600 text-[10px] text-white"
+                aria-hidden
+              >
+                ✓
+              </span>
+              Saved and connected
+            </p>
+          )}
+        </div>
       </form>
     </Card>
   )
