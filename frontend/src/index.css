@@ -109,3 +109,51 @@
     @apply font-serif tracking-tight;
   }
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  /* A faint SVG turbulence texture -- the tactile "grain" premium print/hero
+     sections use so large flat color fields don't read as a flat digital
+     gradient. Kept to ~2% opacity so it's felt more than seen. */
+  .bg-grain {
+    position: relative;
+    isolation: isolate;
+  }
+  .bg-grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.035;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .dark .bg-grain::before {
+    opacity: 0.06;
+    mix-blend-mode: overlay;
+  }
+
+  @keyframes float-slow {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-14px);
+    }
+  }
+  .animate-float-slow {
+    animation: float-slow 7s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-float-slow {
+      animation: none;
+    }
+  }
+}
