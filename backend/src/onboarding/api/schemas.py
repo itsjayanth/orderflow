@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WhatsAppSettingsOut(BaseModel):
@@ -12,6 +12,15 @@ class WhatsAppSettingsUpdate(BaseModel):
     phone_number_id: str
     access_token: str
     display_phone_number: str | None = None
+
+
+class WhatsAppTestMessageRequest(BaseModel):
+    to: str = Field(..., description="Recipient phone number in E.164 format, e.g. +919876543210")
+
+
+class WhatsAppTestMessageResult(BaseModel):
+    status: str  # "success" | "failed"
+    message: str
 
 
 class KitchenProfileOut(BaseModel):

@@ -14,6 +14,7 @@ import {
   useOnboardingStatus,
   useUpdateKitchenProfile,
 } from '@/features/onboarding/useOnboarding'
+import { TestWhatsAppMessageCard } from '@/features/settings/TestWhatsAppMessageCard'
 import {
   useUpdateWhatsAppSettings,
   useWhatsAppSettings,
@@ -126,58 +127,61 @@ function ConnectWhatsAppStep() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
-      <p className="text-muted-foreground text-sm">
-        Paste your WhatsApp Business phone number ID and access token. Test/dummy values work fine
-        for now -- switching to real credentials later doesn't require redoing this step.
-      </p>
-      <div className="space-y-2">
-        <Label htmlFor="phone_number_id">Phone number ID</Label>
-        <Input id="phone_number_id" {...register('phone_number_id')} />
-        {errors.phone_number_id && (
-          <p className="text-destructive text-sm">{errors.phone_number_id.message}</p>
+    <>
+      <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
+        <p className="text-muted-foreground text-sm">
+          Paste your WhatsApp Business phone number ID and access token. Test/dummy values work fine
+          for now -- switching to real credentials later doesn't require redoing this step.
+        </p>
+        <div className="space-y-2">
+          <Label htmlFor="phone_number_id">Phone number ID</Label>
+          <Input id="phone_number_id" {...register('phone_number_id')} />
+          {errors.phone_number_id && (
+            <p className="text-destructive text-sm">{errors.phone_number_id.message}</p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="display_phone_number">Display phone number (optional)</Label>
+          <Input
+            id="display_phone_number"
+            placeholder="+91 90000 00000"
+            {...register('display_phone_number')}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="access_token">Access token</Label>
+          <Input
+            id="access_token"
+            type="password"
+            placeholder="Leave any value for now if you don't have a real token yet"
+            {...register('access_token')}
+          />
+          {errors.access_token && (
+            <p className="text-destructive text-sm">{errors.access_token.message}</p>
+          )}
+        </div>
+        {update.isError && (
+          <p className="text-destructive text-sm">Failed to save. Please try again.</p>
         )}
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="display_phone_number">Display phone number (optional)</Label>
-        <Input
-          id="display_phone_number"
-          placeholder="+91 90000 00000"
-          {...register('display_phone_number')}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="access_token">Access token</Label>
-        <Input
-          id="access_token"
-          type="password"
-          placeholder="Leave any value for now if you don't have a real token yet"
-          {...register('access_token')}
-        />
-        {errors.access_token && (
-          <p className="text-destructive text-sm">{errors.access_token.message}</p>
-        )}
-      </div>
-      {update.isError && (
-        <p className="text-destructive text-sm">Failed to save. Please try again.</p>
-      )}
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={update.isPending}>
-          {update.isPending ? 'Connecting…' : 'Connect & continue'}
-        </Button>
-        {justSaved && !update.isPending && (
-          <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
-            <span
-              className="flex size-4 items-center justify-center rounded-full bg-green-600 text-[10px] text-white"
-              aria-hidden
-            >
-              ✓
-            </span>
-            Saved and connected
-          </p>
-        )}
-      </div>
-    </form>
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={update.isPending}>
+            {update.isPending ? 'Connecting…' : 'Connect & continue'}
+          </Button>
+          {justSaved && !update.isPending && (
+            <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
+              <span
+                className="flex size-4 items-center justify-center rounded-full bg-green-600 text-[10px] text-white"
+                aria-hidden
+              >
+                ✓
+              </span>
+              Saved and connected
+            </p>
+          )}
+        </div>
+      </form>
+      {data?.access_token_set && <TestWhatsAppMessageCard />}
+    </>
   )
 }
 

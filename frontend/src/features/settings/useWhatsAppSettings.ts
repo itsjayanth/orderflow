@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { onboardingStatusQueryKey } from '@/features/onboarding/useOnboarding'
 import { apiFetch } from '@/shared/api/client'
-import type { WhatsAppSettingsOut } from '@/shared/api/types'
+import type { WhatsAppSettingsOut, WhatsAppTestMessageResult } from '@/shared/api/types'
 
 const QUERY_KEY = ['settings', 'whatsapp']
 
@@ -33,5 +33,15 @@ export function useUpdateWhatsAppSettings() {
       // (ARCHITECTURE.md Section 5).
       queryClient.invalidateQueries({ queryKey: onboardingStatusQueryKey })
     },
+  })
+}
+
+export function useSendTestWhatsAppMessage() {
+  return useMutation({
+    mutationFn: (to: string) =>
+      apiFetch<WhatsAppTestMessageResult>('/api/v1/onboarding/whatsapp/test-message', {
+        method: 'POST',
+        body: JSON.stringify({ to }),
+      }),
   })
 }

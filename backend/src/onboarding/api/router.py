@@ -1,5 +1,8 @@
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_sender
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -9,6 +12,8 @@ from onboarding.api.schemas import (
     OnboardingStatusOut,
     WhatsAppSettingsOut,
     WhatsAppSettingsUpdate,
+    WhatsAppTestMessageRequest,
+    WhatsAppTestMessageResult,
 )
 from onboarding.domain.models import WhatsAppBusinessAccount
 from onboarding.domain.onboarding_service import (
@@ -17,9 +22,11 @@ from onboarding.domain.onboarding_service import (
     get_checklist,
 )
 from shared.deps import CurrentTenant, DbSession
-from shared.encryption import encrypt
+from shared.encryption import decrypt, encrypt
 
 router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
+
+WhatsAppSenderDep = Annotated[WhatsAppSender, Depends(get_whatsapp_sender)]
 
 
 def _whatsapp_to_out(account: WhatsAppBusinessAccount | None) -> WhatsAppSettingsOut:
@@ -68,6 +75,25 @@ async def update_whatsapp_settings(
     await advance_after_whatsapp_connected(session, tenant)
     await session.commit()
     return _whatsapp_to_out(account)
+
+
+@router.post("/whatsapp/test-message", response_model=WhatsAppTestMessageResult)
+async def send_whatsapp_test_message(
+    body: WhatsAppTestMessageRequest,
+    tenant: CurrentTenant,
+    session: DbSession,
+    sender: WhatsAppSenderDep,
+) -> WhatsAppTestMessageResult:
+    account = await WhatsAppBusinessAccountRepository(session).get(tenant)
+    if account is None or not account.phone_number_id or not account.access_token_encrypted:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "WhatsApp credentials not configured")
+
+    success, message = await sender.send_test_message(
+        phone_number_id=account.phone_number_id,
+        access_token=decrypt(account.access_token_encrypted),
+        to=body.to,
+    )
+    return WhatsAppTestMessageResult(status="success" if success else "failed", message=message)
 
 
 @router.get("/profile", response_model=KitchenProfileOut)

@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { NotificationTemplateOut } from '@/shared/api/types'
 
+import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
 import { useUpdateWhatsAppSettings, useWhatsAppSettings } from './useWhatsAppSettings'
@@ -205,6 +206,8 @@ function WhatsAppSettingsSection() {
           )}
         </div>
       </form>
+
+      <TestWhatsAppMessageCard disabled={!data?.access_token_set} />
     </Card>
   )
 }

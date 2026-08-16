@@ -23,6 +23,10 @@ class WhatsAppSender(Protocol):
         buttons: list[tuple[str, str]],  # (id, title)
     ) -> bool: ...
 
+    async def send_test_message(
+        self, *, phone_number_id: str, access_token: str, to: str
+    ) -> tuple[bool, str]: ...
+
 
 class GraphApiWhatsAppSender:
     """Real WhatsApp Cloud API client. Every call is best-effort: a failed
@@ -109,6 +113,42 @@ class GraphApiWhatsAppSender:
                 },
             },
         )
+
+
+    async def send_test_message(
+        self, *, phone_number_id: str, access_token: str, to: str
+    ) -> tuple[bool, str]:
+        """Send a plain text message to verify saved credentials actually
+        work end-to-end. Unlike send_text/send_buttons this reports back
+        *why* a send failed, since a "test credentials" button is useless
+        if it only ever says no."""
+        url = f"{self._base_url}/{phone_number_id}/messages"
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "text",
+            "text": {"body": "Orderflow test message - credentials verified!"},
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+            if response.status_code == 200:
+                return True, "Test message sent successfully"
+
+            error_msg = f"Test message failed: HTTP {response.status_code}"
+            try:
+                error_data = response.json()
+                error_msg = error_data.get("error", {}).get("message", error_msg)
+            except ValueError:
+                pass
+            return False, error_msg
+        except httpx.HTTPError as exc:
+            logger.warning("WhatsApp test message failed: %s", exc)
+            return False, f"Test failed: {exc}"
 
 
 def get_whatsapp_sender() -> WhatsAppSender:

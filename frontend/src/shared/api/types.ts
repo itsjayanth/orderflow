@@ -118,6 +118,11 @@ export interface WhatsAppSettingsOut {
   connection_status: string
 }
 
+export interface WhatsAppTestMessageResult {
+  status: 'success' | 'failed'
+  message: string
+}
+
 export type OnboardingStatus =
   | 'registered'
   | 'meta_connected'
