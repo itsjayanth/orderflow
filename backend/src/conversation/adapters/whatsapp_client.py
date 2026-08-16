@@ -154,8 +154,12 @@ class GraphApiWhatsAppSender:
                             "flow_token": flow_token,
                             "flow_id": flow_id,
                             "flow_cta": cta,
-                            "flow_action": "navigate",
-                            "flow_action_payload": {"screen": "MENU"},
+                            # "navigate" renders a purely static screen with no
+                            # call to our endpoint at all -- WhatsApp only ever
+                            # invokes the data-exchange endpoint's INIT action
+                            # (flows/api/router.py) to populate ${data.*} if
+                            # the button is sent with "data_exchange" here.
+                            "flow_action": "data_exchange",
                         },
                     },
                 },
