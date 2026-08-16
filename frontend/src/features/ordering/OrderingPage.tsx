@@ -279,9 +279,12 @@ export function OrderingPage() {
           <p className="text-muted-foreground text-sm">We'll let you know when it's ready.</p>
           {checkout.data.payment_link_url && (
             <Button asChild className="w-full">
-              <a href={checkout.data.payment_link_url} target="_blank" rel="noreferrer">
-                Complete payment
-              </a>
+              {/* Same-tab navigation, not target="_blank" -- inside WhatsApp's
+                  in-app browser, opening a new tab stacks an extra browser
+                  layer on top of an already-embedded view. Razorpay UPI
+                  Payment Links (Live Mode merchants) go straight to a UPI
+                  app picker from here instead of a full checkout page. */}
+              <a href={checkout.data.payment_link_url}>Complete payment</a>
             </Button>
           )}
           {whatsappNumber && (

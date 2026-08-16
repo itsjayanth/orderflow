@@ -3,8 +3,10 @@ import hmac
 import json
 import uuid
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
+from razorpay.errors import BadRequestError
 
 from payments.adapters.dummy_gateway import DummyPaymentGateway
 from payments.adapters.gateway_selector import get_payment_gateway, resolve_credentials
@@ -106,6 +108,56 @@ def test_razorpay_gateway_rejects_wrong_signature() -> None:
 
     with pytest.raises(WebhookVerificationError):
         gateway.verify_webhook(payload=payload, signature=_sign(payload, "wrong-secret"))
+
+
+# --- RazorpayGateway.create_link UPI Payment Link behavior ---------------
+
+
+def test_create_link_test_mode_key_never_requests_upi_link() -> None:
+    gateway = RazorpayGateway("rzp_test_fake", "secret")
+    gateway._client.payment_link = MagicMock()
+    gateway._client.payment_link.create.return_value = {
+        "short_url": "https://rzp.io/x",
+        "id": "plink_1",
+    }
+
+    link = gateway.create_link(order_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
+
+    assert link.url == "https://rzp.io/x"
+    gateway._client.payment_link.create.assert_called_once()
+    assert "upi_link" not in gateway._client.payment_link.create.call_args[0][0]
+
+
+def test_create_link_live_mode_key_requests_upi_link() -> None:
+    gateway = RazorpayGateway("rzp_live_fake", "secret")
+    gateway._client.payment_link = MagicMock()
+    gateway._client.payment_link.create.return_value = {
+        "short_url": "https://rzp.io/y",
+        "id": "plink_2",
+    }
+
+    link = gateway.create_link(order_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
+
+    assert link.url == "https://rzp.io/y"
+    gateway._client.payment_link.create.assert_called_once()
+    assert gateway._client.payment_link.create.call_args[0][0]["upi_link"] is True
+
+
+def test_create_link_live_mode_falls_back_when_upi_link_rejected() -> None:
+    gateway = RazorpayGateway("rzp_live_fake", "secret")
+    gateway._client.payment_link = MagicMock()
+    gateway._client.payment_link.create.side_effect = [
+        BadRequestError("upi_link not supported"),
+        {"short_url": "https://rzp.io/z", "id": "plink_3"},
+    ]
+
+    link = gateway.create_link(order_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
+
+    assert link.url == "https://rzp.io/z"
+    assert gateway._client.payment_link.create.call_count == 2
+    first_call, second_call = gateway._client.payment_link.create.call_args_list
+    assert first_call[0][0]["upi_link"] is True
+    assert "upi_link" not in second_call[0][0]
 
 
 # --- gateway_selector -----------------------------------------------------

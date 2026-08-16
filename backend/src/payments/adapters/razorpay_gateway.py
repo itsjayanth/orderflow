@@ -3,7 +3,7 @@ import uuid
 from decimal import Decimal
 
 import razorpay
-from razorpay.errors import SignatureVerificationError
+from razorpay.errors import BadRequestError, SignatureVerificationError
 
 from payments.domain.gateway import PaymentLink, VerifiedPaymentEvent, WebhookVerificationError
 
@@ -18,17 +18,31 @@ class RazorpayGateway:
 
     def __init__(self, key_id: str, key_secret: str) -> None:
         self._client = razorpay.Client(auth=(key_id, key_secret))
+        self._key_id = key_id
         self._key_secret = key_secret
 
     def create_link(self, *, order_id: uuid.UUID, amount: Decimal, currency: str) -> PaymentLink:
-        response = self._client.payment_link.create(
-            {
-                "amount": int(amount * 100),  # paise
-                "currency": currency,
-                "reference_id": str(order_id),
-                "notes": {"order_id": str(order_id)},
-            }
-        )
+        payload = {
+            "amount": int(amount * 100),  # paise
+            "currency": currency,
+            "reference_id": str(order_id),
+            "notes": {"order_id": str(order_id)},
+        }
+
+        # UPI Payment Links skip Razorpay's full checkout page (card/netbanking/
+        # UPI method picker) and go straight to "choose a UPI app" -- the
+        # closest this integration gets to a native app-switch feel for the
+        # payment step. Razorpay only supports this in Live Mode (rzp_live_
+        # keys); requesting it against a Test Mode key raises BadRequestError,
+        # so Test Mode transparently falls back to a standard link below.
+        if self._key_id.startswith("rzp_live_"):
+            try:
+                response = self._client.payment_link.create({**payload, "upi_link": True})
+                return PaymentLink(url=response["short_url"], provider_order_id=response["id"])
+            except BadRequestError:
+                pass
+
+        response = self._client.payment_link.create(payload)
         return PaymentLink(url=response["short_url"], provider_order_id=response["id"])
 
     def verify_webhook(self, *, payload: bytes, signature: str) -> VerifiedPaymentEvent:
