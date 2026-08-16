@@ -51,7 +51,22 @@ async def data_exchange(
         # and retries, rather than surfacing a broken Flow to the customer.
         return Response(status_code=status.HTTP_421_MISDIRECTED_REQUEST)
 
+    logger.info(
+        "Flow data-exchange request for merchant %s: action=%r screen=%r data_keys=%r",
+        merchant_id,
+        payload.get("action"),
+        payload.get("screen"),
+        list((payload.get("data") or {}).keys()),
+    )
     response_data = await _handle_action(session, tenant, payload)
+    logger.info(
+        "Flow data-exchange response for merchant %s: screen=%r menu_option_count=%s",
+        merchant_id,
+        response_data.get("screen"),
+        len(response_data.get("data", {}).get("menu_options", []))
+        if "menu_options" in response_data.get("data", {})
+        else "n/a",
+    )
     encrypted = encrypt_response(response=response_data, aes_key=aes_key, iv=iv)
     return Response(content=encrypted, media_type="text/plain", status_code=status.HTTP_200_OK)
 
