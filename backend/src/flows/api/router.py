@@ -8,7 +8,7 @@ from fastapi import APIRouter, Response, status
 from catalog.adapters.repository import MenuItemRepository
 from catalog.domain.models import MenuItem
 from customers.adapters.repository import AddressRepository, CustomerRepository
-from customers.domain.models import Address
+from customers.domain.models import Customer
 from flows.api.schemas import FlowDataExchangeRequest
 from flows.domain.encryption import FlowDecryptionError, decrypt_request, encrypt_response
 from flows.domain.images import fetch_and_compress_image
@@ -112,11 +112,21 @@ async def _handle_action(
         except NoItemsSelectedError:
             pass
         else:
-            saved_address = await _lookup_saved_address(session, tenant, payload.get("flow_token"))
+            customer = await _lookup_saved_customer(session, tenant, payload.get("flow_token"))
+            saved_address = None
+            if customer is not None:
+                saved_address = await AddressRepository(session).get_primary_for_customer(
+                    tenant, customer.customer_id
+                )
             return {
                 "screen": "DETAILS",
                 "data": build_details_screen_data(
-                    cart_summary=cart.summary_text, saved_address=saved_address
+                    cart_summary=cart.summary_text,
+                    saved_address=saved_address,
+                    saved_customer_name=customer.display_name if customer else None,
+                    saved_default_contact_phone=(
+                        customer.default_contact_phone if customer else None
+                    ),
                 ),
             }
         # No items actually resolved (stale/empty selection) -- fall
@@ -165,17 +175,17 @@ async def _ensure_images_cached(session: DbSession, items: list[MenuItem]) -> No
         await session.commit()
 
 
-async def _lookup_saved_address(
+async def _lookup_saved_customer(
     session: DbSession, tenant: TenantContext, flow_token: Any
-) -> Address | None:
+) -> Customer | None:
     """flow_token carries the customer's WhatsApp number (set when the Flow
     is sent, see conversation/domain/handler.py) -- the only way this
     endpoint knows *who* is ordering, since the decrypted request itself
-    doesn't include it. Returns None for a new customer (no saved address
-    yet) or a malformed/missing token, same as "nothing to prefill"."""
+    doesn't include it. Returns None for a new customer (nothing on file
+    yet to prefill name/contact/address with) or a malformed/missing
+    token. Returns the full Customer row (not just the address) so callers
+    can also pull display_name/default_contact_phone for the DETAILS
+    screen's name and contact-number defaults."""
     if not isinstance(flow_token, str) or not flow_token:
         return None
-    customer = await CustomerRepository(session).get_by_whatsapp_number(tenant, flow_token)
-    if customer is None:
-        return None
-    return await AddressRepository(session).get_primary_for_customer(tenant, customer.customer_id)
+    return await CustomerRepository(session).get_by_whatsapp_number(tenant, flow_token)

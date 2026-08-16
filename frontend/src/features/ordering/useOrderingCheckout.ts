@@ -18,6 +18,7 @@ interface OrderingCheckoutInput {
   payment_method: 'online' | 'cod'
   order_type: 'pickup' | 'delivery'
   delivery_address?: OrderingCheckoutDeliveryAddress
+  contact_phone?: string
 }
 
 export function useOrderingCheckout(merchantId: string) {

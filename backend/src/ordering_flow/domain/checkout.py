@@ -66,6 +66,7 @@ async def perform_checkout(
     delivery_address_id: uuid.UUID | None = None,
     new_delivery_address: NewDeliveryAddress | None = None,
     whatsapp_conversation_ref: str | None = None,
+    contact_phone: str | None = None,
 ) -> CheckoutResult:
     """The one place cart -> Order (+ payment link, if online) happens --
     called by both the dashboard's test-checkout shortcut (Phase 5) and
@@ -74,9 +75,22 @@ async def perform_checkout(
     Ordering Flow UI's job specifically: calls Catalog/Customer/Order/
     Payment Service, doesn't decide validity beyond what's here.
     """
-    customer = await CustomerRepository(session).find_or_create(
+    customer_repo = CustomerRepository(session)
+    customer = await customer_repo.find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
     )
+    # find_or_create only sets these on first creation -- refresh them here
+    # so a returning customer's corrected name or changed contact-number
+    # choice actually sticks for next time, instead of only ever reflecting
+    # whatever was submitted on their very first order.
+    await customer_repo.update_contact_details(
+        customer, display_name=customer_display_name, default_contact_phone=contact_phone
+    )
+    # The number to ring for *this* order -- falls back to the WhatsApp
+    # identity number itself when the customer didn't ask for a different
+    # one, so downstream (dashboard, kitchen) always has exactly one number
+    # to call rather than needing to know about the "same as WhatsApp" case.
+    resolved_contact_phone = contact_phone or customer_whatsapp_number
 
     if new_delivery_address is not None:
         # The customer's saved address is always re-submitted (and
@@ -125,6 +139,7 @@ async def perform_checkout(
             fulfillment_status="new",
             delivery_address_id=delivery_address_id,
             whatsapp_conversation_ref=whatsapp_conversation_ref,
+            contact_phone=resolved_contact_phone,
             items=item_inputs,
         )
         await payment_event_repo.create(
@@ -142,6 +157,7 @@ async def perform_checkout(
         payment_status="awaiting_payment",
         delivery_address_id=delivery_address_id,
         whatsapp_conversation_ref=whatsapp_conversation_ref,
+        contact_phone=resolved_contact_phone,
         items=item_inputs,
     )
 

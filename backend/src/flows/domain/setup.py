@@ -24,6 +24,23 @@ class FlowSetupError(Exception):
         self.detail = detail
 
 
+async def upload_flow_json(
+    client: httpx.AsyncClient, base_url: str, flow_id: str, headers: dict[str, str]
+) -> None:
+    """Uploads the current order_flow.json as the given Flow's FLOW_JSON
+    asset. Factored out of setup_whatsapp_flow() so update_flow_assets()
+    (pushing an updated JSON to a merchant who already has a flow_id) can
+    share the exact same upload call instead of duplicating it."""
+    resp = await client.post(
+        f"{base_url}/{flow_id}/assets",
+        headers=headers,
+        data={"name": "flow.json", "asset_type": "FLOW_JSON"},
+        files={"file": ("flow.json", _FLOW_JSON_PATH.read_bytes(), "application/json")},
+    )
+    if resp.status_code >= 400:
+        raise FlowSetupError("upload_flow_json", resp.text)
+
+
 async def setup_whatsapp_flow(
     session: AsyncSession,
     tenant: TenantContext,
@@ -87,17 +104,36 @@ async def setup_whatsapp_flow(
         )
         await session.commit()
 
-        resp = await client.post(
-            f"{base_url}/{flow_id}/assets",
-            headers=headers,
-            data={"name": "flow.json", "asset_type": "FLOW_JSON"},
-            files={"file": ("flow.json", _FLOW_JSON_PATH.read_bytes(), "application/json")},
-        )
-        if resp.status_code >= 400:
-            raise FlowSetupError("upload_flow_json", resp.text)
+        await upload_flow_json(client, base_url, flow_id, headers)
 
         resp = await client.post(f"{base_url}/{flow_id}/publish", headers=headers)
         if resp.status_code >= 400:
             raise FlowSetupError("publish_flow", resp.text)
 
     return str(flow_id)
+
+
+async def update_flow_assets(
+    session: AsyncSession, tenant: TenantContext, waba: WhatsAppBusinessAccount
+) -> None:
+    """Pushes the current order_flow.json to Meta for a merchant who
+    already ran setup_whatsapp_flow() once -- e.g. after the Flow JSON
+    itself changes (new screens/fields, like the DETAILS screen's name/
+    contact/address-choice additions) and an already-onboarded merchant's
+    Flow needs the update, without recreating the whole Flow (new flow_id,
+    new RSA key pair, re-publish) from scratch. session/tenant aren't used
+    for a DB write here (there's nothing new to persist -- flow_id and the
+    private key are unchanged), but are accepted for symmetry with
+    setup_whatsapp_flow() and so a future caller doesn't need to change
+    the signature to add one."""
+    if not waba.whatsapp_flow_id:
+        raise FlowSetupError("precondition", "Flow not set up for this merchant yet")
+    if not waba.access_token_encrypted:
+        raise FlowSetupError("precondition", "WhatsApp credentials not configured")
+
+    base_url = get_settings().whatsapp_graph_api_base_url
+    access_token = decrypt(waba.access_token_encrypted)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        await upload_flow_json(client, base_url, waba.whatsapp_flow_id, headers)

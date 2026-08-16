@@ -56,6 +56,26 @@ class CustomerRepository:
         await self._session.flush()
         return customer
 
+    async def update_contact_details(
+        self,
+        customer: Customer,
+        *,
+        display_name: str | None,
+        default_contact_phone: str | None,
+    ) -> None:
+        """Refreshes a returning customer's name and delivery-contact
+        preference from what they just submitted at checkout --
+        find_or_create() deliberately only sets these at creation, so
+        without this a correction (or a changed contact-number choice)
+        would never stick for next time. Always overwrites
+        default_contact_phone (None is a real, meaningful value here: "go
+        back to using my WhatsApp number"), but leaves display_name alone
+        when None is passed, since not every caller collects a name."""
+        if display_name is not None:
+            customer.display_name = display_name
+        customer.default_contact_phone = default_contact_phone
+        await self._session.flush()
+
     async def get_by_whatsapp_number(
         self, tenant: TenantContext, whatsapp_number: str
     ) -> Customer | None:

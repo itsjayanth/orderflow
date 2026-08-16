@@ -158,6 +158,26 @@
           "type": "string",
           "__example__": "1x Paneer Tikka - Rs 220"
         },
+        "saved_customer_name": {
+          "type": "string",
+          "__example__": ""
+        },
+        "saved_contact_choice": {
+          "type": "string",
+          "__example__": "same"
+        },
+        "saved_contact_phone": {
+          "type": "string",
+          "__example__": ""
+        },
+        "has_saved_address": {
+          "type": "string",
+          "__example__": "false"
+        },
+        "saved_address_display": {
+          "type": "string",
+          "__example__": ""
+        },
         "saved_address_line1": {
           "type": "string",
           "__example__": ""
@@ -186,6 +206,9 @@
             "type": "Form",
             "name": "details_form",
             "init-values": {
+              "customer_name": "${data.saved_customer_name}",
+              "contact_choice": "${data.saved_contact_choice}",
+              "contact_phone": "${data.saved_contact_phone}",
               "address_line1": "${data.saved_address_line1}",
               "address_city": "${data.saved_address_city}",
               "address_pincode": "${data.saved_address_pincode}",
@@ -209,36 +232,138 @@
                 "required": true
               },
               {
+                "type": "TextInput",
+                "name": "customer_name",
+                "label": "Your name",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "contact_choice",
+                "label": "Contact number",
+                "data-source": [
+                  {
+                    "id": "same",
+                    "title": "Use my WhatsApp number"
+                  },
+                  {
+                    "id": "different",
+                    "title": "Use a different number"
+                  }
+                ],
+                "required": true
+              },
+              {
+                "type": "If",
+                "condition": "${form.contact_choice} == 'different'",
+                "then": [
+                  {
+                    "type": "TextInput",
+                    "name": "contact_phone",
+                    "label": "Phone number to call",
+                    "input-type": "phone",
+                    "required": true
+                  }
+                ]
+              },
+              {
                 "type": "If",
                 "condition": "${form.order_type} == 'delivery'",
                 "then": [
                   {
-                    "type": "TextInput",
-                    "name": "address_line1",
-                    "label": "Address line 1",
-                    "input-type": "text",
-                    "required": true
+                    "type": "If",
+                    "condition": "${data.has_saved_address} == 'true'",
+                    "then": [
+                      {
+                        "type": "TextBody",
+                        "text": "${data.saved_address_display}"
+                      },
+                      {
+                        "type": "RadioButtonsGroup",
+                        "name": "address_choice",
+                        "label": "Deliver to this address?",
+                        "data-source": [
+                          {
+                            "id": "same",
+                            "title": "Yes, deliver here"
+                          },
+                          {
+                            "id": "new",
+                            "title": "No, use a different address"
+                          }
+                        ],
+                        "required": true
+                      },
+                      {
+                        "type": "If",
+                        "condition": "${form.address_choice} == 'new'",
+                        "then": [
+                          {
+                            "type": "TextInput",
+                            "name": "address_line1",
+                            "label": "Address line 1",
+                            "input-type": "text",
+                            "required": true
+                          },
+                          {
+                            "type": "TextInput",
+                            "name": "address_city",
+                            "label": "City",
+                            "input-type": "text",
+                            "required": true
+                          },
+                          {
+                            "type": "TextInput",
+                            "name": "address_pincode",
+                            "label": "Pincode",
+                            "input-type": "number",
+                            "required": true
+                          },
+                          {
+                            "type": "TextInput",
+                            "name": "address_landmark",
+                            "label": "Landmark (optional)",
+                            "input-type": "text",
+                            "required": false
+                          }
+                        ]
+                      }
+                    ]
                   },
                   {
-                    "type": "TextInput",
-                    "name": "address_city",
-                    "label": "City",
-                    "input-type": "text",
-                    "required": true
-                  },
-                  {
-                    "type": "TextInput",
-                    "name": "address_pincode",
-                    "label": "Pincode",
-                    "input-type": "number",
-                    "required": true
-                  },
-                  {
-                    "type": "TextInput",
-                    "name": "address_landmark",
-                    "label": "Landmark (optional)",
-                    "input-type": "text",
-                    "required": false
+                    "type": "If",
+                    "condition": "${data.has_saved_address} == 'false'",
+                    "then": [
+                      {
+                        "type": "TextInput",
+                        "name": "address_line1",
+                        "label": "Address line 1",
+                        "input-type": "text",
+                        "required": true
+                      },
+                      {
+                        "type": "TextInput",
+                        "name": "address_city",
+                        "label": "City",
+                        "input-type": "text",
+                        "required": true
+                      },
+                      {
+                        "type": "TextInput",
+                        "name": "address_pincode",
+                        "label": "Pincode",
+                        "input-type": "number",
+                        "required": true
+                      },
+                      {
+                        "type": "TextInput",
+                        "name": "address_landmark",
+                        "label": "Landmark (optional)",
+                        "input-type": "text",
+                        "required": false
+                      }
+                    ]
                   }
                 ]
               },
@@ -307,6 +432,10 @@
                   "payload": {
                     "selected_items": "${screen.ITEMS.form.selected_items}",
                     "order_type": "${screen.DETAILS.form.order_type}",
+                    "customer_name": "${screen.DETAILS.form.customer_name}",
+                    "contact_choice": "${screen.DETAILS.form.contact_choice}",
+                    "contact_phone": "${screen.DETAILS.form.contact_phone}",
+                    "address_choice": "${screen.DETAILS.form.address_choice}",
                     "address_line1": "${screen.DETAILS.form.address_line1}",
                     "address_city": "${screen.DETAILS.form.address_city}",
                     "address_pincode": "${screen.DETAILS.form.address_pincode}",

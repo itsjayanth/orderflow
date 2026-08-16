@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_sender
-from flows.domain.setup import FlowSetupError, setup_whatsapp_flow
+from flows.domain.setup import FlowSetupError, setup_whatsapp_flow, update_flow_assets
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -129,6 +129,26 @@ async def setup_whatsapp_flow_endpoint(
 
     await session.commit()
     return WhatsAppFlowSetupResult(flow_id=flow_id)
+
+
+@router.post("/whatsapp/flow-sync", status_code=status.HTTP_204_NO_CONTENT)
+async def sync_whatsapp_flow_endpoint(tenant: CurrentTenant, session: DbSession) -> None:
+    """Pushes the current order_flow.json to Meta for a merchant who
+    already ran /whatsapp/flow-setup once -- for whenever the Flow JSON
+    itself changes (new screens/fields) and an already-onboarded
+    merchant's live Flow needs to pick up the update, without recreating
+    the whole Flow (new flow_id, new RSA key pair, re-publish) from
+    scratch. See flows/domain/setup.py's update_flow_assets."""
+    account = await WhatsAppBusinessAccountRepository(session).get(tenant)
+    if account is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "WhatsApp credentials not configured")
+
+    try:
+        await update_flow_assets(session, tenant, account)
+    except FlowSetupError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"Flow sync failed at '{exc.step}': {exc.detail}"
+        ) from exc
 
 
 @router.get("/profile", response_model=KitchenProfileOut)

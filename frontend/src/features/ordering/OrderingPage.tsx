@@ -46,31 +46,42 @@ const checkoutSchema = z
     address_landmark: z.string().optional(),
     address_city: z.string().optional(),
     address_pincode: z.string().optional(),
+    contact_choice: z.enum(['same', 'different']),
+    contact_phone: z.string().optional(),
   })
   .superRefine((values, ctx) => {
-    if (values.order_type !== 'delivery') {
-      return
+    if (values.order_type === 'delivery') {
+      if (!values.address_line1?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['address_line1'],
+          message: 'Required for delivery',
+        })
+      }
+      if (!values.address_city?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['address_city'],
+          message: 'Required for delivery',
+        })
+      }
+      if (!values.address_pincode?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['address_pincode'],
+          message: 'Required for delivery',
+        })
+      }
     }
-    if (!values.address_line1?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['address_line1'],
-        message: 'Required for delivery',
-      })
-    }
-    if (!values.address_city?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['address_city'],
-        message: 'Required for delivery',
-      })
-    }
-    if (!values.address_pincode?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['address_pincode'],
-        message: 'Required for delivery',
-      })
+    if (values.contact_choice === 'different') {
+      const trimmed = values.contact_phone?.trim() ?? ''
+      if (!/^\+?\d{7,15}$/.test(trimmed)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['contact_phone'],
+          message: 'Enter a valid phone number',
+        })
+      }
     }
   })
 type CheckoutForm = z.infer<typeof checkoutSchema>
@@ -165,10 +176,14 @@ export function OrderingPage() {
       payment_method: 'online',
       country_code: COUNTRY_CODES[0].code,
       order_type: 'pickup',
+      contact_choice: 'same',
     },
   })
 
   const orderType = watch('order_type')
+  const contactChoice = watch('contact_choice')
+  const countryCode = watch('country_code')
+  const localNumber = watch('local_number')
   const localNumberField = register('local_number')
 
   // Fires once the customer finishes entering their WhatsApp number --
@@ -196,6 +211,10 @@ export function OrderingPage() {
         setValue('address_landmark', result.address.landmark ?? '')
         setValue('address_city', result.address.city)
         setValue('address_pincode', result.address.pincode)
+      }
+      if (result.default_contact_phone) {
+        setValue('contact_choice', 'different')
+        setValue('contact_phone', result.default_contact_phone)
       }
     } catch {
       // New customer, or a transient lookup failure -- this is a
@@ -246,6 +265,8 @@ export function OrderingPage() {
         menu_item_id: line.item.menu_item_id,
         quantity: line.quantity,
       })),
+      contact_phone:
+        values.contact_choice === 'different' ? (values.contact_phone ?? '').trim() : undefined,
       ...(values.order_type === 'delivery'
         ? {
             delivery_address: {
@@ -430,6 +451,60 @@ export function OrderingPage() {
                       Delivery
                     </button>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Contact number for this order</Label>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setValue('contact_choice', 'same', { shouldValidate: true })}
+                      className={cn(
+                        'w-full rounded-lg border px-4 py-2.5 text-left text-sm transition-colors duration-150',
+                        contactChoice === 'same'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
+                      )}
+                    >
+                      <span className="block font-medium">Use my WhatsApp number</span>
+                      <span className="block text-xs opacity-80">
+                        {countryCode && localNumber
+                          ? `+${countryCode} ${localNumber} as entered above`
+                          : 'As entered above'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setValue('contact_choice', 'different', { shouldValidate: true })
+                      }
+                      className={cn(
+                        'w-full rounded-lg border px-4 py-2.5 text-left text-sm transition-colors duration-150',
+                        contactChoice === 'different'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
+                      )}
+                    >
+                      <span className="block font-medium">Use a different number</span>
+                      <span className="block text-xs opacity-80">
+                        e.g. reception or a family member who can take the delivery call
+                      </span>
+                    </button>
+                  </div>
+                  {contactChoice === 'different' && (
+                    <div className="space-y-2 pt-1">
+                      <Label htmlFor="contact_phone">Number to call</Label>
+                      <Input
+                        id="contact_phone"
+                        inputMode="tel"
+                        placeholder="e.g. 9876543210"
+                        {...register('contact_phone')}
+                      />
+                      {errors.contact_phone && (
+                        <p className="text-destructive text-sm">{errors.contact_phone.message}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {orderType === 'delivery' && (

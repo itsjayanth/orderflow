@@ -8,12 +8,13 @@ from conversation.adapters.repository import MessageDedupeRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.intents import Intent, classify
 from conversation.domain.webhook_parser import InboundMessage
-from customers.adapters.repository import CustomerRepository
+from customers.adapters.repository import AddressRepository, CustomerRepository
 from flows.domain.menu_order import (
     NoItemsSelectedError,
     build_new_delivery_address,
     parse_flow_completion,
     resolve_cart,
+    resolve_contact_phone,
 )
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -202,6 +203,33 @@ async def _handle_flow_completion(
             body='That order came through empty -- send "menu" to try again.',
         )
 
+    delivery_address_id: uuid.UUID | None = None
+    new_delivery_address = None
+    if submission.order_type == "delivery" and submission.address_choice == "same":
+        # Customer confirmed reusing their saved address ("Deliver to
+        # {address}? Yes") -- reuse the existing Address row as-is via
+        # delivery_address_id rather than recreating it through
+        # new_delivery_address. Falls back to treating this as a new
+        # address if, for whatever reason, there's no saved address to
+        # reuse (e.g. it was deleted between the Flow rendering and
+        # submission) -- the Flow JSON only ever offers "same" when
+        # has_saved_address was true, so this is a defensive fallback, not
+        # the expected path.
+        existing_customer = await CustomerRepository(session).get_by_whatsapp_number(
+            tenant, message.from_phone
+        )
+        saved_address = None
+        if existing_customer is not None:
+            saved_address = await AddressRepository(session).get_primary_for_customer(
+                tenant, existing_customer.customer_id
+            )
+        if saved_address is not None:
+            delivery_address_id = saved_address.address_id
+        else:
+            new_delivery_address = build_new_delivery_address(submission)
+    else:
+        new_delivery_address = build_new_delivery_address(submission)
+
     result = await perform_checkout(
         session,
         tenant,
@@ -209,9 +237,11 @@ async def _handle_flow_completion(
         items=cart.checkout_items,
         payment_method="cod" if submission.payment_method == "cod" else "online",
         order_type="delivery" if submission.order_type == "delivery" else "pickup",
-        customer_display_name=message.from_name,
-        new_delivery_address=build_new_delivery_address(submission),
+        customer_display_name=submission.customer_name or message.from_name,
+        delivery_address_id=delivery_address_id,
+        new_delivery_address=new_delivery_address,
         whatsapp_conversation_ref=message.whatsapp_message_id,
+        contact_phone=resolve_contact_phone(submission),
     )
 
     if result.payment_link_url is None:

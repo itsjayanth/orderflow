@@ -16,6 +16,7 @@ import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
 import { useUpdateWhatsAppSettings, useWhatsAppSettings } from './useWhatsAppSettings'
+import { WhatsAppFlowSetupCard } from './WhatsAppFlowSetupCard'
 
 const paymentSchema = z.object({
   razorpay_key_id: z.string().min(1, 'Required'),
@@ -208,6 +209,7 @@ function WhatsAppSettingsSection() {
       </form>
 
       <TestWhatsAppMessageCard disabled={!data?.access_token_set} />
+      <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />
     </Card>
   )
 }

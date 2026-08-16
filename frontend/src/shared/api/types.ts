@@ -123,6 +123,10 @@ export interface WhatsAppTestMessageResult {
   message: string
 }
 
+export interface WhatsAppFlowSetupResult {
+  flow_id: string
+}
+
 export type OnboardingStatus =
   | 'registered'
   | 'meta_connected'
@@ -205,4 +209,5 @@ export interface OrderingFlowAddressOut {
 export interface OrderingFlowCustomerLookupOut {
   display_name: string | null
   address: OrderingFlowAddressOut | null
+  default_contact_phone: string | null
 }

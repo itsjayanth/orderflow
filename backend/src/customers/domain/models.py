@@ -37,6 +37,12 @@ class Customer(Base):
     customer_number: Mapped[int] = mapped_column()
     whatsapp_number: Mapped[str] = mapped_column(String(32))
     display_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Null means "call me on my WhatsApp number" (the common case) -- only
+    # set when the customer has explicitly asked for a *different* number
+    # to be used for delivery calls. Remembered across orders so that
+    # choice doesn't need to be made every time; ordering_flow.domain.
+    # checkout.perform_checkout is the only writer.
+    default_contact_phone: Mapped[str | None] = mapped_column(String(32), default=None)
     first_seen_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC)
     )

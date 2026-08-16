@@ -13,6 +13,7 @@ from flows.domain.menu_order import (
     build_new_delivery_address,
     parse_flow_completion,
     resolve_cart,
+    resolve_contact_phone,
 )
 
 
@@ -109,9 +110,19 @@ def test_resolve_cart_raises_when_nothing_selected() -> None:
 
 
 def test_build_details_screen_data_blank_when_no_saved_address() -> None:
-    data = build_details_screen_data(cart_summary="1x Naan - Rs 40.00", saved_address=None)
+    data = build_details_screen_data(
+        cart_summary="1x Naan - Rs 40.00",
+        saved_address=None,
+        saved_customer_name=None,
+        saved_default_contact_phone=None,
+    )
 
     assert data["cart_summary"] == "1x Naan - Rs 40.00"
+    assert data["saved_customer_name"] == ""
+    assert data["saved_contact_choice"] == "same"
+    assert data["saved_contact_phone"] == ""
+    assert data["has_saved_address"] == "false"
+    assert data["saved_address_display"] == ""
     assert data["saved_address_line1"] == ""
     assert data["saved_address_city"] == ""
     assert data["saved_address_pincode"] == ""
@@ -130,12 +141,21 @@ def test_build_details_screen_data_prefills_from_saved_address() -> None:
         landmark="Near metro",
     )
 
-    data = build_details_screen_data(cart_summary="1x Naan - Rs 40.00", saved_address=address)
+    data = build_details_screen_data(
+        cart_summary="1x Naan - Rs 40.00",
+        saved_address=address,
+        saved_customer_name="Asha",
+        saved_default_contact_phone=None,
+    )
 
+    assert data["has_saved_address"] == "true"
+    assert data["saved_address_display"] == "12 MG Road, Bengaluru - 560001"
     assert data["saved_address_line1"] == "12 MG Road"
     assert data["saved_address_city"] == "Bengaluru"
     assert data["saved_address_pincode"] == "560001"
     assert data["saved_address_landmark"] == "Near metro"
+    assert data["saved_customer_name"] == "Asha"
+    assert data["saved_contact_choice"] == "same"
 
 
 def test_build_details_screen_data_landmark_blank_not_none() -> None:
@@ -150,9 +170,26 @@ def test_build_details_screen_data_landmark_blank_not_none() -> None:
         landmark=None,
     )
 
-    data = build_details_screen_data(cart_summary="", saved_address=address)
+    data = build_details_screen_data(
+        cart_summary="",
+        saved_address=address,
+        saved_customer_name=None,
+        saved_default_contact_phone=None,
+    )
 
     assert data["saved_address_landmark"] == ""
+
+
+def test_build_details_screen_data_contact_choice_different_when_saved_number_set() -> None:
+    data = build_details_screen_data(
+        cart_summary="",
+        saved_address=None,
+        saved_customer_name=None,
+        saved_default_contact_phone="919999999999",
+    )
+
+    assert data["saved_contact_choice"] == "different"
+    assert data["saved_contact_phone"] == "919999999999"
 
 
 def test_parse_flow_completion_defaults_and_blank_address_fields() -> None:
@@ -180,6 +217,55 @@ def test_parse_flow_completion_defaults_when_fields_missing() -> None:
     assert submission.selected_item_ids == []
     assert submission.order_type == "pickup"
     assert submission.payment_method == "cod"
+    assert submission.customer_name is None
+    assert submission.contact_choice == "same"
+    assert submission.contact_phone is None
+    assert submission.address_choice is None
+
+
+def test_parse_flow_completion_parses_name_contact_and_address_choice() -> None:
+    submission = parse_flow_completion(
+        {
+            "selected_items": ["a"],
+            "order_type": "delivery",
+            "payment_method": "cod",
+            "customer_name": "Asha",
+            "contact_choice": "different",
+            "contact_phone": "919999999999",
+            "address_choice": "same",
+        }
+    )
+
+    assert submission.customer_name == "Asha"
+    assert submission.contact_choice == "different"
+    assert submission.contact_phone == "919999999999"
+    assert submission.address_choice == "same"
+
+
+def test_parse_flow_completion_blank_contact_choice_defaults_to_same() -> None:
+    submission = parse_flow_completion({"contact_choice": "  "})
+
+    assert submission.contact_choice == "same"
+
+
+def test_resolve_contact_phone_none_when_same_as_whatsapp() -> None:
+    submission = parse_flow_completion({"contact_choice": "same", "contact_phone": "919999999999"})
+
+    assert resolve_contact_phone(submission) is None
+
+
+def test_resolve_contact_phone_returns_typed_number_when_different() -> None:
+    submission = parse_flow_completion(
+        {"contact_choice": "different", "contact_phone": "919999999999"}
+    )
+
+    assert resolve_contact_phone(submission) == "919999999999"
+
+
+def test_resolve_contact_phone_none_when_different_but_left_blank() -> None:
+    submission = parse_flow_completion({"contact_choice": "different"})
+
+    assert resolve_contact_phone(submission) is None
 
 
 def test_build_new_delivery_address_none_for_pickup() -> None:

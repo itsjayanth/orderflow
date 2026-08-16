@@ -99,6 +99,7 @@ class OrderRepository:
         fulfillment_status: str | None = None,
         delivery_address_id: uuid.UUID | None = None,
         whatsapp_conversation_ref: str | None = None,
+        contact_phone: str | None = None,
     ) -> Order:
         """Not exposed via the API in this phase -- orders are only created
         by the payment flow (Phase 5) or the COD ordering flow (Phase 6).
@@ -130,6 +131,7 @@ class OrderRepository:
             subtotal=subtotal,
             total=subtotal,
             whatsapp_conversation_ref=whatsapp_conversation_ref,
+            contact_phone=contact_phone,
             items=order_items,
         )
         self._session.add(order)

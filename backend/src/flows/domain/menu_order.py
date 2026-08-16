@@ -89,16 +89,41 @@ def resolve_cart(*, selected_item_ids: list[str], menu_items: list[MenuItem]) ->
 
 
 def build_details_screen_data(
-    *, cart_summary: str, saved_address: Address | None
+    *,
+    cart_summary: str,
+    saved_address: Address | None,
+    saved_customer_name: str | None,
+    saved_default_contact_phone: str | None,
 ) -> dict[str, Any]:
-    """The DETAILS screen's `data` -- cart_summary for display, plus a
-    returning customer's saved address (if any) so the Flow JSON's Form
-    `init-values` can prefill it instead of asking again every order.
-    Empty strings, not null, for the address fields: init-values binds
-    them directly into TextInput initial values, and a null there is more
-    likely to render literally as the string "None" than as blank."""
+    """The DETAILS screen's `data` -- cart_summary for display, plus
+    whatever a returning customer already told us (name, contact-number
+    preference, saved address) so the Flow JSON's Form `init-values` can
+    default to their last choice instead of asking again every order.
+    Empty strings, not null, for anything that binds into a TextInput's
+    initial value: a null there is more likely to render literally as the
+    string "None" than as blank.
+
+    saved_contact_choice/saved_contact_phone mirror
+    Customer.default_contact_phone's own null-means-"same as WhatsApp"
+    convention (see customers/domain/models.py): a customer who has never
+    asked for a different number gets "same" (the RadioButtonsGroup's
+    first, default-feeling option), not an empty/invalid choice id.
+    has_saved_address is a "true"/"false" *string* (not a JSON bool) since
+    Flow JSON `If` conditions compare against string literals -- see the
+    condition on the address block below."""
+    has_saved_address = saved_address is not None
+    saved_address_display = ""
+    if saved_address is not None:
+        saved_address_display = (
+            f"{saved_address.line1}, {saved_address.city} - {saved_address.pincode}"
+        )
     return {
         "cart_summary": cart_summary,
+        "saved_customer_name": saved_customer_name or "",
+        "saved_contact_choice": "different" if saved_default_contact_phone else "same",
+        "saved_contact_phone": saved_default_contact_phone or "",
+        "has_saved_address": "true" if has_saved_address else "false",
+        "saved_address_display": saved_address_display,
         "saved_address_line1": saved_address.line1 if saved_address else "",
         "saved_address_city": saved_address.city if saved_address else "",
         "saved_address_pincode": saved_address.pincode if saved_address else "",
@@ -111,6 +136,10 @@ class FlowOrderSubmission:
     selected_item_ids: list[str]
     order_type: str  # "pickup" | "delivery"
     payment_method: str  # "cod" | "online"
+    customer_name: str | None
+    contact_choice: str  # "same" | "different"
+    contact_phone: str | None
+    address_choice: str | None  # "same" | "new" | None (pickup, or no saved address to reuse)
     address_line1: str | None
     address_city: str | None
     address_pincode: str | None
@@ -125,6 +154,10 @@ def parse_flow_completion(payload: dict[str, Any]) -> FlowOrderSubmission:
         selected_item_ids=list(payload.get("selected_items") or []),
         order_type=payload.get("order_type") or "pickup",
         payment_method=payload.get("payment_method") or "cod",
+        customer_name=(payload.get("customer_name") or "").strip() or None,
+        contact_choice=(payload.get("contact_choice") or "").strip() or "same",
+        contact_phone=(payload.get("contact_phone") or "").strip() or None,
+        address_choice=(payload.get("address_choice") or "").strip() or None,
         address_line1=(payload.get("address_line1") or "").strip() or None,
         address_city=(payload.get("address_city") or "").strip() or None,
         address_pincode=(payload.get("address_pincode") or "").strip() or None,
@@ -132,14 +165,30 @@ def parse_flow_completion(payload: dict[str, Any]) -> FlowOrderSubmission:
     )
 
 
+def resolve_contact_phone(submission: FlowOrderSubmission) -> str | None:
+    """Matches perform_checkout's `contact_phone` param semantics: None
+    means "same as WhatsApp". Only trusts the typed-in number when the
+    customer explicitly chose "different" -- a stray contact_phone value
+    (e.g. still sitting in the Form's init-values from last order) should
+    never override that choice just because the field has *something* in
+    it."""
+    if submission.contact_choice == "different":
+        return submission.contact_phone
+    return None
+
+
 def build_new_delivery_address(submission: FlowOrderSubmission) -> NewDeliveryAddress | None:
-    """None both when the customer chose pickup, and when they chose
-    delivery but left the address incomplete -- the Flow JSON doesn't
-    block that client-side (no per-field conditional validation in v1, see
-    flows/assets/order_flow.json), so checkout still proceeds as a
-    delivery order with no address rather than failing outright; the
-    merchant follows up by phone. A known v1 gap, not silent data loss --
-    perform_checkout still records order_type="delivery" either way."""
+    """Only relevant for a brand-new (or edited) address -- the caller is
+    responsible for not calling this at all when the customer chose to
+    reuse their saved address (submission.address_choice == "same"; see
+    conversation/domain/handler.py). None both when the customer chose
+    pickup, and when they chose delivery but left the address incomplete
+    -- the Flow JSON doesn't block that client-side (no per-field
+    conditional validation in v1, see flows/assets/order_flow.json), so
+    checkout still proceeds as a delivery order with no address rather
+    than failing outright; the merchant follows up by phone. A known v1
+    gap, not silent data loss -- perform_checkout still records
+    order_type="delivery" either way."""
     if submission.order_type != "delivery":
         return None
     if not (submission.address_line1 and submission.address_city and submission.address_pincode):

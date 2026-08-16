@@ -8,7 +8,7 @@ from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
 from conversation.domain.intents import Intent
 from conversation.domain.webhook_parser import InboundMessage
-from customers.adapters.repository import CustomerRepository
+from customers.adapters.repository import AddressRepository, CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.domain.checkout import CheckoutItem, perform_checkout
@@ -391,3 +391,158 @@ async def test_flow_completion_with_empty_cart_sends_error_and_creates_no_order(
         (await CustomerRepository(db_session).find_or_create(tenant, "919876543210")).customer_id,
     )
     assert orders == []
+
+
+async def test_flow_completion_stores_name_and_alternate_contact_phone(
+    db_session: AsyncSession,
+) -> None:
+    from notifications import wiring
+
+    _, tenant = await _seed_connected_merchant(db_session)
+    menu_item = await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        from_name="WhatsApp Profile Name",
+        flow_response={
+            "selected_items": [str(menu_item.menu_item_id)],
+            "order_type": "pickup",
+            "payment_method": "cod",
+            "customer_name": "Ravi Kumar",
+            "contact_choice": "different",
+            "contact_phone": "919999999999",
+        },
+    )
+
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(RecordingNotificationChannel())
+    try:
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert result.intent == Intent.FLOW_ORDER_COMPLETED
+
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    # The name typed into the Flow wins over the WhatsApp profile name.
+    assert customer.display_name == "Ravi Kumar"
+    # Remembered for next time (update_contact_details), not just used for
+    # this order.
+    assert customer.default_contact_phone == "919999999999"
+
+    orders = await OrderRepository(db_session).list_for_customer(tenant, customer.customer_id)
+    assert len(orders) == 1
+    assert orders[0].contact_phone == "919999999999"
+
+
+async def test_flow_completion_delivery_address_choice_same_reuses_saved_address(
+    db_session: AsyncSession,
+) -> None:
+    from notifications import wiring
+
+    _, tenant = await _seed_connected_merchant(db_session)
+    menu_item = await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    address_repo = AddressRepository(db_session)
+    saved_address = await address_repo.create(
+        tenant,
+        customer_id=customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        is_default=True,
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "selected_items": [str(menu_item.menu_item_id)],
+            "order_type": "delivery",
+            "payment_method": "cod",
+            "customer_name": "Ravi Kumar",
+            "contact_choice": "same",
+            "address_choice": "same",
+        },
+    )
+
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(RecordingNotificationChannel())
+    try:
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert result.intent == Intent.FLOW_ORDER_COMPLETED
+
+    orders = await OrderRepository(db_session).list_for_customer(tenant, customer.customer_id)
+    assert len(orders) == 1
+    # Reused the existing Address row rather than creating a fresh one.
+    assert orders[0].delivery_address_id == saved_address.address_id
+    # "Use my WhatsApp number" -- no alternate number saved.
+    assert orders[0].contact_phone == "919876543210"
+
+    addresses = await address_repo.list_for_customer(tenant, customer.customer_id)
+    assert len(addresses) == 1
+
+
+async def test_flow_completion_delivery_address_choice_new_creates_fresh_address(
+    db_session: AsyncSession,
+) -> None:
+    from notifications import wiring
+
+    _, tenant = await _seed_connected_merchant(db_session)
+    menu_item = await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    address_repo = AddressRepository(db_session)
+    await address_repo.create(
+        tenant,
+        customer_id=customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        is_default=True,
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "selected_items": [str(menu_item.menu_item_id)],
+            "order_type": "delivery",
+            "payment_method": "cod",
+            "address_choice": "new",
+            "address_line1": "45 Residency Road",
+            "address_city": "Bengaluru",
+            "address_pincode": "560025",
+        },
+    )
+
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(RecordingNotificationChannel())
+    try:
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert result.intent == Intent.FLOW_ORDER_COMPLETED
+
+    orders = await OrderRepository(db_session).list_for_customer(tenant, customer.customer_id)
+    assert len(orders) == 1
+
+    addresses = await address_repo.list_for_customer(tenant, customer.customer_id)
+    # The original saved address plus a fresh one for this order.
+    assert len(addresses) == 2
+    assert orders[0].delivery_address_id in {a.address_id for a in addresses}
+    new_address = next(a for a in addresses if a.line1 == "45 Residency Road")
+    assert orders[0].delivery_address_id == new_address.address_id

@@ -57,6 +57,13 @@ class OrderingFlowCheckoutRequest(BaseModel):
     # new_delivery_address param, which turns this into a delivery_address_id
     # on the Order once the Customer row exists).
     delivery_address: OrderingFlowDeliveryAddressIn | None = None
+    # The alternate number to call for *this* order, or None when the
+    # customer chose "use my WhatsApp number" -- passed straight through to
+    # perform_checkout's contact_phone kwarg, which resolves None to
+    # customer_whatsapp_number. Deliberately not validated as strictly as
+    # customer_whatsapp_number: nobody looks a customer up by this number,
+    # it's purely informational for whoever calls about the order.
+    contact_phone: str | None = None
 
     @field_validator("customer_display_name")
     @classmethod
@@ -64,6 +71,16 @@ class OrderingFlowCheckoutRequest(BaseModel):
         stripped = value.strip()
         if not stripped:
             raise ValueError("customer_display_name must not be blank")
+        return stripped
+
+    @field_validator("contact_phone")
+    @classmethod
+    def _contact_phone_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("contact_phone must not be blank")
         return stripped
 
     @model_validator(mode="after")
@@ -101,3 +118,8 @@ class OrderingFlowCustomerLookupOut(BaseModel):
 
     display_name: str | None
     address: OrderingFlowAddressOut | None
+    # The alternate contact number this customer previously chose (None if
+    # they've always used "same as WhatsApp"), so the webview can
+    # pre-select "Use a different number" and prefill the box for a
+    # returning customer instead of asking again.
+    default_contact_phone: str | None

@@ -164,6 +164,9 @@ async def test_data_exchange_from_items_returns_cart_summary_and_blank_address(
     assert "Butter Chicken" in decrypted["data"]["cart_summary"]
     assert "Total: Rs 349.00" in decrypted["data"]["cart_summary"]
     assert decrypted["data"]["saved_address_line1"] == ""
+    assert decrypted["data"]["has_saved_address"] == "false"
+    assert decrypted["data"]["saved_customer_name"] == ""
+    assert decrypted["data"]["saved_contact_choice"] == "same"
 
 
 async def test_data_exchange_from_items_prefills_saved_address_for_returning_customer(
@@ -173,7 +176,9 @@ async def test_data_exchange_from_items_prefills_saved_address_for_returning_cus
     menu_item = await MenuItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
-    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    customer = await CustomerRepository(db_session).find_or_create(
+        tenant, "919876543210", display_name="Asha"
+    )
     await AddressRepository(db_session).create(
         tenant,
         customer_id=customer.customer_id,
@@ -204,6 +209,43 @@ async def test_data_exchange_from_items_prefills_saved_address_for_returning_cus
     assert decrypted["data"]["saved_address_line1"] == "12 MG Road"
     assert decrypted["data"]["saved_address_city"] == "Bengaluru"
     assert decrypted["data"]["saved_address_pincode"] == "560001"
+    assert decrypted["data"]["has_saved_address"] == "true"
+    assert decrypted["data"]["saved_address_display"] == "12 MG Road, Bengaluru - 560001"
+    assert decrypted["data"]["saved_customer_name"] == "Asha"
+    assert decrypted["data"]["saved_contact_choice"] == "same"
+
+
+async def test_data_exchange_from_items_prefills_contact_choice_when_customer_has_alt_number(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
+    menu_item = await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    await CustomerRepository(db_session).update_contact_details(
+        customer, display_name=None, default_contact_phone="919999999999"
+    )
+    await db_session.commit()
+    request_body, aes_key, iv = _build_request(
+        public_pem,
+        {
+            "version": "3.0",
+            "action": "data_exchange",
+            "screen": "ITEMS",
+            "data": {"selected_items": [str(menu_item.menu_item_id)]},
+            "flow_token": "919876543210",
+        },
+    )
+
+    response = await client.post(
+        f"/api/v1/whatsapp/flows/{tenant.merchant_id}/data-exchange", json=request_body
+    )
+
+    assert response.status_code == 200
+    decrypted = _decrypt_response(response.text, aes_key, iv)
+    assert decrypted["data"]["saved_contact_choice"] == "different"
+    assert decrypted["data"]["saved_contact_phone"] == "919999999999"
 
 
 async def test_data_exchange_with_no_items_falls_back_to_category(

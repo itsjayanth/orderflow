@@ -75,6 +75,7 @@ async def customer_lookup(
     return OrderingFlowCustomerLookupOut(
         display_name=customer.display_name,
         address=OrderingFlowAddressOut.model_validate(address) if address else None,
+        default_contact_phone=customer.default_contact_phone,
     )
 
 
@@ -118,6 +119,7 @@ async def checkout(
             payment_method=body.payment_method,
             order_type=body.order_type,
             new_delivery_address=new_delivery_address,
+            contact_phone=body.contact_phone,
         )
     except MenuItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc

@@ -2,7 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { onboardingStatusQueryKey } from '@/features/onboarding/useOnboarding'
 import { apiFetch } from '@/shared/api/client'
-import type { WhatsAppSettingsOut, WhatsAppTestMessageResult } from '@/shared/api/types'
+import type {
+  WhatsAppFlowSetupResult,
+  WhatsAppSettingsOut,
+  WhatsAppTestMessageResult,
+} from '@/shared/api/types'
 
 const QUERY_KEY = ['settings', 'whatsapp']
 
@@ -42,6 +46,20 @@ export function useSendTestWhatsAppMessage() {
       apiFetch<WhatsAppTestMessageResult>('/api/v1/onboarding/whatsapp/test-message', {
         method: 'POST',
         body: JSON.stringify({ to }),
+      }),
+  })
+}
+
+export function useSetupWhatsAppFlow() {
+  return useMutation({
+    mutationFn: (metaWabaId: string) =>
+      apiFetch<WhatsAppFlowSetupResult>('/api/v1/onboarding/whatsapp/flow-setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          meta_waba_id: metaWabaId,
+          // Never user-facing -- same env var api/client.ts's API_BASE_URL reads.
+          backend_base_url: import.meta.env.VITE_API_URL ?? 'http://localhost:8000',
+        }),
       }),
   })
 }

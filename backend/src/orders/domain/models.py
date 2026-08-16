@@ -60,6 +60,14 @@ class Order(Base):
     currency: Mapped[str] = mapped_column(String(8), default="INR")
 
     whatsapp_conversation_ref: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Always resolved by perform_checkout at order-creation time (falls
+    # back to the customer's own whatsapp_number when they didn't ask for a
+    # different one) -- so the dashboard/kitchen always has one number to
+    # call for this specific order, independent of whatever the customer's
+    # *current* default_contact_phone preference is by the time anyone
+    # looks at it. Nullable only for rows created before this column
+    # existed.
+    contact_phone: Mapped[str | None] = mapped_column(String(32), default=None)
     # Phase 2 (POS integration) seam -- unused until then.
     external_pos_order_id: Mapped[str | None] = mapped_column(String(255), default=None)
 

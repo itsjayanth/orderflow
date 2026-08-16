@@ -174,6 +174,10 @@ describe('OrderingPage', () => {
     expect(requestBody.customer_display_name).toBe('Asha')
     expect(requestBody.order_type).toBe('pickup')
     expect(requestBody.delivery_address).toBeUndefined()
+    // contact_choice defaults to 'same' and is never touched here -- the
+    // request should omit contact_phone entirely (undefined), matching
+    // perform_checkout's "None means same as WhatsApp number" semantics.
+    expect(requestBody.contact_phone).toBeUndefined()
 
     expect(await screen.findByText('Order #0012 confirmed!')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Complete payment' })).toHaveAttribute(
@@ -278,6 +282,7 @@ describe('OrderingPage', () => {
         city: 'Bengaluru',
         pincode: '560025',
       },
+      default_contact_phone: null,
     }
     mockedApiFetch.mockResolvedValueOnce(lookupResponse)
 
@@ -328,5 +333,98 @@ describe('OrderingPage', () => {
 
     expect(screen.getByLabelText('Your name')).toHaveValue('')
     expect(screen.queryByText('Restaurant not found.')).not.toBeInTheDocument()
+  })
+
+  it('shows a validation error when "different number" is chosen but left blank', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText('Total: INR 349.00')
+
+    fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
+      target: { value: '9876543210' },
+    })
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Asha' } })
+    fireEvent.click(screen.getByRole('button', { name: /Use a different number/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Place order' }))
+
+    expect(await screen.findByText('Enter a valid phone number')).toBeInTheDocument()
+    expect(mockedApiFetch).not.toHaveBeenCalledWith(
+      `/api/v1/ordering-flow/${merchantId}/checkout`,
+      expect.anything(),
+    )
+  })
+
+  it('submits the alternate contact number when "different number" is chosen and filled in', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    const checkoutResponse: OrderingFlowCheckoutResponse = {
+      order_id: '33333333-3333-3333-3333-333333333333',
+      order_number: 9,
+      payment_status: 'awaiting_payment',
+      fulfillment_status: null,
+      total: '349.00',
+      payment_link_url: null,
+    }
+    mockedApiFetch.mockResolvedValueOnce(checkoutResponse)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText('Total: INR 349.00')
+
+    fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
+      target: { value: '9876543210' },
+    })
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Asha' } })
+    fireEvent.click(screen.getByRole('button', { name: /Use a different number/ }))
+    fireEvent.change(screen.getByLabelText('Number to call'), {
+      target: { value: '8123456789' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Place order' }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        `/api/v1/ordering-flow/${merchantId}/checkout`,
+        expect.anything(),
+      ),
+    )
+    const checkoutCall = mockedApiFetch.mock.calls.find(
+      ([path]) => path === `/api/v1/ordering-flow/${merchantId}/checkout`,
+    )
+    const requestBody = JSON.parse((checkoutCall?.[1]?.body as string) ?? '{}')
+    expect(requestBody.contact_phone).toBe('8123456789')
+  })
+
+  it('prefills "use a different number" for a returning customer with a saved contact_phone', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    const lookupResponse: OrderingFlowCustomerLookupOut = {
+      display_name: 'Priya',
+      address: null,
+      default_contact_phone: '8000011111',
+    }
+    mockedApiFetch.mockResolvedValueOnce(lookupResponse)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText('Total: INR 349.00')
+
+    const phoneInput = screen.getByLabelText('Your WhatsApp number')
+    fireEvent.change(phoneInput, { target: { value: '9876543210' } })
+    fireEvent.blur(phoneInput)
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        `/api/v1/ordering-flow/${merchantId}/customer-lookup?whatsapp_number=919876543210`,
+      ),
+    )
+
+    expect(await screen.findByDisplayValue('8000011111')).toBeInTheDocument()
+    expect(screen.getByLabelText('Number to call')).toHaveValue('8000011111')
   })
 })
