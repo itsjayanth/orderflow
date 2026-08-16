@@ -156,6 +156,7 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
     assert result.intent == Intent.GREETING
     assert result.reply_sent is True
     assert len(sender.button_calls) == 1
+    assert "Test Kitchen" in sender.button_calls[0]["body"]
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
     assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
 

@@ -8,13 +8,21 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # WhatsApp caps embedded CheckboxGroup option images at 100KB (Flow JSON
-# v5.0+) and explicitly recommends staying well under that for performance
-# -- this targets roughly 20KB so a whole category's worth of images stays
-# small and fast to render, with real margin under the hard cap.
-_TARGET_BYTES = 20_000
-_INITIAL_MAX_DIMENSION = 300
-_FALLBACK_MAX_DIMENSION = 150
-_QUALITY_STEPS = (80, 65, 50, 35, 20)
+# v5.0+) and explicitly recommends staying well under that for performance.
+# 30KB is the deliberate target, not just "as small as possible": a
+# category typically has several items, so the *whole screen's* image
+# payload is what actually determines load time on a slow connection --
+# 30KB x ~6 items is still well under 200KB total, comfortably fast even
+# on 2G/3G, while giving JPEG noticeably more headroom than 20KB to avoid
+# visible blocking artifacts at this thumbnail size. WEBP would compress
+# smaller at the same visual quality, but Flow's documented image support
+# is JPEG/PNG/WEBP with WEBP only confirmed on iOS 14.6+ -- JPEG stays the
+# safe default across devices rather than risking a broken image on
+# whatever doesn't support WEBP.
+_TARGET_BYTES = 30_000
+_INITIAL_MAX_DIMENSION = 350
+_FALLBACK_MAX_DIMENSION = 200
+_QUALITY_STEPS = (85, 75, 65, 50, 35)
 
 # Wikimedia Commons -- where the catalog's demo-data image_urls point --
 # rejects requests with httpx's default User-Agent (403 Forbidden) per its

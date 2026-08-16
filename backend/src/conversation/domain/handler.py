@@ -83,7 +83,7 @@ async def handle_inbound_message(
 
     intent = classify(text=message.text, button_id=message.button_id)
     reply_sent = await _reply_for_intent(
-        session, sender, waba, tenant, message, intent, customer.customer_id
+        session, sender, waba, tenant, message, intent, customer.customer_id, merchant.business_name
     )
 
     return HandledMessage(intent=intent, reply_sent=reply_sent)
@@ -97,6 +97,7 @@ async def _reply_for_intent(
     message: InboundMessage,
     intent: Intent,
     customer_id: uuid.UUID,
+    business_name: str,
 ) -> bool:
     access_token = decrypt(waba.access_token_encrypted) if waba.access_token_encrypted else ""
 
@@ -157,7 +158,7 @@ async def _reply_for_intent(
         phone_number_id=message.phone_number_id,
         access_token=access_token,
         to=message.from_phone,
-        body="Welcome! What would you like to do?",
+        body=f"Hi! Welcome to {business_name}. What would you like to do?",
         buttons=_INTENT_MENU_BUTTONS,
     )
 
