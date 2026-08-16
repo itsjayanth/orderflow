@@ -149,7 +149,7 @@ def test_build_details_screen_data_prefills_from_saved_address() -> None:
     )
 
     assert data["has_saved_address"] == "true"
-    assert data["saved_address_display"] == "12 MG Road, Bengaluru - 560001"
+    assert data["saved_address_display"] == "Your saved address: 12 MG Road, Bengaluru - 560001"
     assert data["saved_address_line1"] == "12 MG Road"
     assert data["saved_address_city"] == "Bengaluru"
     assert data["saved_address_pincode"] == "560001"

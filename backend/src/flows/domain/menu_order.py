@@ -114,8 +114,15 @@ def build_details_screen_data(
     has_saved_address = saved_address is not None
     saved_address_display = ""
     if saved_address is not None:
+        # The full sentence lives in this one value, not split between a
+        # static JSON string and an interpolated field -- WhatsApp's Flow
+        # client only reliably substitutes ${data.x} when it's the entire
+        # field content, not embedded partway through a longer string (a
+        # live test showed the literal text "${data.saved_address_display}"
+        # rendered verbatim when the JSON tried "Your saved address: ${...}").
         saved_address_display = (
-            f"{saved_address.line1}, {saved_address.city} - {saved_address.pincode}"
+            f"Your saved address: {saved_address.line1}, "
+            f"{saved_address.city} - {saved_address.pincode}"
         )
     return {
         "cart_summary": cart_summary,

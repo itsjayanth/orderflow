@@ -210,7 +210,10 @@ async def test_data_exchange_from_items_prefills_saved_address_for_returning_cus
     assert decrypted["data"]["saved_address_city"] == "Bengaluru"
     assert decrypted["data"]["saved_address_pincode"] == "560001"
     assert decrypted["data"]["has_saved_address"] == "true"
-    assert decrypted["data"]["saved_address_display"] == "12 MG Road, Bengaluru - 560001"
+    assert (
+        decrypted["data"]["saved_address_display"]
+        == "Your saved address: 12 MG Road, Bengaluru - 560001"
+    )
     assert decrypted["data"]["saved_customer_name"] == "Asha"
     assert decrypted["data"]["saved_contact_choice"] == "same"
 
