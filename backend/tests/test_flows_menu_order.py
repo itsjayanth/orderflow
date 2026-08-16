@@ -4,16 +4,21 @@ from decimal import Decimal
 import pytest
 
 from catalog.domain.models import MenuItem
+from customers.domain.models import Address
 from flows.domain.menu_order import (
     NoItemsSelectedError,
-    build_menu_screen_data,
+    build_category_screen_data,
+    build_details_screen_data,
+    build_items_screen_data,
     build_new_delivery_address,
     parse_flow_completion,
     resolve_cart,
 )
 
 
-def _item(*, name: str, price: str, category: str = "Mains", is_available: bool = True) -> MenuItem:
+def _item(
+    *, name: str, price: str, category: str = "Mains", is_available: bool = True
+) -> MenuItem:
     return MenuItem(
         menu_item_id=uuid.uuid4(),
         merchant_id=uuid.uuid4(),
@@ -25,15 +30,47 @@ def _item(*, name: str, price: str, category: str = "Mains", is_available: bool 
     )
 
 
-def test_build_menu_screen_data_excludes_unavailable_items() -> None:
-    available = _item(name="Butter Chicken", price="349.00")
-    unavailable = _item(name="Sold Out Curry", price="199.00", is_available=False)
+def test_build_category_screen_data_returns_distinct_categories_in_first_seen_order() -> None:
+    items = [
+        _item(name="Naan", price="40.00", category="Breads"),
+        _item(name="Butter Chicken", price="349.00", category="Mains"),
+        _item(name="Roti", price="30.00", category="Breads"),
+    ]
 
-    data = build_menu_screen_data(business_name="Varkey's", menu_items=[available, unavailable])
+    data = build_category_screen_data(business_name="Varkey's", menu_items=items)
 
     assert data["business_name"] == "Varkey's"
-    titles = [opt["title"] for opt in data["menu_options"]]
-    assert "Butter Chicken - Rs 349.00" in titles[0]
+    assert data["categories"] == [
+        {"id": "Breads", "title": "Breads"},
+        {"id": "Mains", "title": "Mains"},
+    ]
+
+
+def test_build_category_screen_data_excludes_unavailable_items_categories() -> None:
+    only_unavailable = _item(name="Sold Out", price="99.00", category="Soups", is_available=False)
+
+    data = build_category_screen_data(business_name="Varkey's", menu_items=[only_unavailable])
+
+    assert data["categories"] == []
+
+
+def test_build_items_screen_data_filters_to_one_category() -> None:
+    mains_item = _item(name="Butter Chicken", price="349.00", category="Mains")
+    bread_item = _item(name="Naan", price="40.00", category="Breads")
+
+    data = build_items_screen_data(category="Mains", menu_items=[mains_item, bread_item])
+
+    assert data["category_name"] == "Mains"
+    assert len(data["menu_options"]) == 1
+    assert "Butter Chicken" in data["menu_options"][0]["title"]
+
+
+def test_build_items_screen_data_excludes_unavailable_items() -> None:
+    available = _item(name="Butter Chicken", price="349.00", category="Mains")
+    unavailable = _item(name="Sold Out", price="99.00", category="Mains", is_available=False)
+
+    data = build_items_screen_data(category="Mains", menu_items=[available, unavailable])
+
     assert len(data["menu_options"]) == 1
 
 
@@ -69,6 +106,53 @@ def test_resolve_cart_raises_when_nothing_selected() -> None:
 
     with pytest.raises(NoItemsSelectedError):
         resolve_cart(selected_item_ids=[], menu_items=[item])
+
+
+def test_build_details_screen_data_blank_when_no_saved_address() -> None:
+    data = build_details_screen_data(cart_summary="1x Naan - Rs 40.00", saved_address=None)
+
+    assert data["cart_summary"] == "1x Naan - Rs 40.00"
+    assert data["saved_address_line1"] == ""
+    assert data["saved_address_city"] == ""
+    assert data["saved_address_pincode"] == ""
+    assert data["saved_address_landmark"] == ""
+
+
+def test_build_details_screen_data_prefills_from_saved_address() -> None:
+    address = Address(
+        address_id=uuid.uuid4(),
+        customer_id=uuid.uuid4(),
+        merchant_id=uuid.uuid4(),
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        landmark="Near metro",
+    )
+
+    data = build_details_screen_data(cart_summary="1x Naan - Rs 40.00", saved_address=address)
+
+    assert data["saved_address_line1"] == "12 MG Road"
+    assert data["saved_address_city"] == "Bengaluru"
+    assert data["saved_address_pincode"] == "560001"
+    assert data["saved_address_landmark"] == "Near metro"
+
+
+def test_build_details_screen_data_landmark_blank_not_none() -> None:
+    address = Address(
+        address_id=uuid.uuid4(),
+        customer_id=uuid.uuid4(),
+        merchant_id=uuid.uuid4(),
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        landmark=None,
+    )
+
+    data = build_details_screen_data(cart_summary="", saved_address=address)
+
+    assert data["saved_address_landmark"] == ""
 
 
 def test_parse_flow_completion_defaults_and_blank_address_fields() -> None:

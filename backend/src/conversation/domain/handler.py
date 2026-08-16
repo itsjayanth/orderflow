@@ -106,13 +106,18 @@ async def _reply_for_intent(
             # by scripts/setup_whatsapp_flow.py. Falls back to the webview
             # link below for any merchant who hasn't had that run yet, so
             # PLACE_ORDER never silently does nothing.
-            flow_token = f"order-{tenant.merchant_id}-{message.whatsapp_message_id}"
+            #
+            # flow_token carries the customer's own WhatsApp number rather
+            # than an opaque id -- flows/api/router.py has no other way to
+            # know *who* is filling out the Flow (the encrypted request
+            # body doesn't include it), and it's what lets the DETAILS
+            # screen prefill a returning customer's saved address.
             sent = await sender.send_flow(
                 phone_number_id=message.phone_number_id,
                 access_token=access_token,
                 to=message.from_phone,
                 flow_id=waba.whatsapp_flow_id,
-                flow_token=flow_token,
+                flow_token=message.from_phone,
                 body="Browse the menu and place your order without leaving WhatsApp.",
                 cta="Order now",
             )

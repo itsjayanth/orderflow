@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from catalog.adapters.repository import MenuItemRepository
+from customers.adapters.repository import AddressRepository, CustomerRepository
 from flows.domain.encryption import generate_key_pair
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -76,12 +77,13 @@ async def test_ping_returns_active_status(client: AsyncClient, db_session: Async
     assert _decrypt_response(response.text, aes_key, iv) == {"data": {"status": "active"}}
 
 
-async def test_init_returns_menu_screen_with_available_items(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
+async def test_init_returns_category_screen(client: AsyncClient, db_session: AsyncSession) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
     await MenuItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    await MenuItemRepository(db_session).create(
+        tenant, category="Breads", name="Naan", price=Decimal("40.00")
     )
     await db_session.commit()
     request_body, aes_key, iv = _build_request(public_pem, {"version": "3.0", "action": "INIT"})
@@ -92,13 +94,48 @@ async def test_init_returns_menu_screen_with_available_items(
 
     assert response.status_code == 200
     decrypted = _decrypt_response(response.text, aes_key, iv)
-    assert decrypted["screen"] == "MENU"
+    assert decrypted["screen"] == "CATEGORY"
     assert decrypted["data"]["business_name"] == "Varkey's"
+    assert decrypted["data"]["categories"] == [
+        {"id": "Mains", "title": "Mains"},
+        {"id": "Breads", "title": "Breads"},
+    ]
+
+
+async def test_data_exchange_from_category_returns_filtered_items(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
+    await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    await MenuItemRepository(db_session).create(
+        tenant, category="Breads", name="Naan", price=Decimal("40.00")
+    )
+    await db_session.commit()
+    request_body, aes_key, iv = _build_request(
+        public_pem,
+        {
+            "version": "3.0",
+            "action": "data_exchange",
+            "screen": "CATEGORY",
+            "data": {"category": "Mains"},
+        },
+    )
+
+    response = await client.post(
+        f"/api/v1/whatsapp/flows/{tenant.merchant_id}/data-exchange", json=request_body
+    )
+
+    assert response.status_code == 200
+    decrypted = _decrypt_response(response.text, aes_key, iv)
+    assert decrypted["screen"] == "ITEMS"
+    assert decrypted["data"]["category_name"] == "Mains"
     assert len(decrypted["data"]["menu_options"]) == 1
     assert "Butter Chicken" in decrypted["data"]["menu_options"][0]["title"]
 
 
-async def test_data_exchange_from_menu_returns_cart_summary(
+async def test_data_exchange_from_items_returns_cart_summary_and_blank_address(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
@@ -111,8 +148,9 @@ async def test_data_exchange_from_menu_returns_cart_summary(
         {
             "version": "3.0",
             "action": "data_exchange",
-            "screen": "MENU",
+            "screen": "ITEMS",
             "data": {"selected_items": [str(menu_item.menu_item_id)]},
+            "flow_token": "919876543210",
         },
     )
 
@@ -125,9 +163,50 @@ async def test_data_exchange_from_menu_returns_cart_summary(
     assert decrypted["screen"] == "DETAILS"
     assert "Butter Chicken" in decrypted["data"]["cart_summary"]
     assert "Total: Rs 349.00" in decrypted["data"]["cart_summary"]
+    assert decrypted["data"]["saved_address_line1"] == ""
 
 
-async def test_data_exchange_with_no_items_falls_back_to_menu(
+async def test_data_exchange_from_items_prefills_saved_address_for_returning_customer(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
+    menu_item = await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    await AddressRepository(db_session).create(
+        tenant,
+        customer_id=customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        is_default=True,
+    )
+    await db_session.commit()
+    request_body, aes_key, iv = _build_request(
+        public_pem,
+        {
+            "version": "3.0",
+            "action": "data_exchange",
+            "screen": "ITEMS",
+            "data": {"selected_items": [str(menu_item.menu_item_id)]},
+            "flow_token": "919876543210",
+        },
+    )
+
+    response = await client.post(
+        f"/api/v1/whatsapp/flows/{tenant.merchant_id}/data-exchange", json=request_body
+    )
+
+    assert response.status_code == 200
+    decrypted = _decrypt_response(response.text, aes_key, iv)
+    assert decrypted["data"]["saved_address_line1"] == "12 MG Road"
+    assert decrypted["data"]["saved_address_city"] == "Bengaluru"
+    assert decrypted["data"]["saved_address_pincode"] == "560001"
+
+
+async def test_data_exchange_with_no_items_falls_back_to_category(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
@@ -140,7 +219,7 @@ async def test_data_exchange_with_no_items_falls_back_to_menu(
         {
             "version": "3.0",
             "action": "data_exchange",
-            "screen": "MENU",
+            "screen": "ITEMS",
             "data": {"selected_items": []},
         },
     )
@@ -151,7 +230,7 @@ async def test_data_exchange_with_no_items_falls_back_to_menu(
 
     assert response.status_code == 200
     decrypted = _decrypt_response(response.text, aes_key, iv)
-    assert decrypted["screen"] == "MENU"
+    assert decrypted["screen"] == "CATEGORY"
 
 
 async def test_bad_encryption_returns_421(client: AsyncClient, db_session: AsyncSession) -> None:

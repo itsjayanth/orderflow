@@ -3,16 +3,34 @@ from decimal import Decimal
 from typing import Any
 
 from catalog.domain.models import MenuItem
+from customers.domain.models import Address
 from ordering_flow.domain.checkout import CheckoutItem, NewDeliveryAddress
 
 
-def build_menu_screen_data(*, business_name: str, menu_items: list[MenuItem]) -> dict[str, Any]:
-    """The MENU screen's `data` on Flow INIT -- one CheckboxGroup option per
-    available item. Flow JSON layouts are static (a fixed component tree),
-    but a component's `data-source` array can be dynamic length, which is
-    what lets this handle any menu size without editing the Flow JSON."""
+def build_category_screen_data(*, business_name: str, menu_items: list[MenuItem]) -> dict[str, Any]:
+    """The CATEGORY screen's `data` on Flow INIT -- distinct categories in
+    first-seen catalog order (not alphabetical, so a merchant's own
+    ordering, e.g. Starters before Desserts, is preserved). A menu with
+    only one category still gets a (trivial) category screen rather than
+    special-casing straight to ITEMS -- one less branch to keep correct."""
+    seen: list[str] = []
+    for item in menu_items:
+        if item.is_available and item.category not in seen:
+            seen.append(item.category)
     return {
         "business_name": business_name,
+        "categories": [{"id": category, "title": category} for category in seen],
+    }
+
+
+def build_items_screen_data(*, category: str, menu_items: list[MenuItem]) -> dict[str, Any]:
+    """The ITEMS screen's `data`, filtered to one category -- one
+    CheckboxGroup option per available item in it. Flow JSON layouts are a
+    static component tree, but a component's `data-source` array can be
+    dynamic length, which is what lets this handle any category size
+    without editing the Flow JSON."""
+    return {
+        "category_name": category,
         "menu_options": [
             {
                 "id": str(item.menu_item_id),
@@ -20,7 +38,7 @@ def build_menu_screen_data(*, business_name: str, menu_items: list[MenuItem]) ->
                 "description": item.category,
             }
             for item in menu_items
-            if item.is_available
+            if item.is_available and item.category == category
         ],
     }
 
@@ -62,6 +80,24 @@ def resolve_cart(*, selected_item_ids: list[str], menu_items: list[MenuItem]) ->
 
     summary = "\n".join(lines) + f"\n\nTotal: Rs {total}"
     return CartResolution(checkout_items=checkout_items, summary_text=summary)
+
+
+def build_details_screen_data(
+    *, cart_summary: str, saved_address: Address | None
+) -> dict[str, Any]:
+    """The DETAILS screen's `data` -- cart_summary for display, plus a
+    returning customer's saved address (if any) so the Flow JSON's Form
+    `init-values` can prefill it instead of asking again every order.
+    Empty strings, not null, for the address fields: init-values binds
+    them directly into TextInput initial values, and a null there is more
+    likely to render literally as the string "None" than as blank."""
+    return {
+        "cart_summary": cart_summary,
+        "saved_address_line1": saved_address.line1 if saved_address else "",
+        "saved_address_city": saved_address.city if saved_address else "",
+        "saved_address_pincode": saved_address.pincode if saved_address else "",
+        "saved_address_landmark": (saved_address.landmark or "") if saved_address else "",
+    }
 
 
 @dataclass(frozen=True, slots=True)

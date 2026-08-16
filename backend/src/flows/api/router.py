@@ -5,9 +5,17 @@ from typing import Any
 from fastapi import APIRouter, Response, status
 
 from catalog.adapters.repository import MenuItemRepository
+from customers.adapters.repository import AddressRepository, CustomerRepository
+from customers.domain.models import Address
 from flows.api.schemas import FlowDataExchangeRequest
 from flows.domain.encryption import FlowDecryptionError, decrypt_request, encrypt_response
-from flows.domain.menu_order import NoItemsSelectedError, build_menu_screen_data, resolve_cart
+from flows.domain.menu_order import (
+    NoItemsSelectedError,
+    build_category_screen_data,
+    build_details_screen_data,
+    build_items_screen_data,
+    resolve_cart,
+)
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from shared.deps import DbSession
@@ -24,8 +32,9 @@ async def data_exchange(
     merchant_id: uuid.UUID, body: FlowDataExchangeRequest, session: DbSession
 ) -> Response:
     """Every screen transition in flows/assets/order_flow.json that needs
-    server data (menu list, computed cart total) round-trips through here --
-    the endpoint_uri configured on the merchant's Flow (see
+    server data (categories, per-category item list, computed cart total,
+    a returning customer's saved address) round-trips through here -- the
+    endpoint_uri configured on the merchant's Flow (see
     scripts/setup_whatsapp_flow.py) points at this exact route, with
     merchant_id in the path so we know *whose* RSA private key to try
     before we've decrypted anything (the encrypted body carries no plaintext
@@ -60,12 +69,9 @@ async def data_exchange(
     )
     response_data = await _handle_action(session, tenant, payload)
     logger.info(
-        "Flow data-exchange response for merchant %s: screen=%r menu_option_count=%s",
+        "Flow data-exchange response for merchant %s: screen=%r",
         merchant_id,
         response_data.get("screen"),
-        len(response_data.get("data", {}).get("menu_options", []))
-        if "menu_options" in response_data.get("data", {})
-        else "n/a",
     )
     encrypted = encrypt_response(response=response_data, aes_key=aes_key, iv=iv)
     return Response(content=encrypted, media_type="text/plain", status_code=status.HTTP_200_OK)
@@ -75,34 +81,70 @@ async def _handle_action(
     session: DbSession, tenant: TenantContext, payload: dict[str, Any]
 ) -> dict[str, Any]:
     action = payload.get("action")
+    screen = payload.get("screen")
+    data = payload.get("data") or {}
 
     if action == "ping":
         return {"data": {"status": "active"}}
 
-    if action == "INIT" or action == "BACK":
-        return await _menu_screen_response(session, tenant)
+    if action == "data_exchange" and screen == "CATEGORY":
+        category = data.get("category")
+        if category:
+            menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+            return {
+                "screen": "ITEMS",
+                "data": build_items_screen_data(category=category, menu_items=menu_items),
+            }
+        # No category selected (shouldn't happen -- RadioButtonsGroup is
+        # required client-side) -- fall through to re-showing CATEGORY.
 
-    if action == "data_exchange" and payload.get("screen") == "MENU":
-        selected = list((payload.get("data") or {}).get("selected_items") or [])
+    if action == "data_exchange" and screen == "ITEMS":
+        selected = list(data.get("selected_items") or [])
         menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
         try:
             cart = resolve_cart(selected_item_ids=selected, menu_items=menu_items)
         except NoItemsSelectedError:
-            return await _menu_screen_response(session, tenant)
-        return {"screen": "DETAILS", "data": {"cart_summary": cart.summary_text}}
+            pass
+        else:
+            saved_address = await _lookup_saved_address(session, tenant, payload.get("flow_token"))
+            return {
+                "screen": "DETAILS",
+                "data": build_details_screen_data(
+                    cart_summary=cart.summary_text, saved_address=saved_address
+                ),
+            }
+        # No items actually resolved (stale/empty selection) -- fall
+        # through to re-showing CATEGORY rather than a dead-end ITEMS
+        # screen with nothing to add to it.
 
-    # Anything else (an action/screen combo the Flow JSON doesn't actually
-    # produce) -- fail safe back to the menu rather than erroring the whole
-    # exchange, since a stuck Flow with no recovery is worse for the
-    # customer than restarting at MENU.
-    return await _menu_screen_response(session, tenant)
+    # INIT, BACK, and any action/screen combo the Flow JSON doesn't
+    # actually produce -- fail safe back to category selection rather than
+    # erroring the whole exchange, since a stuck Flow with no recovery is
+    # worse for the customer than restarting from the top.
+    return await _category_screen_response(session, tenant)
 
 
-async def _menu_screen_response(session: DbSession, tenant: TenantContext) -> dict[str, Any]:
+async def _category_screen_response(session: DbSession, tenant: TenantContext) -> dict[str, Any]:
     merchant = await MerchantRepository(session).get(tenant.merchant_id)
     menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
     business_name = merchant.business_name if merchant else "Order"
     return {
-        "screen": "MENU",
-        "data": build_menu_screen_data(business_name=business_name, menu_items=menu_items),
+        "screen": "CATEGORY",
+        "data": build_category_screen_data(business_name=business_name, menu_items=menu_items),
     }
+
+
+async def _lookup_saved_address(
+    session: DbSession, tenant: TenantContext, flow_token: Any
+) -> Address | None:
+    """flow_token carries the customer's WhatsApp number (set when the Flow
+    is sent, see conversation/domain/handler.py) -- the only way this
+    endpoint knows *who* is ordering, since the decrypted request itself
+    doesn't include it. Returns None for a new customer (no saved address
+    yet) or a malformed/missing token, same as "nothing to prefill"."""
+    if not isinstance(flow_token, str) or not flow_token:
+        return None
+    customer = await CustomerRepository(session).get_by_whatsapp_number(tenant, flow_token)
+    if customer is None:
+        return None
+    return await AddressRepository(session).get_primary_for_customer(tenant, customer.customer_id)

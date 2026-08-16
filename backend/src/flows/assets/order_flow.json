@@ -2,28 +2,44 @@
   "version": "6.0",
   "data_api_version": "3.0",
   "routing_model": {
-    "MENU": ["DETAILS"],
-    "DETAILS": ["PAYMENT"],
+    "CATEGORY": [
+      "ITEMS"
+    ],
+    "ITEMS": [
+      "DETAILS"
+    ],
+    "DETAILS": [
+      "PAYMENT"
+    ],
     "PAYMENT": []
   },
   "screens": [
     {
-      "id": "MENU",
+      "id": "CATEGORY",
       "title": "Order",
       "data": {
-        "business_name": { "type": "string", "__example__": "Varkey's" },
-        "menu_options": {
+        "business_name": {
+          "type": "string",
+          "__example__": "Varkey's"
+        },
+        "categories": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" },
-              "description": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
             }
           },
           "__example__": [
-            { "id": "11111111-1111-1111-1111-111111111111", "title": "Paneer Tikka - Rs 220", "description": "Starters" }
+            {
+              "id": "Starters",
+              "title": "Starters"
+            }
           ]
         }
       },
@@ -36,11 +52,81 @@
           },
           {
             "type": "TextBody",
+            "text": "What would you like to order from?"
+          },
+          {
+            "type": "Form",
+            "name": "category_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "category",
+                "label": "Category",
+                "data-source": "${data.categories}",
+                "required": true
+              },
+              {
+                "type": "Footer",
+                "label": "Next",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "category": "${form.category}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ITEMS",
+      "title": "Order",
+      "data": {
+        "category_name": {
+          "type": "string",
+          "__example__": "Starters"
+        },
+        "menu_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "Paneer Tikka - Rs 220",
+              "description": "Starters"
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "${data.category_name}"
+          },
+          {
+            "type": "TextBody",
             "text": "Select the items you'd like to order."
           },
           {
             "type": "Form",
-            "name": "menu_form",
+            "name": "items_form",
             "children": [
               {
                 "type": "CheckboxGroup",
@@ -68,7 +154,26 @@
       "id": "DETAILS",
       "title": "Delivery details",
       "data": {
-        "cart_summary": { "type": "string", "__example__": "1x Paneer Tikka - Rs 220" }
+        "cart_summary": {
+          "type": "string",
+          "__example__": "1x Paneer Tikka - Rs 220"
+        },
+        "saved_address_line1": {
+          "type": "string",
+          "__example__": ""
+        },
+        "saved_address_city": {
+          "type": "string",
+          "__example__": ""
+        },
+        "saved_address_pincode": {
+          "type": "string",
+          "__example__": ""
+        },
+        "saved_address_landmark": {
+          "type": "string",
+          "__example__": ""
+        }
       },
       "layout": {
         "type": "SingleColumnLayout",
@@ -80,51 +185,70 @@
           {
             "type": "Form",
             "name": "details_form",
+            "init-values": {
+              "address_line1": "${data.saved_address_line1}",
+              "address_city": "${data.saved_address_city}",
+              "address_pincode": "${data.saved_address_pincode}",
+              "address_landmark": "${data.saved_address_landmark}"
+            },
             "children": [
               {
                 "type": "RadioButtonsGroup",
                 "name": "order_type",
                 "label": "Pickup or delivery?",
                 "data-source": [
-                  { "id": "pickup", "title": "Pickup" },
-                  { "id": "delivery", "title": "Delivery" }
+                  {
+                    "id": "pickup",
+                    "title": "Pickup"
+                  },
+                  {
+                    "id": "delivery",
+                    "title": "Delivery"
+                  }
                 ],
                 "required": true
               },
               {
                 "type": "TextInput",
                 "name": "address_line1",
-                "label": "Address line 1 (delivery only)",
+                "label": "Address line 1",
                 "input-type": "text",
-                "required": false
+                "required": false,
+                "visible": "${form.order_type} == 'delivery'"
               },
               {
                 "type": "TextInput",
                 "name": "address_city",
-                "label": "City (delivery only)",
+                "label": "City",
                 "input-type": "text",
-                "required": false
+                "required": false,
+                "visible": "${form.order_type} == 'delivery'"
               },
               {
                 "type": "TextInput",
                 "name": "address_pincode",
-                "label": "Pincode (delivery only)",
+                "label": "Pincode",
                 "input-type": "number",
-                "required": false
+                "required": false,
+                "visible": "${form.order_type} == 'delivery'"
               },
               {
                 "type": "TextInput",
                 "name": "address_landmark",
                 "label": "Landmark (optional)",
                 "input-type": "text",
-                "required": false
+                "required": false,
+                "visible": "${form.order_type} == 'delivery'"
               },
               {
                 "type": "Footer",
                 "label": "Next",
                 "on-click-action": {
                   "name": "navigate",
-                  "next": { "type": "screen", "name": "PAYMENT" },
+                  "next": {
+                    "type": "screen",
+                    "name": "PAYMENT"
+                  },
                   "payload": {
                     "final_total_text": "${data.cart_summary}"
                   }
@@ -141,7 +265,10 @@
       "terminal": true,
       "success": true,
       "data": {
-        "final_total_text": { "type": "string", "__example__": "1x Paneer Tikka - Rs 220" }
+        "final_total_text": {
+          "type": "string",
+          "__example__": "1x Paneer Tikka - Rs 220"
+        }
       },
       "layout": {
         "type": "SingleColumnLayout",
@@ -159,8 +286,14 @@
                 "name": "payment_method",
                 "label": "How would you like to pay?",
                 "data-source": [
-                  { "id": "cod", "title": "Cash on Delivery" },
-                  { "id": "online", "title": "Pay Online (UPI/Card)" }
+                  {
+                    "id": "cod",
+                    "title": "Cash on Delivery"
+                  },
+                  {
+                    "id": "online",
+                    "title": "Pay Online (UPI/Card)"
+                  }
                 ],
                 "required": true
               },
@@ -170,7 +303,7 @@
                 "on-click-action": {
                   "name": "complete",
                   "payload": {
-                    "selected_items": "${screen.MENU.form.selected_items}",
+                    "selected_items": "${screen.ITEMS.form.selected_items}",
                     "order_type": "${screen.DETAILS.form.order_type}",
                     "address_line1": "${screen.DETAILS.form.address_line1}",
                     "address_city": "${screen.DETAILS.form.address_city}",
