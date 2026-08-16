@@ -16,6 +16,14 @@ _INITIAL_MAX_DIMENSION = 300
 _FALLBACK_MAX_DIMENSION = 150
 _QUALITY_STEPS = (80, 65, 50, 35, 20)
 
+# Wikimedia Commons -- where the catalog's demo-data image_urls point --
+# rejects requests with httpx's default User-Agent (403 Forbidden) per its
+# published User-Agent policy (meta.wikimedia.org/wiki/User-Agent_policy),
+# which requires a descriptive, identifying UA string, not a bare library
+# default. This isn't Wikimedia-specific in principle -- some other hosts
+# have similar bot-blocking -- so it's set unconditionally.
+_USER_AGENT = "Orderflow-WhatsAppFlow/1.0 (+https://orderflow-sandbox.vercel.app)"
+
 
 async def fetch_and_compress_image(url: str) -> str | None:
     """Fetches a menu item's photo (image_url) and re-encodes it as a small
@@ -27,7 +35,9 @@ async def fetch_and_compress_image(url: str) -> str | None:
     MenuItem.flow_image_base64) rather than calling this on every Flow
     screen load, since it's a real network fetch plus CPU-bound resize."""
     try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=10.0, follow_redirects=True, headers={"User-Agent": _USER_AGENT}
+        ) as client:
             response = await client.get(url)
             response.raise_for_status()
         return _compress(response.content)
