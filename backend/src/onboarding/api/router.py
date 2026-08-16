@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_sender
+from flows.domain.setup import FlowSetupError, setup_whatsapp_flow
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -10,6 +11,8 @@ from onboarding.api.schemas import (
     KitchenProfileOut,
     KitchenProfileUpdate,
     OnboardingStatusOut,
+    WhatsAppFlowSetupRequest,
+    WhatsAppFlowSetupResult,
     WhatsAppSettingsOut,
     WhatsAppSettingsUpdate,
     WhatsAppTestMessageRequest,
@@ -94,6 +97,38 @@ async def send_whatsapp_test_message(
         to=body.to,
     )
     return WhatsAppTestMessageResult(status="success" if success else "failed", message=message)
+
+
+@router.post("/whatsapp/flow-setup", response_model=WhatsAppFlowSetupResult)
+async def setup_whatsapp_flow_endpoint(
+    body: WhatsAppFlowSetupRequest, tenant: CurrentTenant, session: DbSession
+) -> WhatsAppFlowSetupResult:
+    """One-time per-merchant setup for native WhatsApp ordering (see
+    flows/domain/setup.py) -- generates the RSA key pair, uploads the
+    public key to Meta, creates+publishes the Flow, and stores the
+    credentials, all from inside this deployment where real Meta
+    credentials already exist in the environment. Same underlying logic as
+    scripts/setup_whatsapp_flow.py; this is the version to use against a
+    deployed environment, since nothing needs to leave it."""
+    account = await WhatsAppBusinessAccountRepository(session).get(tenant)
+    if account is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "WhatsApp credentials not configured")
+
+    try:
+        flow_id = await setup_whatsapp_flow(
+            session,
+            tenant,
+            account,
+            meta_waba_id=body.meta_waba_id,
+            backend_base_url=body.backend_base_url,
+        )
+    except FlowSetupError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"Flow setup failed at '{exc.step}': {exc.detail}"
+        ) from exc
+
+    await session.commit()
+    return WhatsAppFlowSetupResult(flow_id=flow_id)
 
 
 @router.get("/profile", response_model=KitchenProfileOut)

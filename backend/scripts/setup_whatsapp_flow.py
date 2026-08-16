@@ -9,6 +9,15 @@ in Settings; conversation/domain/handler.py automatically starts sending
 the Flow (instead of the webview link) for PLACE_ORDER the moment
 whatsapp_flow_id is set.
 
+This is the CLI form -- flows/domain/setup.py's setup_whatsapp_flow is
+the actual logic, shared with onboarding/api/router.py's authenticated
+POST /api/v1/onboarding/whatsapp/flow-setup endpoint (the one to prefer
+when running against a deployed environment, since it runs inside that
+environment with real credentials already in place -- no secrets need
+to leave Railway to make this work). This CLI form needs DATABASE_URL
+and SECRETS_ENCRYPTION_KEY in the local .env to match whatever
+environment's WABA row it's pointed at.
+
 Usage (from backend/, with the merchant's WABA already connected in Settings):
 
     uv run python scripts/setup_whatsapp_flow.py \\
@@ -28,93 +37,43 @@ import sys
 import uuid
 from pathlib import Path
 
-import httpx
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from flows.domain.encryption import generate_key_pair  # noqa: E402
+from flows.domain.setup import FlowSetupError, setup_whatsapp_flow  # noqa: E402
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository  # noqa: E402
-from shared.config import get_settings  # noqa: E402
 from shared.db import SessionFactory  # noqa: E402
-from shared.encryption import decrypt, encrypt  # noqa: E402
 from shared.tenant import TenantContext  # noqa: E402
-
-_FLOW_JSON_PATH = (
-    Path(__file__).resolve().parent.parent / "src" / "flows" / "assets" / "order_flow.json"
-)
 
 
 async def main(*, merchant_id: uuid.UUID, meta_waba_id: str, backend_base_url: str) -> None:
-    settings = get_settings()
-    base_url = settings.whatsapp_graph_api_base_url
+    tenant = TenantContext(merchant_id=merchant_id)
 
     async with SessionFactory() as session:
-        tenant = TenantContext(merchant_id=merchant_id)
         waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
-        if waba is None or not waba.phone_number_id or not waba.access_token_encrypted:
+        if waba is None:
             raise SystemExit(
                 f"Merchant {merchant_id} has no WhatsApp credentials on file -- "
                 "connect WhatsApp in Settings first."
             )
 
-        access_token = decrypt(waba.access_token_encrypted)
-        phone_number_id = waba.phone_number_id
+        print("Setting up WhatsApp Flow (uploading key, creating + publishing Flow)...")
+        try:
+            flow_id = await setup_whatsapp_flow(
+                session,
+                tenant,
+                waba,
+                meta_waba_id=meta_waba_id,
+                backend_base_url=backend_base_url,
+            )
+        except FlowSetupError as exc:
+            raise SystemExit(f"Failed at step '{exc.step}': {exc.detail}") from exc
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        headers = {"Authorization": f"Bearer {access_token}"}
-
-        print("Generating RSA key pair...")
-        public_pem, private_pem = generate_key_pair()
-
-        print(f"Uploading public key to phone number {phone_number_id}...")
-        resp = await client.post(
-            f"{base_url}/{phone_number_id}/whatsapp_business_encryption",
-            headers=headers,
-            data={"business_public_key": public_pem},
-        )
-        resp.raise_for_status()
-        print(f"  -> {resp.json()}")
-
-        endpoint_uri = (
-            f"{backend_base_url.rstrip('/')}/api/v1/whatsapp/flows/{merchant_id}/data-exchange"
-        )
-        print(f"Creating Flow (endpoint_uri={endpoint_uri})...")
-        resp = await client.post(
-            f"{base_url}/{meta_waba_id}/flows",
-            headers=headers,
-            json={
-                "name": "Order via WhatsApp",
-                "categories": ["OTHER"],
-                "endpoint_uri": endpoint_uri,
-            },
-        )
-        resp.raise_for_status()
-        flow_id = resp.json()["id"]
-        print(f"  -> flow_id={flow_id}")
-
-        print("Uploading Flow JSON...")
-        flow_json_bytes = _FLOW_JSON_PATH.read_bytes()
-        resp = await client.post(
-            f"{base_url}/{flow_id}/assets",
-            headers=headers,
-            data={"name": "flow.json", "asset_type": "FLOW_JSON"},
-            files={"file": ("flow.json", flow_json_bytes, "application/json")},
-        )
-        resp.raise_for_status()
-        print(f"  -> {resp.json()}")
-
-        print("Publishing Flow...")
-        resp = await client.post(f"{base_url}/{flow_id}/publish", headers=headers)
-        resp.raise_for_status()
-        print(f"  -> {resp.json()}")
-
-    async with SessionFactory() as session:
-        await WhatsAppBusinessAccountRepository(session).set_flow_credentials(
-            tenant, flow_id=flow_id, private_key_encrypted=encrypt(private_pem)
-        )
         await session.commit()
 
-    print(f'\nDone. Merchant {merchant_id} now sends the native Flow for "place order".')
+    print(
+        f'\nDone (flow_id={flow_id}). Merchant {merchant_id} now sends the native Flow '
+        'for "place order".'
+    )
 
 
 if __name__ == "__main__":

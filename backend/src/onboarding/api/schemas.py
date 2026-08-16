@@ -23,6 +23,24 @@ class WhatsAppTestMessageResult(BaseModel):
     message: str
 
 
+class WhatsAppFlowSetupRequest(BaseModel):
+    meta_waba_id: str = Field(
+        ...,
+        description=(
+            "The WhatsApp Business Account ID shown on Meta's API Setup page -- "
+            "not stored anywhere in orderflow today, since onboarding only captures "
+            "phone_number_id + access_token."
+        ),
+    )
+    backend_base_url: str = Field(
+        ..., description="This deployment's own public base URL, e.g. https://api.example.com"
+    )
+
+
+class WhatsAppFlowSetupResult(BaseModel):
+    flow_id: str
+
+
 class KitchenProfileOut(BaseModel):
     address_line1: str | None
     address_line2: str | None
