@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -5,10 +6,12 @@ from typing import Any
 from fastapi import APIRouter, Response, status
 
 from catalog.adapters.repository import MenuItemRepository
+from catalog.domain.models import MenuItem
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from customers.domain.models import Address
 from flows.api.schemas import FlowDataExchangeRequest
 from flows.domain.encryption import FlowDecryptionError, decrypt_request, encrypt_response
+from flows.domain.images import fetch_and_compress_image
 from flows.domain.menu_order import (
     NoItemsSelectedError,
     build_category_screen_data,
@@ -91,6 +94,9 @@ async def _handle_action(
         category = data.get("category")
         if category:
             menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+            await _ensure_images_cached(
+                session, [item for item in menu_items if item.category == category]
+            )
             return {
                 "screen": "ITEMS",
                 "data": build_items_screen_data(category=category, menu_items=menu_items),
@@ -132,6 +138,31 @@ async def _category_screen_response(session: DbSession, tenant: TenantContext) -
         "screen": "CATEGORY",
         "data": build_category_screen_data(business_name=business_name, menu_items=menu_items),
     }
+
+
+async def _ensure_images_cached(session: DbSession, items: list[MenuItem]) -> None:
+    """Populates MenuItem.flow_image_base64 for any item in this category
+    that has an image_url but hasn't been fetched/compressed yet -- fetched
+    concurrently so a cold cache (a brand-new category) doesn't serialize
+    N network round trips on the customer's screen load. Once cached, later
+    views of this category are instant; this only ever runs once per item
+    unless image_url changes (nothing currently invalidates the cache on
+    an image_url edit -- a known gap, not silent breakage, since a merchant
+    changing a photo is rare and the old cached one just keeps showing)."""
+    to_fetch = [item for item in items if item.image_url and not item.flow_image_base64]
+    if not to_fetch:
+        return
+
+    results = await asyncio.gather(
+        *(fetch_and_compress_image(item.image_url) for item in to_fetch if item.image_url)
+    )
+    changed = False
+    for item, compressed in zip(to_fetch, results, strict=True):
+        if compressed:
+            item.flow_image_base64 = compressed
+            changed = True
+    if changed:
+        await session.commit()
 
 
 async def _lookup_saved_address(

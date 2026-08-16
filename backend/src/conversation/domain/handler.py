@@ -213,12 +213,25 @@ async def _handle_flow_completion(
         whatsapp_conversation_ref=message.whatsapp_message_id,
     )
 
-    body = f"Order #{result.order.order_number} confirmed!\n\n{cart.summary_text}"
-    if result.payment_link_url:
-        body += f"\n\nComplete payment: {result.payment_link_url}"
-    else:
-        body += "\n\nPay cash on delivery/pickup."
+    if result.payment_link_url is None:
+        # COD: perform_checkout already published OrderConfirmedCOD, which
+        # notifications/wiring.py turns into the merchant's own configured
+        # "order_confirmed" template (or the built-in default) over the
+        # same channel every other lifecycle notification uses. Sending our
+        # own confirmation text here duplicated it -- the event-driven one
+        # is the single source of truth for "order confirmed" wording.
+        return True
 
+    # Online payment: perform_checkout deliberately does *not* publish a
+    # confirmation event yet (payment isn't captured), so there's nothing
+    # else telling the customer how to pay -- this is a distinct "here's
+    # your payment link" prompt, not a duplicate. The real "order
+    # confirmed" notification fires later via OrderPaid once payment
+    # succeeds, through that same shared channel.
+    body = (
+        f"Order #{result.order.order_number} received!\n\n{cart.summary_text}"
+        f"\n\nComplete payment: {result.payment_link_url}"
+    )
     return await sender.send_text(
         phone_number_id=message.phone_number_id,
         access_token=access_token,

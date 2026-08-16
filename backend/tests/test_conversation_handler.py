@@ -78,6 +78,30 @@ class NoopNotificationChannel:
         return True
 
 
+class RecordingNotificationChannel:
+    """Records every notify_* call instead of swallowing or actually
+    sending it -- lets a test assert exactly one confirmation fired
+    (proving the fix for the double-message bug: perform_checkout's
+    OrderConfirmedCOD publish is the *only* thing that should confirm a
+    COD order, not also an explicit sender.send_text from the handler)."""
+
+    def __init__(self) -> None:
+        self.confirmed_calls: list[uuid.UUID] = []
+
+    async def notify_order_confirmed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        self.confirmed_calls.append(order_id)
+        return True
+
+    async def notify_order_preparing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return True
+
+    async def notify_order_ready(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return True
+
+    async def notify_order_completed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return True
+
+
 async def _seed_connected_merchant(db_session: AsyncSession, phone_number_id: str = "PNID1"):
     merchant = await MerchantRepository(db_session).create(
         business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
@@ -285,7 +309,8 @@ async def test_flow_completion_creates_cod_order(db_session: AsyncSession) -> No
     )
 
     real_channel = wiring.get_notification_channel()
-    wiring.set_notification_channel(NoopNotificationChannel())
+    recorder = RecordingNotificationChannel()
+    wiring.set_notification_channel(recorder)
     try:
         result = await handle_inbound_message(db_session, sender, message)
     finally:
@@ -293,11 +318,11 @@ async def test_flow_completion_creates_cod_order(db_session: AsyncSession) -> No
 
     assert result.intent == Intent.FLOW_ORDER_COMPLETED
     assert result.reply_sent is True
-    assert len(sender.text_calls) == 1
-    body = sender.text_calls[0]["body"]
-    assert "confirmed" in body
-    assert "Butter Chicken" in body
-    assert "cash on delivery" in body.lower()
+    # The order-confirmed notification fires exactly once, via
+    # perform_checkout's OrderConfirmedCOD event -- not also as an explicit
+    # sender.send_text from the handler (that was the double-message bug).
+    assert len(recorder.confirmed_calls) == 1
+    assert sender.text_calls == []
 
     orders = await OrderRepository(db_session).list_for_customer(
         tenant,
@@ -305,6 +330,7 @@ async def test_flow_completion_creates_cod_order(db_session: AsyncSession) -> No
     )
     assert len(orders) == 1
     assert orders[0].payment_method == "cod"
+    assert recorder.confirmed_calls == [orders[0].order_id]
 
 
 async def test_flow_completion_online_payment_includes_payment_link(
@@ -327,14 +353,21 @@ async def test_flow_completion_online_payment_includes_payment_link(
     )
 
     real_channel = wiring.get_notification_channel()
-    wiring.set_notification_channel(NoopNotificationChannel())
+    recorder = RecordingNotificationChannel()
+    wiring.set_notification_channel(recorder)
     try:
         result = await handle_inbound_message(db_session, sender, message)
     finally:
         wiring.set_notification_channel(real_channel)
 
     assert result.reply_sent is True
+    assert len(sender.text_calls) == 1
     assert "Complete payment" in sender.text_calls[0]["body"]
+    # Unlike COD, no confirmation event fires yet -- perform_checkout
+    # doesn't publish one for online orders until payment is actually
+    # captured (OrderPaid, elsewhere), so the payment-link text above is
+    # the only message, not a duplicate of anything.
+    assert recorder.confirmed_calls == []
 
 
 async def test_flow_completion_with_empty_cart_sends_error_and_creates_no_order(

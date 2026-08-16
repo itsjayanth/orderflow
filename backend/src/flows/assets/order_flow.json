@@ -209,36 +209,38 @@
                 "required": true
               },
               {
-                "type": "TextInput",
-                "name": "address_line1",
-                "label": "Address line 1",
-                "input-type": "text",
-                "required": false,
-                "visible": "${form.order_type} == 'delivery'"
-              },
-              {
-                "type": "TextInput",
-                "name": "address_city",
-                "label": "City",
-                "input-type": "text",
-                "required": false,
-                "visible": "${form.order_type} == 'delivery'"
-              },
-              {
-                "type": "TextInput",
-                "name": "address_pincode",
-                "label": "Pincode",
-                "input-type": "number",
-                "required": false,
-                "visible": "${form.order_type} == 'delivery'"
-              },
-              {
-                "type": "TextInput",
-                "name": "address_landmark",
-                "label": "Landmark (optional)",
-                "input-type": "text",
-                "required": false,
-                "visible": "${form.order_type} == 'delivery'"
+                "type": "If",
+                "condition": "${form.order_type} == 'delivery'",
+                "then": [
+                  {
+                    "type": "TextInput",
+                    "name": "address_line1",
+                    "label": "Address line 1",
+                    "input-type": "text",
+                    "required": true
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "address_city",
+                    "label": "City",
+                    "input-type": "text",
+                    "required": true
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "address_pincode",
+                    "label": "Pincode",
+                    "input-type": "number",
+                    "required": true
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "address_landmark",
+                    "label": "Landmark (optional)",
+                    "input-type": "text",
+                    "required": false
+                  }
+                ]
               },
               {
                 "type": "Footer",

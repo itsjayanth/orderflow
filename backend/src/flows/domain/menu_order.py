@@ -28,19 +28,25 @@ def build_items_screen_data(*, category: str, menu_items: list[MenuItem]) -> dic
     CheckboxGroup option per available item in it. Flow JSON layouts are a
     static component tree, but a component's `data-source` array can be
     dynamic length, which is what lets this handle any category size
-    without editing the Flow JSON."""
-    return {
-        "category_name": category,
-        "menu_options": [
-            {
-                "id": str(item.menu_item_id),
-                "title": f"{item.name} - Rs {item.price}",
-                "description": item.category,
-            }
-            for item in menu_items
-            if item.is_available and item.category == category
-        ],
-    }
+    without editing the Flow JSON. `image` is only included when a cached
+    one exists (flows/api/router.py populates it on first use, see
+    flows/domain/images.py) -- CheckboxGroup renders fine without it, so a
+    slow/failed fetch for one item degrades gracefully rather than blocking
+    the whole category."""
+    options = []
+    for item in menu_items:
+        if not (item.is_available and item.category == category):
+            continue
+        option: dict[str, Any] = {
+            "id": str(item.menu_item_id),
+            "title": f"{item.name} - Rs {item.price}",
+            "description": item.category,
+        }
+        if item.flow_image_base64:
+            option["image"] = item.flow_image_base64
+            option["alt-text"] = item.name
+        options.append(option)
+    return {"category_name": category, "menu_options": options}
 
 
 class NoItemsSelectedError(Exception):

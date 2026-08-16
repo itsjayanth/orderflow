@@ -2,7 +2,7 @@ import datetime
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base
@@ -42,6 +42,15 @@ class MenuItem(Base):
     # NULL means "no image set", rendered as a fallback in both the merchant
     # catalog and the public ordering webview.
     image_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    # Base64 JPEG, re-encoded down to ~20KB from image_url and cached here on
+    # first use (see flows/domain/images.py) -- WhatsApp Flow CheckboxGroup
+    # options can embed an image directly, but caps it at 100KB (Flow JSON
+    # v5.0+) and explicitly recommends staying well under that; fetching and
+    # recompressing image_url on every Flow screen load would also make
+    # every category view noticeably slower, hence caching the result
+    # instead of doing this live each time. NULL until first requested, or
+    # if image_url is unset/unreachable.
+    flow_image_base64: Mapped[str | None] = mapped_column(Text, default=None)
     # Phase 2 (POS integration) seam — unused until then, per ARCHITECTURE.md Section 1.
     external_pos_item_id: Mapped[str | None] = mapped_column(String(255), default=None)
     created_at: Mapped[datetime.datetime] = mapped_column(
