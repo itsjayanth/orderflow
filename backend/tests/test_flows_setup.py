@@ -2,7 +2,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from flows.domain import setup as flow_setup_domain
-from flows.domain.setup import FlowSetupError, setup_whatsapp_flow, update_flow_assets
+from flows.domain.setup import (
+    FlowSetupError,
+    get_flow_validation,
+    setup_whatsapp_flow,
+    update_flow_assets,
+)
 from identity.adapters.repository import MerchantRepository
 from onboarding.domain.models import WhatsAppBusinessAccount
 from shared.encryption import encrypt
@@ -71,15 +76,19 @@ async def test_update_flow_assets_fails_precondition_without_access_token(
 
 
 class _FakeAssetUploadResponse:
-    def __init__(self, status_code: int, text: str = "") -> None:
+    def __init__(self, status_code: int, text: str = "", json_body: dict | None = None) -> None:
         self.status_code = status_code
         self.text = text
+        self._json_body = json_body if json_body is not None else {}
+
+    def json(self) -> dict:
+        return self._json_body
 
 
 class _FakeAssetUploadClient:
-    """Records every POST made against it -- lets a test assert
-    update_flow_assets hits the right Meta endpoint with the right
-    flow_id, without a real network call."""
+    """Records every POST/GET made against it -- lets a test assert
+    update_flow_assets/get_flow_validation hit the right Meta endpoint
+    with the right flow_id, without a real network call."""
 
     def __init__(self, response: _FakeAssetUploadResponse) -> None:
         self.calls: list[dict] = []
@@ -92,7 +101,11 @@ class _FakeAssetUploadClient:
         return False
 
     async def post(self, url: str, **kwargs: object) -> _FakeAssetUploadResponse:
-        self.calls.append({"url": url, **kwargs})
+        self.calls.append({"method": "post", "url": url, **kwargs})
+        return self._response
+
+    async def get(self, url: str, **kwargs: object) -> _FakeAssetUploadResponse:
+        self.calls.append({"method": "get", "url": url, **kwargs})
         return self._response
 
 
@@ -135,3 +148,67 @@ async def test_update_flow_assets_raises_on_upload_failure(
         await update_flow_assets(db_session, tenant, account)
 
     assert exc_info.value.step == "upload_flow_json"
+
+
+async def test_get_flow_validation_fails_precondition_without_flow_id(
+    db_session: AsyncSession,
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "No Flow For Validation")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id, access_token_encrypted=encrypt("dummy-token")
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await get_flow_validation(account)
+
+    assert exc_info.value.step == "precondition"
+
+
+async def test_get_flow_validation_returns_metas_response(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "Validation Check")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        whatsapp_flow_id="FLOW_42",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    body = {
+        "status": "PUBLISHED",
+        "validation_errors": [],
+        "health_status": {"can_send_message": "AVAILABLE"},
+    }
+    fake_client = _FakeAssetUploadClient(_FakeAssetUploadResponse(200, json_body=body))
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    result = await get_flow_validation(account)
+
+    assert result == body
+    assert len(fake_client.calls) == 1
+    assert fake_client.calls[0]["method"] == "get"
+    assert fake_client.calls[0]["url"].endswith("/FLOW_42")
+    assert fake_client.calls[0]["params"] == {"fields": "status,validation_errors,health_status"}
+
+
+async def test_get_flow_validation_raises_on_failure(db_session: AsyncSession, monkeypatch) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "Validation Fails")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        whatsapp_flow_id="FLOW_42",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    fake_client = _FakeAssetUploadClient(_FakeAssetUploadResponse(400, "bad request"))
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await get_flow_validation(account)
+
+    assert exc_info.value.step == "get_flow_validation"

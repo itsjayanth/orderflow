@@ -3,7 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_sender
-from flows.domain.setup import FlowSetupError, setup_whatsapp_flow, update_flow_assets
+from flows.domain.setup import (
+    FlowSetupError,
+    get_flow_validation,
+    setup_whatsapp_flow,
+    update_flow_assets,
+)
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -131,24 +136,36 @@ async def setup_whatsapp_flow_endpoint(
     return WhatsAppFlowSetupResult(flow_id=flow_id)
 
 
-@router.post("/whatsapp/flow-sync", status_code=status.HTTP_204_NO_CONTENT)
-async def sync_whatsapp_flow_endpoint(tenant: CurrentTenant, session: DbSession) -> None:
+@router.post("/whatsapp/flow-sync")
+async def sync_whatsapp_flow_endpoint(
+    tenant: CurrentTenant, session: DbSession
+) -> dict[str, object]:
     """Pushes the current order_flow.json to Meta for a merchant who
     already ran /whatsapp/flow-setup once -- for whenever the Flow JSON
     itself changes (new screens/fields) and an already-onboarded
     merchant's live Flow needs to pick up the update, without recreating
     the whole Flow (new flow_id, new RSA key pair, re-publish) from
-    scratch. See flows/domain/setup.py's update_flow_assets."""
+    scratch. See flows/domain/setup.py's update_flow_assets.
+
+    Returns Meta's own read-back of the Flow's status/validation_errors/
+    health_status right after the upload -- a <400 response from the
+    upload itself only means Meta *accepted* the file, not that it's
+    structurally valid; this surfaces the same validation info Meta's
+    publish-time health check would have caught, immediately rather than
+    only via a customer hitting a broken screen live."""
     account = await WhatsAppBusinessAccountRepository(session).get(tenant)
     if account is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "WhatsApp credentials not configured")
 
     try:
         await update_flow_assets(session, tenant, account)
+        validation = await get_flow_validation(account)
     except FlowSetupError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"Flow sync failed at '{exc.step}': {exc.detail}"
         ) from exc
+
+    return validation
 
 
 @router.get("/profile", response_model=KitchenProfileOut)

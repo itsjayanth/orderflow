@@ -137,3 +137,33 @@ async def update_flow_assets(
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         await upload_flow_json(client, base_url, waba.whatsapp_flow_id, headers)
+
+
+async def get_flow_validation(waba: WhatsAppBusinessAccount) -> dict[str, object]:
+    """Reads back the Flow's current status/validation_errors/health_status
+    from Meta -- a successful (<400) response from upload_flow_json()/
+    /assets only means Meta *accepted the upload*, not that the JSON is
+    actually valid; structural problems (bad expressions, a field
+    reference that doesn't resolve, etc.) show up here instead, the same
+    place Meta's own publish-time health check would have caught them.
+    Called right after update_flow_assets() so a broken update is visible
+    immediately rather than only discovered via a customer's broken
+    in-chat experience."""
+    if not waba.whatsapp_flow_id:
+        raise FlowSetupError("precondition", "Flow not set up for this merchant yet")
+    if not waba.access_token_encrypted:
+        raise FlowSetupError("precondition", "WhatsApp credentials not configured")
+
+    base_url = get_settings().whatsapp_graph_api_base_url
+    access_token = decrypt(waba.access_token_encrypted)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            f"{base_url}/{waba.whatsapp_flow_id}",
+            headers=headers,
+            params={"fields": "status,validation_errors,health_status"},
+        )
+    if resp.status_code >= 400:
+        raise FlowSetupError("get_flow_validation", resp.text)
+    return dict(resp.json())
