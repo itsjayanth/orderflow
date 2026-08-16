@@ -121,11 +121,18 @@ async def update_flow_assets(
     itself changes (new screens/fields, like the DETAILS screen's name/
     contact/address-choice additions) and an already-onboarded merchant's
     Flow needs the update, without recreating the whole Flow (new flow_id,
-    new RSA key pair, re-publish) from scratch. session/tenant aren't used
-    for a DB write here (there's nothing new to persist -- flow_id and the
-    private key are unchanged), but are accepted for symmetry with
+    new RSA key pair) from scratch. session/tenant aren't used for a DB
+    write here (there's nothing new to persist -- flow_id and the private
+    key are unchanged), but are accepted for symmetry with
     setup_whatsapp_flow() and so a future caller doesn't need to change
-    the signature to add one."""
+    the signature to add one.
+
+    Uploading assets to an already-published Flow resets its status to
+    DRAFT (confirmed empirically via get_flow_validation() -- Meta doesn't
+    document this clearly) -- so this also re-publishes, the same call
+    setup_whatsapp_flow() makes for a brand-new Flow, or the update would
+    silently sit as an unpublished draft with the live Flow potentially
+    still serving whatever was published before."""
     if not waba.whatsapp_flow_id:
         raise FlowSetupError("precondition", "Flow not set up for this merchant yet")
     if not waba.access_token_encrypted:
@@ -137,6 +144,10 @@ async def update_flow_assets(
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         await upload_flow_json(client, base_url, waba.whatsapp_flow_id, headers)
+
+        resp = await client.post(f"{base_url}/{waba.whatsapp_flow_id}/publish", headers=headers)
+        if resp.status_code >= 400:
+            raise FlowSetupError("publish_flow", resp.text)
 
 
 async def get_flow_validation(waba: WhatsAppBusinessAccount) -> dict[str, object]:

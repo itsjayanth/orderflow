@@ -124,9 +124,10 @@ async def test_update_flow_assets_uploads_flow_json(db_session: AsyncSession, mo
 
     await update_flow_assets(db_session, tenant, account)
 
-    assert len(fake_client.calls) == 1
+    assert len(fake_client.calls) == 2
     assert fake_client.calls[0]["url"].endswith("/FLOW_42/assets")
     assert fake_client.calls[0]["data"] == {"name": "flow.json", "asset_type": "FLOW_JSON"}
+    assert fake_client.calls[1]["url"].endswith("/FLOW_42/publish")
 
 
 async def test_update_flow_assets_raises_on_upload_failure(
@@ -148,6 +149,53 @@ async def test_update_flow_assets_raises_on_upload_failure(
         await update_flow_assets(db_session, tenant, account)
 
     assert exc_info.value.step == "upload_flow_json"
+
+
+class _FakeSequencedClient:
+    """Like _FakeAssetUploadClient, but returns a different response per
+    call in order -- needed to test update_flow_assets' two-step
+    upload-then-publish sequence independently (e.g. upload succeeds but
+    publish fails)."""
+
+    def __init__(self, responses: list[_FakeAssetUploadResponse]) -> None:
+        self.calls: list[dict] = []
+        self._responses = responses
+
+    async def __aenter__(self) -> "_FakeSequencedClient":
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> bool:
+        return False
+
+    async def post(self, url: str, **kwargs: object) -> _FakeAssetUploadResponse:
+        response = self._responses[len(self.calls)]
+        self.calls.append({"method": "post", "url": url, **kwargs})
+        return response
+
+
+async def test_update_flow_assets_raises_on_publish_failure(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "Publish Fails")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        whatsapp_flow_id="FLOW_42",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    fake_client = _FakeSequencedClient(
+        [_FakeAssetUploadResponse(200), _FakeAssetUploadResponse(400, "publish rejected")]
+    )
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await update_flow_assets(db_session, tenant, account)
+
+    assert exc_info.value.step == "publish_flow"
+    assert len(fake_client.calls) == 2
+    assert fake_client.calls[1]["url"].endswith("/FLOW_42/publish")
 
 
 async def test_get_flow_validation_fails_precondition_without_flow_id(
