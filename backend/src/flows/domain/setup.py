@@ -73,6 +73,20 @@ async def setup_whatsapp_flow(
             raise FlowSetupError("create_flow", resp.text)
         flow_id = resp.json()["id"]
 
+        # Persisted the moment we have a flow_id, *before* JSON upload/
+        # publish -- Meta can start pinging endpoint_uri for its
+        # pre-publish health check as soon as the Flow exists, and if that
+        # happens before this function returns, our endpoint needs the
+        # private key on file to answer it. It also means a failure in a
+        # later step (as originally happened here -- publish failing
+        # before credentials were ever saved, silently discarding a
+        # generated key Meta had already accepted) doesn't strand an
+        # orphaned Flow with no way to retry against the same key pair.
+        await WhatsAppBusinessAccountRepository(session).set_flow_credentials(
+            tenant, flow_id=flow_id, private_key_encrypted=encrypt(private_pem)
+        )
+        await session.commit()
+
         resp = await client.post(
             f"{base_url}/{flow_id}/assets",
             headers=headers,
@@ -86,7 +100,4 @@ async def setup_whatsapp_flow(
         if resp.status_code >= 400:
             raise FlowSetupError("publish_flow", resp.text)
 
-    await WhatsAppBusinessAccountRepository(session).set_flow_credentials(
-        tenant, flow_id=flow_id, private_key_encrypted=encrypt(private_pem)
-    )
     return str(flow_id)
