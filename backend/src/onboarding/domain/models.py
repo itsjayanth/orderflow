@@ -32,6 +32,15 @@ class WhatsAppBusinessAccount(Base):
     webhook_subscribed: Mapped[bool] = mapped_column(default=False)
     connected_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
 
+    # WhatsApp Flows (native in-chat ordering) -- set once by the one-time
+    # setup script (scripts/setup_whatsapp_flow.py), not through the normal
+    # onboarding UI. flow_private_key_encrypted holds the RSA private key
+    # half of the pair whose public half was uploaded to Meta via
+    # POST /{phone_number_id}/whatsapp_business_encryption; flows/api/router.py's
+    # data-exchange endpoint uses it to decrypt each screen request.
+    whatsapp_flow_id: Mapped[str | None] = mapped_column(String(255), default=None)
+    flow_private_key_encrypted: Mapped[str | None] = mapped_column(String(4096), default=None)
+
     updated_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC),
         onupdate=lambda: datetime.datetime.now(datetime.UTC),

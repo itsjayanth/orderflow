@@ -6,6 +6,10 @@ class Intent(StrEnum):
     TRACK_ORDER = "track_order"
     TALK_TO_RESTAURANT = "talk_to_restaurant"
     GREETING = "greeting"
+    # Reported on HandledMessage when an inbound message is a completed
+    # WhatsApp Flow submission (InboundMessage.flow_response is set) --
+    # never returned by classify(), which only sees text/button messages.
+    FLOW_ORDER_COMPLETED = "flow_order_completed"
 
 
 # Order matters: checked top to bottom, first match wins. TRACK_ORDER and

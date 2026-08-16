@@ -52,3 +52,29 @@ class WhatsAppBusinessAccountRepository:
 
         await self._session.flush()
         return account
+
+    async def get_by_flow_id(self, flow_id: str) -> WhatsAppBusinessAccount | None:
+        """Cross-tenant on purpose, same reason as get_by_phone_number_id --
+        flows/api/router.py's data-exchange endpoint doesn't have a
+        TenantContext yet when Meta's request lands, only the flow_id in
+        flow_token (see flows/domain/menu_order.py's FlowToken)."""
+        result = await self._session.execute(
+            select(WhatsAppBusinessAccount).where(
+                WhatsAppBusinessAccount.whatsapp_flow_id == flow_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def set_flow_credentials(
+        self, tenant: TenantContext, *, flow_id: str, private_key_encrypted: str
+    ) -> WhatsAppBusinessAccount:
+        """Called once by scripts/setup_whatsapp_flow.py after creating and
+        publishing the Flow and uploading its public key to Meta."""
+        account = await self.get(tenant)
+        if account is None:
+            raise ValueError(f"No WhatsAppBusinessAccount for merchant {tenant.merchant_id}")
+
+        account.whatsapp_flow_id = flow_id
+        account.flow_private_key_encrypted = private_key_encrypted
+        await self._session.flush()
+        return account

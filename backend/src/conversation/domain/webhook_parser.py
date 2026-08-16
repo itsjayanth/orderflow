@@ -1,5 +1,9 @@
+import json
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,6 +14,13 @@ class InboundMessage:
     from_name: str | None
     text: str | None
     button_id: str | None
+    # Set when this message is a completed WhatsApp Flow submission
+    # (interactive.type == "nfm_reply") -- the Flow's final `complete`
+    # action payload, already JSON-decoded. handler.py dispatches on this
+    # directly rather than through classify()'s text/button intent
+    # matching, since a Flow completion isn't really a conversational
+    # intent, it's structured data.
+    flow_response: dict[str, Any] | None = None
 
 
 def parse_inbound_messages(payload: dict[str, Any]) -> list[InboundMessage]:
@@ -37,13 +48,25 @@ def parse_inbound_messages(payload: dict[str, Any]) -> list[InboundMessage]:
 
                 text: str | None = None
                 button_id: str | None = None
+                flow_response: dict[str, Any] | None = None
                 message_type = raw_message.get("type")
                 if message_type == "text":
                     text = raw_message.get("text", {}).get("body")
                 elif message_type == "interactive":
                     interactive = raw_message.get("interactive", {})
-                    if interactive.get("type") == "button_reply":
+                    interactive_type = interactive.get("type")
+                    if interactive_type == "button_reply":
                         button_id = interactive.get("button_reply", {}).get("id")
+                    elif interactive_type == "nfm_reply":
+                        response_json = interactive.get("nfm_reply", {}).get("response_json")
+                        if response_json:
+                            try:
+                                flow_response = json.loads(response_json)
+                            except (TypeError, ValueError):
+                                logger.warning(
+                                    "Flow completion had unparseable response_json: %r",
+                                    response_json,
+                                )
 
                 messages.append(
                     InboundMessage(
@@ -53,6 +76,7 @@ def parse_inbound_messages(payload: dict[str, Any]) -> list[InboundMessage]:
                         from_name=name_by_wa_id.get(from_phone),
                         text=text,
                         button_id=button_id,
+                        flow_response=flow_response,
                     )
                 )
 

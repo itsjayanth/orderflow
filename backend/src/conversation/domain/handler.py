@@ -3,14 +3,22 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from catalog.adapters.repository import MenuItemRepository
 from conversation.adapters.repository import MessageDedupeRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.intents import Intent, classify
 from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import CustomerRepository
+from flows.domain.menu_order import (
+    NoItemsSelectedError,
+    build_new_delivery_address,
+    parse_flow_completion,
+    resolve_cart,
+)
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.domain.models import WhatsAppBusinessAccount
+from ordering_flow.domain.checkout import perform_checkout
 from orders.adapters.repository import OrderRepository
 from orders.domain.models import Order
 from shared.config import get_settings
@@ -44,9 +52,7 @@ async def handle_inbound_message(
     )
     if waba is None:
         # No merchant has connected this phone_number_id -- nothing to do.
-        return HandledMessage(
-            intent=Intent.GREETING, reply_sent=False, skipped_unknown_number=True
-        )
+        return HandledMessage(intent=Intent.GREETING, reply_sent=False, skipped_unknown_number=True)
 
     tenant = TenantContext(merchant_id=waba.merchant_id)
 
@@ -71,6 +77,10 @@ async def handle_inbound_message(
     )
     await session.commit()
 
+    if message.flow_response is not None:
+        reply_sent = await _handle_flow_completion(session, sender, waba, tenant, message)
+        return HandledMessage(intent=Intent.FLOW_ORDER_COMPLETED, reply_sent=reply_sent)
+
     intent = classify(text=message.text, button_id=message.button_id)
     reply_sent = await _reply_for_intent(
         session, sender, waba, tenant, message, intent, customer.customer_id
@@ -91,6 +101,26 @@ async def _reply_for_intent(
     access_token = decrypt(waba.access_token_encrypted) if waba.access_token_encrypted else ""
 
     if intent == Intent.PLACE_ORDER:
+        if waba.whatsapp_flow_id:
+            # Native in-chat ordering (see flows/) -- set once per merchant
+            # by scripts/setup_whatsapp_flow.py. Falls back to the webview
+            # link below for any merchant who hasn't had that run yet, so
+            # PLACE_ORDER never silently does nothing.
+            flow_token = f"order-{tenant.merchant_id}-{message.whatsapp_message_id}"
+            sent = await sender.send_flow(
+                phone_number_id=message.phone_number_id,
+                access_token=access_token,
+                to=message.from_phone,
+                flow_id=waba.whatsapp_flow_id,
+                flow_token=flow_token,
+                body="Browse the menu and place your order without leaving WhatsApp.",
+                cta="Order now",
+            )
+            if sent:
+                return True
+            # Flow send failed (e.g. Flow got unpublished) -- fall through
+            # to the link rather than leaving the customer with no reply.
+
         order_link = f"{get_settings().frontend_base_url}/order/{tenant.merchant_id}"
         return await sender.send_text(
             phone_number_id=message.phone_number_id,
@@ -133,3 +163,60 @@ def _track_order_reply(recent_orders: list[Order]) -> str:
     latest = recent_orders[0]
     status = latest.fulfillment_status or latest.payment_status
     return f"Your most recent order is currently: {status}"
+
+
+async def _handle_flow_completion(
+    session: AsyncSession,
+    sender: WhatsAppSender,
+    waba: WhatsAppBusinessAccount,
+    tenant: TenantContext,
+    message: InboundMessage,
+) -> bool:
+    """The customer tapped "Place order" on the Flow's terminal PAYMENT
+    screen -- WhatsApp delivers the `complete` action's payload here as a
+    regular message (interactive.nfm_reply), not to flows/api/router.py's
+    data-exchange endpoint (that endpoint only ever sees INIT/data_exchange/
+    ping, never the final submission). Reuses the exact same
+    perform_checkout the public ordering webview calls, so a Flow order and
+    a webview order become indistinguishable the moment they're an Order
+    row -- no separate order-creation path to keep in sync."""
+    access_token = decrypt(waba.access_token_encrypted) if waba.access_token_encrypted else ""
+    assert message.flow_response is not None  # narrows for mypy; caller already checked
+
+    submission = parse_flow_completion(message.flow_response)
+    menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+
+    try:
+        cart = resolve_cart(selected_item_ids=submission.selected_item_ids, menu_items=menu_items)
+    except NoItemsSelectedError:
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body='That order came through empty -- send "menu" to try again.',
+        )
+
+    result = await perform_checkout(
+        session,
+        tenant,
+        customer_whatsapp_number=message.from_phone,
+        items=cart.checkout_items,
+        payment_method="cod" if submission.payment_method == "cod" else "online",
+        order_type="delivery" if submission.order_type == "delivery" else "pickup",
+        customer_display_name=message.from_name,
+        new_delivery_address=build_new_delivery_address(submission),
+        whatsapp_conversation_ref=message.whatsapp_message_id,
+    )
+
+    body = f"Order #{result.order.order_number} confirmed!\n\n{cart.summary_text}"
+    if result.payment_link_url:
+        body += f"\n\nComplete payment: {result.payment_link_url}"
+    else:
+        body += "\n\nPay cash on delivery/pickup."
+
+    return await sender.send_text(
+        phone_number_id=message.phone_number_id,
+        access_token=access_token,
+        to=message.from_phone,
+        body=body,
+    )

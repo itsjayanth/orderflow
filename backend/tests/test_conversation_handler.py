@@ -12,14 +12,17 @@ from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.domain.checkout import CheckoutItem, perform_checkout
+from orders.adapters.repository import OrderRepository
 from shared.encryption import encrypt
 from shared.tenant import TenantContext
 
 
 class FakeSender(WhatsAppSender):
-    def __init__(self) -> None:
+    def __init__(self, *, flow_send_succeeds: bool = True) -> None:
         self.text_calls: list[dict] = []
         self.button_calls: list[dict] = []
+        self.flow_calls: list[dict] = []
+        self._flow_send_succeeds = flow_send_succeeds
 
     async def send_text(
         self, *, phone_number_id: str, access_token: str, to: str, body: str
@@ -38,6 +41,27 @@ class FakeSender(WhatsAppSender):
     ) -> bool:
         self.button_calls.append({"to": to, "body": body, "buttons": buttons})
         return True
+
+    async def send_test_message(
+        self, *, phone_number_id: str, access_token: str, to: str
+    ) -> tuple[bool, str]:
+        return True, "ok"
+
+    async def send_flow(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        flow_id: str,
+        flow_token: str,
+        body: str,
+        cta: str,
+    ) -> bool:
+        self.flow_calls.append(
+            {"to": to, "flow_id": flow_id, "flow_token": flow_token, "body": body}
+        )
+        return self._flow_send_succeeds
 
 
 class NoopNotificationChannel:
@@ -150,6 +174,43 @@ async def test_place_order_sends_ordering_link(db_session: AsyncSession) -> None
     assert f"/order/{merchant.merchant_id}" in sender.text_calls[0]["body"]
 
 
+async def test_place_order_sends_flow_when_flow_configured(db_session: AsyncSession) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    await WhatsAppBusinessAccountRepository(db_session).set_flow_credentials(
+        tenant, flow_id="FLOW_123", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(button_id="place_order")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.PLACE_ORDER
+    assert result.reply_sent is True
+    assert len(sender.flow_calls) == 1
+    assert sender.flow_calls[0]["flow_id"] == "FLOW_123"
+    assert sender.text_calls == []
+
+
+async def test_place_order_falls_back_to_link_when_flow_send_fails(
+    db_session: AsyncSession,
+) -> None:
+    merchant, tenant = await _seed_connected_merchant(db_session)
+    await WhatsAppBusinessAccountRepository(db_session).set_flow_credentials(
+        tenant, flow_id="FLOW_123", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await db_session.commit()
+    sender = FakeSender(flow_send_succeeds=False)
+    message = _inbound(button_id="place_order")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.flow_calls) == 1
+    assert len(sender.text_calls) == 1
+    assert f"/order/{merchant.merchant_id}" in sender.text_calls[0]["body"]
+
+
 async def test_talk_to_restaurant_sends_fixed_message(db_session: AsyncSession) -> None:
     await _seed_connected_merchant(db_session)
     sender = FakeSender()
@@ -204,3 +265,95 @@ async def test_track_order_with_existing_order_shows_status(db_session: AsyncSes
 
     assert result.intent == Intent.TRACK_ORDER
     assert "new" in sender.text_calls[0]["body"]
+
+
+async def test_flow_completion_creates_cod_order(db_session: AsyncSession) -> None:
+    from notifications import wiring
+
+    _, tenant = await _seed_connected_merchant(db_session)
+    menu_item = await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "selected_items": [str(menu_item.menu_item_id)],
+            "order_type": "pickup",
+            "payment_method": "cod",
+        },
+    )
+
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(NoopNotificationChannel())
+    try:
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert result.intent == Intent.FLOW_ORDER_COMPLETED
+    assert result.reply_sent is True
+    assert len(sender.text_calls) == 1
+    body = sender.text_calls[0]["body"]
+    assert "confirmed" in body
+    assert "Butter Chicken" in body
+    assert "cash on delivery" in body.lower()
+
+    orders = await OrderRepository(db_session).list_for_customer(
+        tenant,
+        (await CustomerRepository(db_session).find_or_create(tenant, "919876543210")).customer_id,
+    )
+    assert len(orders) == 1
+    assert orders[0].payment_method == "cod"
+
+
+async def test_flow_completion_online_payment_includes_payment_link(
+    db_session: AsyncSession,
+) -> None:
+    from notifications import wiring
+
+    _, tenant = await _seed_connected_merchant(db_session)
+    menu_item = await MenuItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "selected_items": [str(menu_item.menu_item_id)],
+            "order_type": "pickup",
+            "payment_method": "online",
+        },
+    )
+
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(NoopNotificationChannel())
+    try:
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert result.reply_sent is True
+    assert "Complete payment" in sender.text_calls[0]["body"]
+
+
+async def test_flow_completion_with_empty_cart_sends_error_and_creates_no_order(
+    db_session: AsyncSession,
+) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={"selected_items": [], "order_type": "pickup", "payment_method": "cod"},
+    )
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FLOW_ORDER_COMPLETED
+    assert "empty" in sender.text_calls[0]["body"].lower()
+
+    orders = await OrderRepository(db_session).list_for_customer(
+        tenant,
+        (await CustomerRepository(db_session).find_or_create(tenant, "919876543210")).customer_id,
+    )
+    assert orders == []

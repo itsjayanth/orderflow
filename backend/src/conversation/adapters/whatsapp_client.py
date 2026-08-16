@@ -27,6 +27,18 @@ class WhatsAppSender(Protocol):
         self, *, phone_number_id: str, access_token: str, to: str
     ) -> tuple[bool, str]: ...
 
+    async def send_flow(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        flow_id: str,
+        flow_token: str,
+        body: str,
+        cta: str,
+    ) -> bool: ...
+
 
 class GraphApiWhatsAppSender:
     """Real WhatsApp Cloud API client. Every call is best-effort: a failed
@@ -114,6 +126,41 @@ class GraphApiWhatsAppSender:
             },
         )
 
+    async def send_flow(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        flow_id: str,
+        flow_token: str,
+        body: str,
+        cta: str,
+    ) -> bool:
+        return await self._post(
+            phone_number_id,
+            access_token,
+            {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "interactive",
+                "interactive": {
+                    "type": "flow",
+                    "body": {"text": body},
+                    "action": {
+                        "name": "flow",
+                        "parameters": {
+                            "flow_message_version": "3",
+                            "flow_token": flow_token,
+                            "flow_id": flow_id,
+                            "flow_cta": cta,
+                            "flow_action": "navigate",
+                            "flow_action_payload": {"screen": "MENU"},
+                        },
+                    },
+                },
+            },
+        )
 
     async def send_test_message(
         self, *, phone_number_id: str, access_token: str, to: str

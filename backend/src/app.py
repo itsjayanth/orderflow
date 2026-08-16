@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from conversation.api.router import router as whatsapp_webhook_router
 from dashboard_api.api.router import router as dashboard_api_router
+from flows.api.router import router as whatsapp_flows_router
 from notifications.wiring import register_notification_handlers
 from ordering_flow.api.router import router as ordering_flow_router
 from payments.api.router import router as payments_webhook_router
@@ -47,6 +48,7 @@ app.add_middleware(
 
 app.include_router(dashboard_api_router)
 app.include_router(whatsapp_webhook_router)
+app.include_router(whatsapp_flows_router)
 app.include_router(ordering_flow_router)
 app.include_router(payments_webhook_router)
 

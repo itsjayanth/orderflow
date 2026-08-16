@@ -1,3 +1,5 @@
+import json
+
 from conversation.domain.webhook_parser import parse_inbound_messages
 
 
@@ -122,3 +124,62 @@ def test_ignores_malformed_entries_without_phone_number_id() -> None:
     messages = parse_inbound_messages(payload)
 
     assert messages == []
+
+
+def test_parses_flow_completion_reply() -> None:
+    completion_payload = {
+        "selected_items": ["abc-123"],
+        "order_type": "pickup",
+        "payment_method": "cod",
+    }
+    payload = _envelope(
+        value={
+            "metadata": {"phone_number_id": "PNID1"},
+            "messages": [
+                {
+                    "from": "919876543210",
+                    "id": "wamid.FLOW1",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "nfm_reply",
+                        "nfm_reply": {
+                            "name": "flow",
+                            "body": "Sent",
+                            "response_json": json.dumps(completion_payload),
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    messages = parse_inbound_messages(payload)
+
+    assert len(messages) == 1
+    assert messages[0].flow_response == completion_payload
+    assert messages[0].text is None
+    assert messages[0].button_id is None
+
+
+def test_flow_completion_with_unparseable_response_json_is_not_a_hard_failure() -> None:
+    payload = _envelope(
+        value={
+            "metadata": {"phone_number_id": "PNID1"},
+            "messages": [
+                {
+                    "from": "919876543210",
+                    "id": "wamid.FLOW2",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "nfm_reply",
+                        "nfm_reply": {"name": "flow", "body": "Sent", "response_json": "{not json"},
+                    },
+                }
+            ],
+        }
+    )
+
+    messages = parse_inbound_messages(payload)
+
+    assert len(messages) == 1
+    assert messages[0].flow_response is None
