@@ -277,7 +277,7 @@
                     "then": [
                       {
                         "type": "TextBody",
-                        "text": "${data.saved_address_display}"
+                        "text": "Your saved address: ${data.saved_address_display}"
                       },
                       {
                         "type": "RadioButtonsGroup",
@@ -290,80 +290,40 @@
                           },
                           {
                             "id": "new",
-                            "title": "No, use a different address"
+                            "title": "No, I'll enter a different one"
                           }
                         ],
                         "required": true
-                      },
-                      {
-                        "type": "If",
-                        "condition": "${form.address_choice} == 'new'",
-                        "then": [
-                          {
-                            "type": "TextInput",
-                            "name": "address_line1",
-                            "label": "Address line 1",
-                            "input-type": "text",
-                            "required": true
-                          },
-                          {
-                            "type": "TextInput",
-                            "name": "address_city",
-                            "label": "City",
-                            "input-type": "text",
-                            "required": true
-                          },
-                          {
-                            "type": "TextInput",
-                            "name": "address_pincode",
-                            "label": "Pincode",
-                            "input-type": "number",
-                            "required": true
-                          },
-                          {
-                            "type": "TextInput",
-                            "name": "address_landmark",
-                            "label": "Landmark (optional)",
-                            "input-type": "text",
-                            "required": false
-                          }
-                        ]
                       }
                     ]
                   },
                   {
-                    "type": "If",
-                    "condition": "${data.has_saved_address} == 'false'",
-                    "then": [
-                      {
-                        "type": "TextInput",
-                        "name": "address_line1",
-                        "label": "Address line 1",
-                        "input-type": "text",
-                        "required": true
-                      },
-                      {
-                        "type": "TextInput",
-                        "name": "address_city",
-                        "label": "City",
-                        "input-type": "text",
-                        "required": true
-                      },
-                      {
-                        "type": "TextInput",
-                        "name": "address_pincode",
-                        "label": "Pincode",
-                        "input-type": "number",
-                        "required": true
-                      },
-                      {
-                        "type": "TextInput",
-                        "name": "address_landmark",
-                        "label": "Landmark (optional)",
-                        "input-type": "text",
-                        "required": false
-                      }
-                    ]
+                    "type": "TextInput",
+                    "name": "address_line1",
+                    "label": "Address line 1",
+                    "input-type": "text",
+                    "required": true
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "address_city",
+                    "label": "City",
+                    "input-type": "text",
+                    "required": true
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "address_pincode",
+                    "label": "Pincode",
+                    "input-type": "number",
+                    "required": true
+                  },
+                  {
+                    "type": "TextInput",
+                    "name": "address_landmark",
+                    "label": "Landmark (optional)",
+                    "input-type": "text",
+                    "required": false
                   }
                 ]
               },
