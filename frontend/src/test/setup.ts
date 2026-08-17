@@ -9,3 +9,7 @@ class ResizeObserverStub {
   disconnect() {}
 }
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver
+
+// jsdom doesn't implement scrollIntoView either -- the checkout page uses
+// it for the "back to menu" / "continue to checkout" jump links.
+Element.prototype.scrollIntoView ??= () => {}

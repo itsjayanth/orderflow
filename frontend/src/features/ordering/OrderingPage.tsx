@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { ArrowLeft, ShoppingCart } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useParams } from 'react-router-dom'
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Sheet } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/shared/api/client'
 import type { OrderingFlowCustomerLookupOut, PublicMenuItemOut } from '@/shared/api/types'
@@ -115,6 +117,18 @@ function categoryAnchor(category: string): string {
   return `menu-category-${slug || 'other'}`
 }
 
+// Mirrors the menu's own category-header treatment (serif label + hairline
+// rule) so the form reads as a continuation of the same considered layout
+// instead of a plain stack of inputs bolted on underneath it.
+function FormSectionHeading({ title }: { title: string }) {
+  return (
+    <div className="flex items-baseline gap-3 pt-1">
+      <h3 className="font-serif text-base font-semibold">{title}</h3>
+      <span className="bg-border h-px flex-1" />
+    </div>
+  )
+}
+
 function CartRow({
   item,
   quantity,
@@ -161,7 +175,10 @@ export function OrderingPage() {
   const { data: menu, isLoading, isError } = usePublicMenu(merchantId ?? '')
   const checkout = useOrderingCheckout(merchantId ?? '')
   const [cart, setCart] = useState<Cart>({})
+  const [isCartOpen, setIsCartOpen] = useState(false)
+  const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false)
   const formSectionRef = useRef<HTMLDivElement>(null)
+  const menuSectionRef = useRef<HTMLDivElement>(null)
 
   const {
     register,
@@ -196,6 +213,7 @@ export function OrderingPage() {
     if (!merchantId || !/^\d{6,12}$/.test(localNumber)) {
       return
     }
+    setIsLookingUpCustomer(true)
     try {
       const result = await apiFetch<OrderingFlowCustomerLookupOut>(
         `/api/v1/ordering-flow/${merchantId}/customer-lookup?whatsapp_number=${encodeURIComponent(
@@ -219,7 +237,21 @@ export function OrderingPage() {
     } catch {
       // New customer, or a transient lookup failure -- this is a
       // convenience prefill, not a required step, so fail silently.
+    } finally {
+      setIsLookingUpCustomer(false)
     }
+  }
+
+  // The cart sheet and the "back to menu" link both need a way back up to
+  // the menu -- without this, adding a second item once you've scrolled
+  // into the checkout form means scrolling all the way back up by hand.
+  const scrollToMenu = () => {
+    setIsCartOpen(false)
+    menuSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+  const scrollToCheckout = () => {
+    setIsCartOpen(false)
+    formSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const menuSections = useMemo(() => groupByCategory(menu?.items ?? []), [menu])
@@ -240,9 +272,33 @@ export function OrderingPage() {
   const total = cartLines.reduce((sum, line) => sum + Number(line.item.price) * line.quantity, 0)
 
   if (isLoading) {
+    // Shaped like the real layout below (title, category pills, item
+    // rows) rather than a bare spinner, so the page doesn't visibly jump
+    // once the menu arrives.
     return (
-      <div className="flex min-h-svh items-center justify-center p-8">
-        <p className="text-muted-foreground text-sm">Loading menu…</p>
+      <div className="from-background to-secondary/30 min-h-svh bg-gradient-to-b">
+        <div className="mx-auto max-w-md space-y-6 px-4 py-8">
+          <div className="motion-safe:animate-pulse space-y-2 text-center">
+            <div className="bg-muted mx-auto h-3 w-20 rounded" />
+            <div className="bg-muted mx-auto h-7 w-48 rounded" />
+          </div>
+          <div className="motion-safe:animate-pulse flex gap-2">
+            {['w-16', 'w-20', 'w-14', 'w-24'].map((width) => (
+              <div key={width} className={cn('bg-muted h-7 rounded-full', width)} />
+            ))}
+          </div>
+          <Card className="divide-border motion-safe:animate-pulse overflow-hidden py-0">
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="flex items-center gap-3 border-b px-4 py-4 last:border-0">
+                <div className="bg-muted size-11 shrink-0 rounded-lg" />
+                <div className="flex-1 space-y-2">
+                  <div className="bg-muted h-4 w-2/3 rounded" />
+                  <div className="bg-muted h-3 w-1/4 rounded" />
+                </div>
+              </div>
+            ))}
+          </Card>
+        </div>
       </div>
     )
   }
@@ -288,18 +344,43 @@ export function OrderingPage() {
     // automatic return.
     const whatsappNumber = menu.merchant_whatsapp_number?.replace(/\D/g, '')
 
+    const orderTypeLabel = getValues('order_type') === 'delivery' ? 'Delivery' : 'Pickup'
+    const paymentOutstanding = Boolean(checkout.data.payment_link_url)
+
     return (
       <div className="from-background to-secondary/40 flex min-h-svh items-center justify-center bg-gradient-to-b p-6">
-        <Card className="w-full max-w-sm space-y-4 p-8 text-center shadow-lg">
+        <Card className="w-full max-w-sm space-y-5 p-8 text-center shadow-lg">
           <span className="bg-primary text-primary-foreground mx-auto flex size-12 items-center justify-center rounded-full text-xl">
             ✓
           </span>
-          <h1 className="font-serif text-xl font-semibold">
-            Order {formatOrderNumber(checkout.data.order_number)} confirmed!
-          </h1>
-          <p className="text-muted-foreground text-sm">We'll let you know when it's ready.</p>
+          <div className="space-y-1">
+            <h1 className="font-serif text-xl font-semibold">
+              Order {formatOrderNumber(checkout.data.order_number)} confirmed!
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {paymentOutstanding
+                ? 'Complete payment and we’ll get started.'
+                : 'We’ll let you know when it’s ready.'}
+            </p>
+          </div>
+
+          <div className="bg-secondary/40 space-y-1.5 rounded-lg border p-4 text-left text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{orderTypeLabel}</span>
+              <span className="font-medium">
+                {cartItemCount} item{cartItemCount === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-t pt-1.5">
+              <span className="font-medium">Total</span>
+              <span className="text-brand-gold font-serif font-semibold">
+                INR {total.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
           {checkout.data.payment_link_url && (
-            <Button asChild className="w-full">
+            <Button asChild size="lg" className="w-full">
               {/* Same-tab navigation, not target="_blank" -- inside WhatsApp's
                   in-app browser, opening a new tab stacks an extra browser
                   layer on top of an already-embedded view. Razorpay UPI
@@ -309,9 +390,12 @@ export function OrderingPage() {
             </Button>
           )}
           {whatsappNumber && (
-            <Button asChild variant="outline" className="w-full">
-              <a href={`https://wa.me/${whatsappNumber}`}>Return to WhatsApp chat</a>
-            </Button>
+            <a
+              href={`https://wa.me/${whatsappNumber}`}
+              className="text-muted-foreground hover:text-foreground block text-sm underline-offset-4 transition-colors duration-150 hover:underline"
+            >
+              Return to WhatsApp chat
+            </a>
           )}
         </Card>
       </div>
@@ -346,7 +430,7 @@ export function OrderingPage() {
           </Card>
         )}
 
-        <div className="space-y-8">
+        <div ref={menuSectionRef} className="space-y-8 scroll-mt-16">
           {menuSections.map((section) => (
             <section
               key={section.category}
@@ -380,8 +464,57 @@ export function OrderingPage() {
           <div ref={formSectionRef} className="scroll-mt-16">
             <form onSubmit={handleSubmit(onSubmit)}>
               <Card className="space-y-4 p-5">
-                <p className="text-lg font-medium">Total: INR {total.toFixed(2)}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-lg font-medium">
+                    Total:{' '}
+                    <span className="font-serif text-brand-gold font-semibold">
+                      INR {total.toFixed(2)}
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={scrollToMenu}
+                    className="text-primary inline-flex shrink-0 items-center gap-1 text-sm font-medium transition-colors duration-150 hover:underline"
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    Back to menu
+                  </button>
+                </div>
 
+                {/* Fulfillment first: it decides whether the address block
+                    below even applies, so it can't come after it. */}
+                <FormSectionHeading title="How would you like this?" />
+                <div className="space-y-2">
+                  <Label className="sr-only">Order type</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setValue('order_type', 'pickup', { shouldValidate: true })}
+                      className={cn(
+                        'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors duration-150',
+                        orderType === 'pickup'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
+                      )}
+                    >
+                      Pickup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setValue('order_type', 'delivery', { shouldValidate: true })}
+                      className={cn(
+                        'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors duration-150',
+                        orderType === 'delivery'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
+                      )}
+                    >
+                      Delivery
+                    </button>
+                  </div>
+                </div>
+
+                <FormSectionHeading title="Your details" />
                 <div className="space-y-2">
                   <Label htmlFor="local_number">Your WhatsApp number</Label>
                   <div className="flex gap-2">
@@ -411,6 +544,9 @@ export function OrderingPage() {
                   {errors.local_number && (
                     <p className="text-destructive text-sm">{errors.local_number.message}</p>
                   )}
+                  {isLookingUpCustomer && (
+                    <p className="text-muted-foreground text-xs">Checking for saved details…</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -423,36 +559,53 @@ export function OrderingPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Order type</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setValue('order_type', 'pickup', { shouldValidate: true })}
-                      className={cn(
-                        'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors duration-150',
-                        orderType === 'pickup'
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
+                {orderType === 'delivery' && (
+                  <div className="border-border space-y-3 rounded-lg border border-dashed p-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="address_line1">Address line 1</Label>
+                      <Input
+                        id="address_line1"
+                        placeholder="House / flat no., building, street"
+                        {...register('address_line1')}
+                      />
+                      {errors.address_line1 && (
+                        <p className="text-destructive text-sm">{errors.address_line1.message}</p>
                       )}
-                    >
-                      Pickup
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setValue('order_type', 'delivery', { shouldValidate: true })}
-                      className={cn(
-                        'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors duration-150',
-                        orderType === 'delivery'
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-input bg-card text-muted-foreground hover:border-ring/30',
-                      )}
-                    >
-                      Delivery
-                    </button>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address_line2">Address line 2 (optional)</Label>
+                      <Input id="address_line2" {...register('address_line2')} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address_landmark">Landmark (optional)</Label>
+                      <Input id="address_landmark" {...register('address_landmark')} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="address_city">City</Label>
+                        <Input id="address_city" {...register('address_city')} />
+                        {errors.address_city && (
+                          <p className="text-destructive text-sm">{errors.address_city.message}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="address_pincode">Pincode</Label>
+                        <Input
+                          id="address_pincode"
+                          inputMode="numeric"
+                          {...register('address_pincode')}
+                        />
+                        {errors.address_pincode && (
+                          <p className="text-destructive text-sm">
+                            {errors.address_pincode.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
+                <FormSectionHeading title="Payment" />
                 <div className="space-y-2">
                   <Label>Contact number for this order</Label>
                   <div className="space-y-2">
@@ -507,52 +660,6 @@ export function OrderingPage() {
                   )}
                 </div>
 
-                {orderType === 'delivery' && (
-                  <div className="border-border space-y-3 rounded-lg border border-dashed p-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="address_line1">Address line 1</Label>
-                      <Input
-                        id="address_line1"
-                        placeholder="House / flat no., building, street"
-                        {...register('address_line1')}
-                      />
-                      {errors.address_line1 && (
-                        <p className="text-destructive text-sm">{errors.address_line1.message}</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="address_line2">Address line 2 (optional)</Label>
-                      <Input id="address_line2" {...register('address_line2')} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="address_landmark">Landmark (optional)</Label>
-                      <Input id="address_landmark" {...register('address_landmark')} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="address_city">City</Label>
-                        <Input id="address_city" {...register('address_city')} />
-                        {errors.address_city && (
-                          <p className="text-destructive text-sm">{errors.address_city.message}</p>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="address_pincode">Pincode</Label>
-                        <Input
-                          id="address_pincode"
-                          inputMode="numeric"
-                          {...register('address_pincode')}
-                        />
-                        {errors.address_pincode && (
-                          <p className="text-destructive text-sm">
-                            {errors.address_pincode.message}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 <div className="space-y-2">
                   <Label htmlFor="payment_method">Payment method</Label>
                   <select
@@ -582,18 +689,65 @@ export function OrderingPage() {
 
       {cartLines.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card/95 p-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur">
+          {/* Always present once there's something in the cart -- through
+              the menu, the form, and everything in between -- and always
+              opens the cart rather than only ever pushing further into
+              checkout, so there's a way back no matter how far down the
+              page you've scrolled. */}
           <button
             type="button"
-            onClick={() => formSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            onClick={() => setIsCartOpen(true)}
             className="bg-primary text-primary-foreground mx-auto flex w-full max-w-md items-center justify-between rounded-lg px-4 py-3 text-sm font-medium shadow-sm transition-all duration-150 active:scale-[0.98]"
           >
-            <span>
-              {cartItemCount} item{cartItemCount === 1 ? '' : 's'} in cart
+            <span className="flex items-center gap-2">
+              <ShoppingCart className="size-4" />
+              <span
+                key={cartItemCount}
+                className="motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-300 inline-block"
+              >
+                {cartItemCount} item{cartItemCount === 1 ? '' : 's'}
+              </span>
+              in cart
             </span>
-            <span>INR {total.toFixed(2)} · Review order →</span>
+            <span>
+              <span className="text-brand-gold font-serif">INR {total.toFixed(2)}</span> · View cart
+            </span>
           </button>
         </div>
       )}
+
+      <Sheet
+        open={isCartOpen}
+        onOpenChange={setIsCartOpen}
+        title="Your cart"
+        footer={
+          <>
+            <Button type="button" variant="outline" className="w-full" onClick={scrollToMenu}>
+              + Add more items
+            </Button>
+            <Button type="button" className="w-full" onClick={scrollToCheckout}>
+              Continue to checkout
+            </Button>
+          </>
+        }
+      >
+        {cartLines.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Your cart is empty.</p>
+        ) : (
+          <div className="-mx-1">
+            {cartLines.map(({ item, quantity }) => (
+              <CartRow
+                key={item.menu_item_id}
+                item={item}
+                quantity={quantity}
+                onChange={(nextQuantity) =>
+                  setCart((prev) => ({ ...prev, [item.menu_item_id]: nextQuantity }))
+                }
+              />
+            ))}
+          </div>
+        )}
+      </Sheet>
     </div>
   )
 }

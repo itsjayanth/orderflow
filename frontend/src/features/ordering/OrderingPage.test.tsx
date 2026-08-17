@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -21,6 +21,15 @@ vi.mock('@/shared/api/client', async () => {
 })
 
 const mockedApiFetch = vi.mocked(apiFetch)
+
+// The total's price figure is its own <span> (styled as a gold accent),
+// so its text is split across elements -- RTL's default text matcher only
+// looks at an element's own direct text nodes, not its descendants', so a
+// plain string match against the wrapping <p> won't find it.
+function totalText(expected: string) {
+  return (_content: string, element: Element | null) =>
+    element?.tagName.toLowerCase() === 'p' && element.textContent === expected
+}
 
 const merchantId = '11111111-1111-1111-1111-111111111111'
 
@@ -148,7 +157,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    expect(await screen.findByText('Total: INR 349.00')).toBeInTheDocument()
+    expect(await screen.findByText(totalText('Total: INR 349.00'))).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },
@@ -197,7 +206,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    await screen.findByText('Total: INR 349.00')
+    await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },
@@ -227,7 +236,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    await screen.findByText('Total: INR 349.00')
+    await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },
@@ -290,7 +299,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    await screen.findByText('Total: INR 349.00')
+    await screen.findByText(totalText('Total: INR 349.00'))
 
     const phoneInput = screen.getByLabelText('Your WhatsApp number')
     fireEvent.change(phoneInput, { target: { value: '9876543210' } })
@@ -319,7 +328,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    await screen.findByText('Total: INR 349.00')
+    await screen.findByText(totalText('Total: INR 349.00'))
 
     const phoneInput = screen.getByLabelText('Your WhatsApp number')
     fireEvent.change(phoneInput, { target: { value: '9876543210' } })
@@ -342,7 +351,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    await screen.findByText('Total: INR 349.00')
+    await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },
@@ -374,7 +383,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    await screen.findByText('Total: INR 349.00')
+    await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },
@@ -399,6 +408,44 @@ describe('OrderingPage', () => {
     expect(requestBody.contact_phone).toBe('8123456789')
   })
 
+  it('opens the cart from the docked bar and can jump back to the menu without losing it', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+
+    // The docked bar is the only persistent way back into the cart once
+    // you've scrolled down -- it must open the cart, not just push further
+    // into the form.
+    fireEvent.click(screen.getByRole('button', { name: /View cart/ }))
+    const cartDialog = await screen.findByRole('dialog', { name: 'Your cart' })
+    expect(within(cartDialog).getByText('Butter Chicken')).toBeInTheDocument()
+
+    // "Add more items" is the bridge back to the menu -- it closes the
+    // sheet without touching the cart, so a second item can be added from
+    // the menu itself.
+    fireEvent.click(within(cartDialog).getByRole('button', { name: /Add more items/ }))
+    expect(screen.queryByRole('dialog', { name: 'Your cart' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /View cart/ })).toBeInTheDocument()
+  })
+
+  it('offers a way back to the menu from inside the checkout form', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText(totalText('Total: INR 349.00'))
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to menu/ }))
+    // Still on the same page, cart untouched -- this is a scroll, not a
+    // navigation, so the form and its data stay mounted.
+    expect(screen.getByText(totalText('Total: INR 349.00'))).toBeInTheDocument()
+  })
+
   it('prefills "use a different number" for a returning customer with a saved contact_phone', async () => {
     mockedApiFetch.mockResolvedValueOnce(sampleMenu)
     const lookupResponse: OrderingFlowCustomerLookupOut = {
@@ -412,7 +459,7 @@ describe('OrderingPage', () => {
     await screen.findByText('Butter Chicken')
 
     fireEvent.click(screen.getByRole('button', { name: '+' }))
-    await screen.findByText('Total: INR 349.00')
+    await screen.findByText(totalText('Total: INR 349.00'))
 
     const phoneInput = screen.getByLabelText('Your WhatsApp number')
     fireEvent.change(phoneInput, { target: { value: '9876543210' } })
