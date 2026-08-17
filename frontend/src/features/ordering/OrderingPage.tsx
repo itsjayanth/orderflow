@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeft, ShoppingCart } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useParams } from 'react-router-dom'
 import { z } from 'zod'
@@ -108,6 +108,51 @@ function groupByCategory(items: PublicMenuItemOut[]): MenuSection[] {
   return sections
 }
 
+function cartStorageKey(merchantId: string): string {
+  return `orderflow-cart:${merchantId}`
+}
+
+function loadStoredCart(merchantId: string): Cart {
+  try {
+    const raw = sessionStorage.getItem(cartStorageKey(merchantId))
+    return raw ? (JSON.parse(raw) as Cart) : {}
+  } catch {
+    // Private browsing / storage disabled -- cart still works for the
+    // current page load, it just won't survive a reload.
+    return {}
+  }
+}
+
+// The docked cart bar is `position: fixed`, which mobile browsers anchor
+// to the *layout* viewport -- when the on-screen keyboard opens (typing a
+// phone number or address), that layout viewport doesn't shrink, so the
+// bar ends up pinned below the visible area, hidden behind the keyboard.
+// This tracks how far the visual viewport has been pushed up and offsets
+// the bar by the same amount so it stays on-screen.
+function useKeyboardInset(): number {
+  const [inset, setInset] = useState(0)
+
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) {
+      return
+    }
+    const update = () => {
+      const offset = window.innerHeight - viewport.height - viewport.offsetTop
+      setInset(Math.max(0, Math.round(offset)))
+    }
+    update()
+    viewport.addEventListener('resize', update)
+    viewport.addEventListener('scroll', update)
+    return () => {
+      viewport.removeEventListener('resize', update)
+      viewport.removeEventListener('scroll', update)
+    }
+  }, [])
+
+  return inset
+}
+
 function categoryAnchor(category: string): string {
   const slug = category
     .toLowerCase()
@@ -174,11 +219,40 @@ export function OrderingPage() {
   const { merchantId } = useParams<{ merchantId: string }>()
   const { data: menu, isLoading, isError } = usePublicMenu(merchantId ?? '')
   const checkout = useOrderingCheckout(merchantId ?? '')
-  const [cart, setCart] = useState<Cart>({})
+  const [cart, setCart] = useState<Cart>(() => (merchantId ? loadStoredCart(merchantId) : {}))
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false)
   const formSectionRef = useRef<HTMLDivElement>(null)
   const menuSectionRef = useRef<HTMLDivElement>(null)
+  const keyboardInset = useKeyboardInset()
+
+  // Persists across a reload -- backgrounding the WhatsApp in-app browser,
+  // an accidental refresh, or navigating away and back with the device's
+  // own back button were all silently wiping the cart before this, since
+  // it previously lived only in memory.
+  useEffect(() => {
+    if (!merchantId) {
+      return
+    }
+    try {
+      sessionStorage.setItem(cartStorageKey(merchantId), JSON.stringify(cart))
+    } catch {
+      // Storage unavailable -- nothing to do, cart still works in-memory.
+    }
+  }, [cart, merchantId])
+
+  // Once an order is actually placed, don't let it resurface on the next
+  // visit to this merchant's page.
+  useEffect(() => {
+    if (!checkout.isSuccess || !merchantId) {
+      return
+    }
+    try {
+      sessionStorage.removeItem(cartStorageKey(merchantId))
+    } catch {
+      // Storage unavailable -- nothing to clean up.
+    }
+  }, [checkout.isSuccess, merchantId])
 
   const {
     register,
@@ -688,12 +762,17 @@ export function OrderingPage() {
       </div>
 
       {cartLines.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card/95 p-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur">
+        <div
+          className="fixed inset-x-0 z-20 border-t bg-card/95 p-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur"
+          style={{ bottom: keyboardInset }}
+        >
           {/* Always present once there's something in the cart -- through
               the menu, the form, and everything in between -- and always
               opens the cart rather than only ever pushing further into
               checkout, so there's a way back no matter how far down the
-              page you've scrolled. */}
+              page you've scrolled. `bottom` tracks the on-screen keyboard
+              (see useKeyboardInset) so typing a phone number or address
+              doesn't push this off-screen. */}
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}

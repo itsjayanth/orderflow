@@ -72,7 +72,7 @@ function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/order/${merchantId}`]}>
         <Routes>
@@ -86,6 +86,10 @@ function renderPage() {
 describe('OrderingPage', () => {
   beforeEach(() => {
     mockedApiFetch.mockReset()
+    // The cart now persists to sessionStorage (keyed by merchantId) so it
+    // survives a real reload -- every test here reuses the same
+    // merchantId, so without this, cart state leaks across tests.
+    sessionStorage.clear()
   })
 
   it('renders the menu and business name', async () => {
@@ -406,6 +410,25 @@ describe('OrderingPage', () => {
     )
     const requestBody = JSON.parse((checkoutCall?.[1]?.body as string) ?? '{}')
     expect(requestBody.contact_phone).toBe('8123456789')
+  })
+
+  it('keeps the cart after the page reloads (e.g. backgrounding the WhatsApp webview)', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+
+    const first = renderPage()
+    await screen.findByText('Butter Chicken')
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText(totalText('Total: INR 349.00'))
+
+    // Simulates a real reload -- the component tree is torn down and
+    // rebuilt from scratch, same as a fresh page load would be.
+    first.unmount()
+
+    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    expect(screen.getByText(totalText('Total: INR 349.00'))).toBeInTheDocument()
   })
 
   it('opens the cart from the docked bar and can jump back to the menu without losing it', async () => {
