@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CustomerOut(BaseModel):
@@ -9,10 +9,27 @@ class CustomerOut(BaseModel):
     customer_number: int
     whatsapp_number: str
     display_name: str | None
+    default_contact_phone: str | None
+    email: str | None
     first_seen_at: datetime.datetime
     last_order_at: datetime.datetime | None
+    is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class CustomerCreate(BaseModel):
+    whatsapp_number: str = Field(min_length=1, max_length=32)
+    display_name: str | None = Field(default=None, max_length=255)
+    default_contact_phone: str | None = Field(default=None, max_length=32)
+    email: str | None = Field(default=None, max_length=255)
+
+
+class CustomerUpdate(BaseModel):
+    display_name: str | None = Field(default=None, max_length=255)
+    default_contact_phone: str | None = Field(default=None, max_length=32)
+    email: str | None = Field(default=None, max_length=255)
+    is_active: bool | None = None
 
 
 class AddressOut(BaseModel):

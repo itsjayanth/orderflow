@@ -2,10 +2,10 @@ import datetime
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from customers.domain.models import Customer
+from customers.domain.models import Address, Customer
 from shared.db import Base
 
 
@@ -68,6 +68,10 @@ class Order(Base):
     # looks at it. Nullable only for rows created before this column
     # existed.
     contact_phone: Mapped[str | None] = mapped_column(String(32), default=None)
+    # Free-text staff note (e.g. "no onion", "call before delivering") --
+    # dashboard-editable via PATCH /api/v1/orders/{id}, surfaced on the
+    # order detail card. Not customer-facing, not sent over WhatsApp.
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
     # Phase 2 (POS integration) seam -- unused until then.
     external_pos_order_id: Mapped[str | None] = mapped_column(String(255), default=None)
 
@@ -89,6 +93,10 @@ class Order(Base):
     # No back_populates on Customer -- nothing there needs the reverse
     # collection today, and adding it would be an unused surface.
     customer: Mapped["Customer"] = relationship()
+    # Only ever selectinload'd on the single-order detail fetch (not the
+    # list query) -- the order list doesn't render address, so eagerly
+    # joining it there would be pure waste.
+    delivery_address: Mapped["Address | None"] = relationship()
 
 
 class OrderItem(Base):

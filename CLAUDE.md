@@ -36,82 +36,29 @@ npm run build
 
 ## Product context (from `docs/project-brief.txt`)
 
-Orderflow is a WhatsApp-based ordering system for independent restaurants (MVP phase, pilot target: a small cluster in Bangalore). Read the full brief at `docs/project-brief.txt` before making product/architecture decisions — key points to keep in mind:
+Orderflow is a WhatsApp-based ordering system for independent restaurants (MVP phase, pilot target: a small cluster in Bangalore). Read the full brief before making product/architecture decisions.
 
-- **Two sides**: a customer-facing WhatsApp chat flow (browse catalog → cart → order summary → payment link → confirmation → status updates), and a merchant-facing web dashboard (orders list/detail, manual status updates, menu/catalog management). No native mobile app for merchants — responsive web is sufficient.
-- **Core pipeline**: WhatsApp conversation state → order object → payment status → merchant app order list. An order should appear in the merchant dashboard within seconds of payment confirmation.
-- **Integrations implied by the brief**: WhatsApp Cloud API (via a Business Solution Provider) for chat/catalog/template messages; Razorpay (or similar) payment links with a webhook for payment confirmation.
-- **Order status flow**: New → Preparing → Ready → Completed, staff-driven from the merchant app. At minimum, the "Ready"/"Completed" transition must trigger a WhatsApp message back to the customer.
-- **Explicitly out of scope for MVP**: POS/KDS integration (Petpooja/UrbanPiper — planned Phase 2), kitchen printer auto-ticketing, loyalty/broadcast marketing, multi-outlet management, multi-user roles/permissions, free-text AI chatbot ordering (use structured/guided flows instead), any non-restaurant vertical, native mobile apps.
-- **Data model guidance from the brief**: keep the order object "POS-integration-friendly" — don't bake in app-only assumptions — since Phase 2 needs to slot in a Petpooja order-injection API without re-architecting the order model. Per-order data: order ID, customer name/phone, items + quantities, total, payment status, order status, timestamps.
+- Two sides: customer-facing WhatsApp chat flow (browse → cart → order summary → payment link → confirmation → status updates), and a merchant-facing web dashboard (orders, manual status updates, menu/catalog management). No native mobile app.
+- Core pipeline: WhatsApp conversation state → order object → payment status → merchant app order list, within seconds of payment confirmation.
+- Integrations implied by the brief: WhatsApp Cloud API (via a BSP) for chat/catalog/templates; Razorpay (or similar) payment links with a webhook.
+- Order status flow: New → Preparing → Ready → Completed, staff-driven; Ready/Completed must trigger a WhatsApp message to the customer.
+- Out of scope for MVP: POS/KDS integration (Petpooja/UrbanPiper — Phase 2), kitchen printer auto-ticketing, loyalty/broadcast marketing, multi-outlet management, multi-user roles, free-text AI chatbot ordering, non-restaurant verticals, native mobile apps.
+- Data model guidance: keep the order object "POS-integration-friendly" (Phase 2 needs to slot in a Petpooja order-injection API without re-architecting). Per-order data: order ID, customer name/phone, items + quantities, total, payment status, order status, timestamps.
 
-When scaffolding new code in this repo, favor structure that matches this brief (e.g., a clean separation between the WhatsApp conversation/webhook layer, the order/payment domain model, and the merchant dashboard) rather than inventing an unrelated architecture.
+Favor structure that matches this brief (clean separation between the WhatsApp conversation/webhook layer, the order/payment domain model, and the merchant dashboard) over inventing an unrelated architecture.
 
 ## Order flow — how it actually works today
 
-This section documents the real, current order-flow implementation, traced through the code (not the aspirational design). It gets stale as the code changes — re-verify against the file paths below before trusting specifics.
+Traced through the actual code, not the aspirational design — it goes stale as the code changes, so re-verify specifics before trusting them. Tech: FastAPI + SQLAlchemy (async)/Postgres backend, React/Vite frontend, **Meta's WhatsApp Cloud API directly** (not Twilio/another BSP), **Razorpay** for payments. No queue/worker — webhook handlers run inline in the FastAPI request; the only background job is an APScheduler sweep that cancels abandoned orders.
 
-**Tech stack**: Python 3.12 / FastAPI backend, SQLAlchemy 2.0 (async) on PostgreSQL, modular-by-domain under `backend/src/`. React + TypeScript frontend (Vite). WhatsApp provider is **Meta's WhatsApp Cloud API directly** (not Twilio or another BSP). Payments via **Razorpay**. No queueing/worker system for order intake — webhook handlers run inline in the FastAPI request; a lightweight APScheduler job handles the one background sweep that exists (abandoned-order cancellation).
+**1. WhatsApp intake** — `POST /api/v1/whatsapp/webhook` (`conversation/api/router.py`) always returns 200 immediately (Meta retry-storms otherwise); `GET` on the same route handles Meta's verification handshake. Matches phone number ID → merchant, finds-or-creates customer, de-dupes redelivered messages, then branches on intent (`conversation/domain/intents.py`): greeting → button menu; "Place order" → native WhatsApp Flow if configured, else a web ordering link, both converging on the same checkout logic; "Track order" → latest status. The Flow's screen-by-screen exchange is a separate Meta-spec-encrypted (RSA/AES) endpoint, `POST /api/v1/whatsapp/flows/{merchant_id}/data-exchange` (`flows/api/router.py`); the web fallback is `ordering_flow/api/router.py` + `frontend/src/features/ordering/`. Outbound sends (`conversation/adapters/whatsapp_client.py`) post directly to `graph.facebook.com` with each merchant's own token and are best-effort — failures are logged, never raised. Nothing here is obviously stubbed.
 
-### 1. WhatsApp order intake
+**2. Customers & addresses** — Identified by WhatsApp phone number, scoped per merchant (multi-tenant: same number = different customer row per restaurant). `CustomerRepository.find_or_create()` (`customers/adapters/repository.py`) is idempotent on `(merchant_id, whatsapp_number)` and runs on every inbound message, so a customer row exists before any order. **No WhatsApp location-pin support** anywhere, despite dead `geo_lat`/`geo_long` columns on the model. Web ordering page always creates a **new** `Address` row, even for returning customers; the native Flow reuses the saved address (`AddressRepository.get_primary_for_customer`) if the customer confirms "same," otherwise also creates new. No update/delete API for saved addresses (lookup/list only).
 
-A customer messages the restaurant's WhatsApp number. Meta forwards it to `POST /api/v1/whatsapp/webhook` (`backend/src/conversation/api/router.py`), which always answers 200 immediately (required so Meta doesn't retry-storm). Verification for Meta's handshake is `GET` on the same route.
+**3. Order management** — Two coupled state machines (`orders/domain/state_machine.py`), not one linear list:
+- `payment_status`: `awaiting_payment → paid | payment_failed | cancelled`; `payment_failed → awaiting_payment` (retry); `cod_pending → cod_collected` for cash — **but `cod_collected` is unreachable: no endpoint or job ever transitions into it.**
+- `fulfillment_status`: `new → preparing → ready → completed`, plus `cancelled` from any non-terminal state (matches the brief exactly).
 
-Inside, the app: matches the incoming WhatsApp phone number ID to a merchant, checks the merchant has finished onboarding, finds-or-creates the customer by phone number, and de-duplicates (WhatsApp can redeliver the same message).
+Gated together: `fulfillment_status` stays unset until `payment_status` reaches `paid` or `cod_pending`, so kitchen staff never see an order without a valid payment path; a `cancelled` payment status force-cancels fulfillment too. Payment-side transitions come from the Razorpay webhook (`POST /api/v1/payments/webhook/razorpay/{merchant_id}`, signature-verified) or the abandoned-order sweep; fulfillment-side transitions are manual-staff-only via `PATCH /api/v1/orders/{order_id}/fulfillment-status`, each firing an event that `notifications/wiring.py` turns into a WhatsApp status update. The dashboard (`frontend/src/features/orders/`) is a real working orders list/detail/status-transition UI, not scaffolding — `statusTransitions.ts` mirrors backend-allowed transitions client-side (server still enforces). `payments/api/dashboard_router.py`'s `/test-checkout` endpoint is explicitly a staff-facing stand-in for the real WhatsApp flow, not customer-facing.
 
-Then it branches on intent (`backend/src/conversation/domain/intents.py`):
-- Greeting/plain text → sends a button menu ("Place order" / "Track order" / "Talk to restaurant").
-- "Place order" → if the merchant has a native **WhatsApp Flow** configured (an in-chat ordering form), opens it; otherwise sends a link to a plain web ordering page. Both paths converge on the same checkout logic.
-- Flow completed (items, delivery/pickup, address, payment method chosen) → parsed and turned into a real order, then a confirmation/payment-link message is sent back.
-- "Track order" → replies with the latest order's status.
-
-The in-chat Flow's screen-by-screen data exchange is a separate, Meta-spec-encrypted (RSA/AES) endpoint: `POST /api/v1/whatsapp/flows/{merchant_id}/data-exchange` (`backend/src/flows/api/router.py`). The web fallback lives under `backend/src/ordering_flow/api/router.py` + `frontend/src/features/ordering/`.
-
-Outbound WhatsApp sends go through `backend/src/conversation/adapters/whatsapp_client.py` (`GraphApiWhatsAppSender`), posting straight to `graph.facebook.com` using each merchant's own stored access token — sends are best-effort (failures are logged, never raised, so webhook handling always completes).
-
-**Key files**: `conversation/api/router.py`, `conversation/domain/{webhook_parser,handler,intents}.py`, `conversation/adapters/whatsapp_client.py`, `flows/api/router.py`, `flows/domain/{encryption,menu_order,images}.py`, `ordering_flow/api/router.py`, `ordering_flow/domain/checkout.py`.
-
-**Gaps**: none obviously stubbed — intake, both ordering paths, and checkout appear fully wired.
-
-### 2. Customer & address handling
-
-Customers are identified by **WhatsApp phone number**, scoped per merchant (multi-tenant — the same phone number is a different customer row per restaurant). `Customer` (`backend/src/customers/domain/models.py`) holds a UUID id, a human-friendly sequential `customer_number`, `whatsapp_number`, optional `display_name`, and an optional separate `default_contact_phone` for delivery calls. `CustomerRepository.find_or_create()` is idempotent on `(merchant_id, whatsapp_number)` and runs on every inbound message — so a customer record exists from first contact, before any order.
-
-Address capture has **no WhatsApp location-pin support** (not implemented anywhere in the code, despite unused `geo_lat`/`geo_long` columns sitting on the model). Two real paths, both ending in the same `perform_checkout()`:
-- **Web ordering page**: customer types the address into a form (line1/line2/landmark/city/pincode). A **new** `Address` row is created every time, even for a returning customer.
-- **Native WhatsApp Flow**: if the customer previously saved an address and confirms "same" in the Flow, the existing `Address` row is reused (`AddressRepository.get_primary_for_customer`); otherwise a new one is created, same as the web path.
-
-Storage: Postgres, `customers` and `addresses` tables (`backend/src/customers/domain/models.py`), accessed via `CustomerRepository` / `AddressRepository` in `backend/src/customers/adapters/repository.py`.
-
-**Gaps**: no location-pin capture; `geo_lat`/`geo_long` are dead columns; no update/delete API for saved addresses (only lookup/list).
-
-### 3. Order management
-
-Two coupled state machines (`backend/src/orders/domain/state_machine.py`), not one linear list:
-
-- **`payment_status`**: `awaiting_payment → paid | payment_failed | cancelled`; `payment_failed → awaiting_payment` (retry); `cod_pending → cod_collected` for cash orders.
-- **`fulfillment_status`** — this is the brief's New→Preparing→Ready→Completed, matched exactly, plus `cancelled` from any non-terminal state: `new → preparing → ready → completed`.
-
-The two are gated together: `fulfillment_status` stays unset until `payment_status` reaches `paid` or `cod_pending`, so kitchen staff never see an order without a valid payment path. A `cancelled` payment status force-cancels fulfillment too.
-
-Triggers:
-- `awaiting_payment` / `cod_pending` — set at order creation in `ordering_flow/domain/checkout.py`.
-- `paid` / `payment_failed` — **Razorpay webhook**, `POST /api/v1/payments/webhook/razorpay/{merchant_id}` (`payments/api/router.py`), signature-verified.
-- `cancelled` (payment side) — automated timeout: `shared/scheduler.py`'s `sweep_abandoned_orders`, an APScheduler job that cancels orders stuck too long in `awaiting_payment`.
-- `preparing` / `ready` / `completed` / `cancelled` (fulfillment side) — **manual staff action only**, via `PATCH /api/v1/orders/{order_id}/fulfillment-status` (`orders/api/router.py`), requiring a logged-in staff user. Each transition fires an in-process event that `notifications/wiring.py` turns into a WhatsApp status update to the customer.
-
-**Dashboard is real, not scaffolding**: `frontend/src/features/orders/` has a working orders list, order detail page, and status-transition UI (`statusTransitions.ts` mirrors the backend's allowed transitions so the UI only offers legal moves — server still enforces it). `backend/src/dashboard_api/` is just a thin router aggregator with no logic of its own; the real logic lives in `orders/`, `payments/`, `notifications/`, etc.
-
-**Gaps**: `cod_collected` is a defined payment state with **no way to reach it** — no endpoint or job transitions into it. `payments/api/dashboard_router.py` has a `/test-checkout` endpoint explicitly labeled in-code as a staff-facing stand-in for the real WhatsApp flow (useful for testing, not customer-facing).
-
-### 4. Pricing
-
-Entirely static, and minimal — **no tax, delivery fee, or discount/coupon logic exists anywhere** in the codebase (confirmed by grep; zero hits for coupon/discount/promo/delivery-fee concepts).
-
-In `ordering_flow/domain/checkout.py`'s `perform_checkout()`, each cart line's price is read from the catalog and frozen as `price_snapshot` on the order item (so later menu edits don't retroactively change past orders). `OrderRepository.create()` (`orders/adapters/repository.py`) computes `line_total = price_snapshot * quantity`, `subtotal = sum(line_totals)`, and **`total = subtotal`** — a straight passthrough, no additive/subtractive step at all.
-
-`MenuItem.price` (`catalog/domain/models.py`) is a single flat `Numeric(10,2)` column — no variants, modifiers, or rules engine. `Order` stores `subtotal`, `total`, `currency` (default `"INR"`) but has no `tax_amount`, `delivery_fee`, or `discount_amount` columns — there's nowhere to even persist those values if the logic existed.
-
-**Gaps**: taxes, delivery/shipping fees, and discounts/coupons are completely unimplemented — no schema fields, no calculation code, no API params, anywhere in checkout, orders, catalog, or payments.
-
-**Key files**: `ordering_flow/domain/checkout.py` (`perform_checkout`), `orders/adapters/repository.py` (total computation), `orders/domain/models.py` (`Order`, `OrderItem`), `catalog/domain/models.py` (`MenuItem.price`).
+**4. Pricing** — Entirely static and minimal: **no tax, delivery fee, or discount/coupon logic anywhere** (zero grep hits for coupon/discount/promo/delivery-fee), and no schema fields to even persist such values (`Order` has `subtotal`/`total`/`currency` only). `perform_checkout()` (`ordering_flow/domain/checkout.py`) freezes each cart line's catalog price as `price_snapshot`; `OrderRepository.create()` computes `line_total = price_snapshot * quantity`, `subtotal = sum(line_totals)`, and `total = subtotal` — a straight passthrough. `MenuItem.price` (`catalog/domain/models.py`) is a single flat `Numeric(10,2)` — no variants, modifiers, or rules engine.

@@ -8,11 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from catalog.adapters.repository import MenuItemRepository
-from customers.adapters.repository import CustomerRepository
+from customers.adapters.repository import AddressRepository, CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from orders.adapters.repository import OrderItemInput, OrderNotFoundError, OrderRepository
 from orders.domain.models import OrderStatusEvent
 from orders.domain.state_machine import IllegalTransitionError
+from payments.domain.models import PaymentEvent
 from shared.tenant import TenantContext
 
 
@@ -59,6 +60,8 @@ async def _seed_order(
     customer_whatsapp_number: str = "+919876543210",
     customer_display_name: str | None = None,
     placed_at: datetime.datetime | None = None,
+    order_type: str = "pickup",
+    delivery_address_id: uuid.UUID | None = None,
 ):
     customer = await CustomerRepository(db_session).find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
@@ -69,10 +72,11 @@ async def _seed_order(
     order = await OrderRepository(db_session).create(
         tenant,
         customer_id=customer.customer_id,
-        order_type="pickup",
+        order_type=order_type,
         payment_method=payment_method,
         payment_status=payment_status,
         fulfillment_status=fulfillment_status,
+        delivery_address_id=delivery_address_id,
         items=[
             OrderItemInput(
                 menu_item_id=menu_item.menu_item_id,
@@ -364,6 +368,225 @@ async def test_orders_isolated_between_merchants(
         headers=_auth_headers(tokens_b),
     )
     assert update_response.status_code == 404
+
+
+# --- Dashboard edit: contact_phone --------------------------------------
+
+
+async def test_update_order_contact_phone(client: AsyncClient, db_session: AsyncSession) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(db_session, tenant)
+
+    response = await client.patch(
+        f"/api/v1/orders/{order.order_id}",
+        json={"contact_phone": "+919876500000"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["contact_phone"] == "+919876500000"
+
+
+async def test_update_order_not_found(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    response = await client.patch(
+        f"/api/v1/orders/{uuid.uuid4()}",
+        json={"contact_phone": "+919876500000"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_update_order_notes(client: AsyncClient, db_session: AsyncSession) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(db_session, tenant)
+
+    response = await client.patch(
+        f"/api/v1/orders/{order.order_id}",
+        json={"notes": "No onion, call before delivering"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["notes"] == "No onion, call before delivering"
+
+
+async def test_update_order_notes_and_contact_phone_independently(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Sending only one field must not clobber the other (exclude_unset
+    semantics, same as CustomerRepository.update / MenuItemRepository.update)."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(db_session, tenant)
+
+    await client.patch(
+        f"/api/v1/orders/{order.order_id}",
+        json={"contact_phone": "+919876500000"},
+        headers=_auth_headers(tokens),
+    )
+    response = await client.patch(
+        f"/api/v1/orders/{order.order_id}",
+        json={"notes": "Extra spicy"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["notes"] == "Extra spicy"
+    assert body["contact_phone"] == "+919876500000"
+
+
+# --- Order detail: delivery address embed ---------------------------------
+
+
+async def test_get_order_detail_includes_delivery_address_for_delivery_order(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address = await AddressRepository(db_session).create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        is_default=True,
+    )
+    await db_session.commit()
+    order = await _seed_order(
+        db_session, tenant, order_type="delivery", delivery_address_id=address.address_id
+    )
+
+    response = await client.get(f"/api/v1/orders/{order.order_id}", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["delivery_address"] is not None
+    assert body["delivery_address"]["line1"] == "12 MG Road"
+    assert body["delivery_address"]["city"] == "Bengaluru"
+
+
+async def test_get_order_detail_delivery_address_null_for_pickup_order(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(db_session, tenant, order_type="pickup")
+
+    response = await client.get(f"/api/v1/orders/{order.order_id}", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    assert response.json()["delivery_address"] is None
+
+
+# --- List filtering by customer_id ----------------------------------------
+
+
+async def test_list_orders_filtered_by_customer_id(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    matching = await _seed_order(db_session, tenant, customer_whatsapp_number="+919876543210")
+    await _seed_order(db_session, tenant, customer_whatsapp_number="+919876543211")
+
+    response = await client.get(
+        "/api/v1/orders",
+        params={"customer_id": str(matching.customer_id)},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["order_id"] == str(matching.order_id)
+
+
+# --- Dashboard action: collect COD payment -------------------------------
+
+
+async def test_collect_cod_payment_happy_path(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(
+        db_session,
+        tenant,
+        payment_status="cod_pending",
+        fulfillment_status="new",
+        payment_method="cod",
+    )
+
+    response = await client.post(
+        f"/api/v1/orders/{order.order_id}/collect-cod-payment", headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["payment_status"] == "cod_collected"
+
+
+async def test_collect_cod_payment_records_payment_event(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(
+        db_session,
+        tenant,
+        payment_status="cod_pending",
+        fulfillment_status="new",
+        payment_method="cod",
+    )
+
+    await client.post(
+        f"/api/v1/orders/{order.order_id}/collect-cod-payment", headers=_auth_headers(tokens)
+    )
+
+    result = await db_session.execute(
+        select(PaymentEvent).where(PaymentEvent.order_id == order.order_id)
+    )
+    events = result.scalars().all()
+    assert len(events) == 1
+    assert events[0].event_type == "cod_collected"
+    assert events[0].provider == "cod"
+
+
+async def test_collect_cod_payment_rejects_already_paid_order(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    order = await _seed_order(
+        db_session,
+        tenant,
+        payment_status="paid",
+        fulfillment_status="new",
+        payment_method="online",
+    )
+
+    response = await client.post(
+        f"/api/v1/orders/{order.order_id}/collect-cod-payment", headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 409
+
+
+async def test_collect_cod_payment_not_found(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    response = await client.post(
+        f"/api/v1/orders/{uuid.uuid4()}/collect-cod-payment", headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 404
 
 
 # --- Dashboard summary --------------------------------------------------
