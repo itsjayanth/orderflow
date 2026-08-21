@@ -27,8 +27,11 @@ export interface CustomerOut {
   customer_number: number
   whatsapp_number: string
   display_name: string | null
+  default_contact_phone: string | null
+  email: string | null
   first_seen_at: string
   last_order_at: string | null
+  is_active: boolean
 }
 
 export interface AddressOut {
@@ -83,6 +86,8 @@ export interface OrderOut {
   payment_method: string
   payment_status: string
   fulfillment_status: FulfillmentStatus | null
+  contact_phone: string | null
+  notes: string | null
   subtotal: string
   total: string
   currency: string
@@ -91,6 +96,13 @@ export interface OrderOut {
   ready_at: string | null
   completed_at: string | null
   items: OrderItemOut[]
+}
+
+// GET /api/v1/orders/{id} only -- adds the delivery address, which needs an
+// extra join the list endpoint deliberately skips (see backend
+// orders/api/schemas.py's OrderDetailOut docstring).
+export interface OrderDetailOut extends OrderOut {
+  delivery_address: AddressOut | null
 }
 
 export interface OrderSummaryOut {

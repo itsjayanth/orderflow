@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { App } from './App'
 import { useAuthStore } from './features/auth/authStore'
+import { ThemeProvider } from './shared/theme/ThemeProvider'
 
 describe('App', () => {
   beforeEach(() => {
@@ -14,14 +15,18 @@ describe('App', () => {
   it('renders the dashboard nav for an authenticated user at /dashboard', () => {
     const queryClient = new QueryClient()
     render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/dashboard']}>
-          <App />
-        </MemoryRouter>
-      </QueryClientProvider>,
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/dashboard']}>
+            <App />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </ThemeProvider>,
     )
 
-    expect(screen.getByText('Orderflow')).toBeInTheDocument()
+    // The new sidebar shell renders the brand mark twice (desktop sidebar +
+    // mobile top bar, toggled via CSS breakpoints jsdom doesn't evaluate).
+    expect(screen.getAllByText('Orderflow')[0]).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
   })
 
@@ -29,11 +34,13 @@ describe('App', () => {
     useAuthStore.setState({ accessToken: null, status: 'unauthenticated' })
     const queryClient = new QueryClient()
     render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/dashboard']}>
-          <App />
-        </MemoryRouter>
-      </QueryClientProvider>,
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/dashboard']}>
+            <App />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </ThemeProvider>,
     )
 
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
@@ -43,11 +50,13 @@ describe('App', () => {
     useAuthStore.setState({ accessToken: null, status: 'unauthenticated' })
     const queryClient = new QueryClient()
     render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/']}>
-          <App />
-        </MemoryRouter>
-      </QueryClientProvider>,
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/']}>
+            <App />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </ThemeProvider>,
     )
 
     expect(

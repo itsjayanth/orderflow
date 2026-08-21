@@ -13,6 +13,7 @@ import { OrderDetailPage } from '@/features/orders/OrderDetailPage'
 import { OrdersPage } from '@/features/orders/OrdersPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { Layout } from '@/shared/components/Layout'
+import { NotFoundPage } from '@/shared/components/NotFoundPage'
 
 export function App() {
   return (
@@ -34,6 +35,8 @@ export function App() {
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>
+      {/* Outside <RequireAuth> -- a 404 shouldn't require login to see. */}
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   )
 }

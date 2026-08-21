@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Info } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -10,7 +11,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { NotificationTemplateOut } from '@/shared/api/types'
+import { PageHeader } from '@/shared/components/PageHeader'
+import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
@@ -47,7 +51,7 @@ function PaymentSettingsSection() {
 
   return (
     <Card className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-medium">Payments (Razorpay)</h2>
           <p className="text-muted-foreground text-sm">
@@ -70,7 +74,17 @@ function PaymentSettingsSection() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="razorpay_key_id">Key ID</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="razorpay_key_id">Key ID</Label>
+            <Tooltip>
+              <TooltipTrigger>
+                <Info className="text-muted-foreground size-3.5" aria-label="Key ID help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                Found in your Razorpay Dashboard under Settings → API Keys.
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <Input
             id="razorpay_key_id"
             placeholder="rzp_test_xxxxxxxx"
@@ -81,7 +95,18 @@ function PaymentSettingsSection() {
           )}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="razorpay_key_secret">Key secret</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="razorpay_key_secret">Key secret</Label>
+            <Tooltip>
+              <TooltipTrigger>
+                <Info className="text-muted-foreground size-3.5" aria-label="Key secret help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                Generated alongside the Key ID in the same place -- Razorpay only shows it once, so
+                you may need to regenerate it if you've lost it.
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <Input
             id="razorpay_key_secret"
             type="password"
@@ -142,7 +167,7 @@ function WhatsAppSettingsSection() {
 
   return (
     <Card className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-medium">WhatsApp</h2>
           <p className="text-muted-foreground text-sm">
@@ -161,7 +186,21 @@ function WhatsAppSettingsSection() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="phone_number_id">Phone number ID</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="phone_number_id">Phone number ID</Label>
+            <Tooltip>
+              <TooltipTrigger>
+                <Info
+                  className="text-muted-foreground size-3.5"
+                  aria-label="Phone number ID help"
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                Found on Meta's WhatsApp API Setup page, labeled "Phone number ID" -- not the phone
+                number itself.
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <Input id="phone_number_id" {...register('phone_number_id')} />
           {errors.phone_number_id && (
             <p className="text-destructive text-sm">{errors.phone_number_id.message}</p>
@@ -176,7 +215,18 @@ function WhatsAppSettingsSection() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="access_token">Access token</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="access_token">Access token</Label>
+            <Tooltip>
+              <TooltipTrigger>
+                <Info className="text-muted-foreground size-3.5" aria-label="Access token help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                A permanent or temporary token generated for your WhatsApp Business app in Meta's
+                developer console. Never pre-filled here -- re-paste it to rotate.
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <Input
             id="access_token"
             type="password"
@@ -194,17 +244,7 @@ function WhatsAppSettingsSection() {
           <Button type="submit" disabled={update.isPending}>
             {update.isPending ? 'Saving…' : 'Save & connect'}
           </Button>
-          {justSaved && !update.isPending && (
-            <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
-              <span
-                className="flex size-4 items-center justify-center rounded-full bg-green-600 text-[10px] text-white"
-                aria-hidden
-              >
-                ✓
-              </span>
-              Saved and connected
-            </p>
-          )}
+          {justSaved && !update.isPending && <SavedIndicator message="Saved and connected" />}
         </div>
       </form>
 
@@ -272,7 +312,7 @@ function TemplateRow({ template }: { template: NotificationTemplateOut }) {
 
   return (
     <div className="space-y-3 border-t pt-6 first:border-t-0 first:pt-0">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="font-medium">{KIND_LABELS[template.notification_kind]}</h3>
           <p className="text-muted-foreground text-xs">
@@ -359,13 +399,10 @@ function TemplatesSettingsSection() {
 export function SettingsPage() {
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-muted-foreground text-sm">
-          Test/dummy values work fine for now -- switching to real credentials later doesn't require
-          any code changes.
-        </p>
-      </div>
+      <PageHeader
+        title="Settings"
+        description="Test/dummy values work fine for now -- switching to real credentials later doesn't require any code changes."
+      />
       <PaymentSettingsSection />
       <WhatsAppSettingsSection />
       <TemplatesSettingsSection />

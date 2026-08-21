@@ -9,39 +9,121 @@
    revenue figure needs to pop. */
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&display=swap");
 
+/* Spacing & typography conventions (prose documentation, not new tokens --
+   every value named below already exists as a Tailwind utility; this is
+   just where to find the house rhythm so new pages/components stay
+   consistent with the ones already built):
+   - Page padding: `px-4 sm:px-6 py-8 sm:py-10` on the top-level page
+     container (matches Layout.tsx's content area).
+   - Section rhythm: `space-y-6` between major sections on a page (the
+     common case -- header, filters, table); `space-y-8` when sections are
+     visually heavier (e.g. dashboard's stat-card grid + recent-orders
+     card).
+   - Form rhythm: `space-y-2` per field (label + control + error message),
+     `space-y-4` between fields within a form.
+   - Type-scale ladder, smallest to largest role:
+       caption/label  -- text-xs font-medium tracking-wide uppercase text-muted-foreground
+       body           -- text-sm
+       section heading -- text-lg font-semibold
+       page title     -- text-2xl font-semibold tracking-tight
+       display/editorial -- font-serif (opt-in only, see below)
+     `font-serif` (Fraunces) is never applied by default to h1-h3 (see the
+     `@layer base` rule below) -- it's an explicit opt-in for
+     marketing/auth headings and the dashboard's stat-figure numbers, so
+     operational admin pages (Orders/Customers/etc.) stay on the plain
+     sans page-title/section-heading scale above. */
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
   --radius: 0.75rem;
 
-  /* Warm ivory/espresso neutrals + a deep forest-green primary -- a
-     restaurant-appropriate premium palette, not a generic SaaS gray/blue
-     one. `--brand-gold` is a separate token from the shadcn semantic set
-     (background/foreground/primary/etc.) used sparingly for premium accents
-     (live-status badges, the onboarding stepper's active step) so it never
-     collides with `accent`'s existing role as a subtle hover background. */
-  --background: oklch(0.985 0.006 85);
-  --foreground: oklch(0.24 0.02 50);
-  --card: oklch(0.995 0.003 85);
-  --card-foreground: oklch(0.24 0.02 50);
-  --popover: oklch(0.995 0.003 85);
-  --popover-foreground: oklch(0.24 0.02 50);
-  --primary: oklch(0.32 0.06 155);
-  --primary-foreground: oklch(0.98 0.01 90);
-  --secondary: oklch(0.93 0.012 80);
-  --secondary-foreground: oklch(0.28 0.02 50);
-  --muted: oklch(0.955 0.01 80);
-  --muted-foreground: oklch(0.5 0.02 55);
-  --accent: oklch(0.93 0.02 80);
-  --accent-foreground: oklch(0.28 0.02 50);
+  /* A crisp neutral canvas + deep forest-green primary -- a
+     restaurant-appropriate premium palette, but tuned for the contrast and
+     definition an operational dashboard needs (dense tables, status
+     badges, financial figures read at a glance) rather than the softer,
+     low-contrast warm-ivory palette this used to be: pure white cards on a
+     faint neutral canvas, so surfaces separate cleanly instead of blurring
+     together, plus a deeper/more saturated primary and darker borders for
+     more definition. `--brand-gold` is a separate token from the shadcn
+     semantic set (background/foreground/primary/etc.) used sparingly for
+     premium accents (live-status badges, the onboarding stepper's active
+     step) so it never collides with `accent`'s existing role as a subtle
+     hover background. */
+  --background: oklch(0.972 0.004 95);
+  --foreground: oklch(0.19 0.016 50);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.016 50);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.016 50);
+  --primary: oklch(0.28 0.075 155);
+  --primary-foreground: oklch(0.99 0.004 95);
+  --secondary: oklch(0.955 0.007 90);
+  --secondary-foreground: oklch(0.24 0.016 50);
+  --muted: oklch(0.96 0.006 90);
+  --muted-foreground: oklch(0.45 0.016 55);
+  --accent: oklch(0.94 0.013 85);
+  --accent-foreground: oklch(0.24 0.016 50);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.9 0.012 75);
-  --input: oklch(0.9 0.012 75);
-  --ring: oklch(0.32 0.06 155 / 45%);
-  --brand-gold: oklch(0.78 0.13 80);
-  --brand-gold-foreground: oklch(0.22 0.02 60);
+  --border: oklch(0.885 0.009 80);
+  --input: oklch(0.885 0.009 80);
+  --ring: oklch(0.28 0.075 155 / 45%);
+  --brand-gold: oklch(0.76 0.135 78);
+  --brand-gold-foreground: oklch(0.2 0.02 60);
+  /* Alias of --brand-gold/--brand-gold-foreground under a semantic name --
+     same OKLCH numbers, not a new color -- so new call-sites can reach for
+     "the premium accent" via --color-accent-warm without needing to know
+     the legacy brand-gold name. --brand-gold itself is untouched; existing
+     call-sites (StatusBadge's "new" tone, the onboarding stepper) keep
+     working unchanged. */
+  --accent-warm: oklch(0.76 0.135 78);
+  --accent-warm-foreground: oklch(0.2 0.02 60);
+  /* recharts needs a literal color value on its SVG props (stroke/fill),
+     not a Tailwind utility class -- these alias the existing semantic
+     tokens under a stable name so chart components can reference
+     `var(--chart-1)` etc. directly. Not new colors, just a re-exposed
+     handle onto tokens that already exist above. */
+  --chart-1: var(--primary);
+  --chart-2: var(--brand-gold);
 }
 
+/* Contrast audit (WCAG AA -- 4.5:1 normal text, 3:1 large text/UI
+   components), checked by converting each OKLCH pair to linear sRGB and
+   computing the real relative-luminance contrast ratio (OKLCH L alone is
+   only an approximation of luminance, so this used the full conversion
+   rather than eyeballing L):
+     light  muted-foreground / background        6.89:1  pass
+     light  muted-foreground / card               7.47:1  pass
+     light  primary-foreground / primary          13.72:1 pass
+     light  secondary-foreground / secondary      14.48:1 pass
+     light  accent-foreground / accent            13.84:1 pass
+     light  white (button text) / destructive     4.76:1  pass
+     light  brand-gold-foreground / brand-gold    8.32:1  pass
+     dark   muted-foreground / background         6.73:1  pass
+     dark   muted-foreground / card                6.29:1  pass
+     dark   primary-foreground / primary           5.76:1  pass
+     dark   secondary-foreground / secondary       13.88:1 pass
+     dark   accent-foreground / accent             13.05:1 pass
+     dark   white (button text) / destructive      2.89:1  FAIL (needed >= 4.5:1)
+     dark   brand-gold-foreground / brand-gold     10.29:1 pass
+   Only one failure: dark-mode --destructive was too light (L 0.704) for
+   the white button text (button.tsx's `destructive` variant) laid over it
+   to meet AA. Nudged L only (chroma/hue unchanged) from 0.704 to 0.55,
+   which brings white-on-destructive to ~5.4:1 while keeping it a
+   recognizably vivid red. Every other pair above already passed and was
+   left as-is.
+   Trade-off worth flagging: --destructive is also used as *foreground*
+   text color (badge.tsx's `red` tone, ad hoc `text-destructive` error
+   copy) over --card/--background, and a single L can't simultaneously
+   maximize both "white text on this as a background" and "this as text
+   on a dark surface" -- lowering L for the button case drops that
+   foreground-text usage from ~6.3:1 to ~3.4:1 (still clears the 3:1
+   large-text/UI-component floor, no longer clears 4.5:1 for small body
+   text). Left as the intentional trade-off here since the button-text
+   pair is the one this pass was asked to fix and the token architecture
+   (one --destructive for both roles) isn't being restructured this pass;
+   worth a follow-up (e.g. a separate foreground-text token) if that
+   secondary usage needs full AA too. */
 .dark {
   --background: oklch(0.16 0.014 50);
   --foreground: oklch(0.96 0.01 85);
@@ -57,12 +139,20 @@
   --muted-foreground: oklch(0.68 0.015 70);
   --accent: oklch(0.28 0.018 50);
   --accent-foreground: oklch(0.96 0.01 85);
-  --destructive: oklch(0.704 0.191 22.216);
+  /* L nudged 0.704 -> 0.55 (chroma/hue unchanged) -- see the contrast-audit
+     comment above the light :root block. 0.704 gave white button text only
+     2.89:1 contrast against this surface, well under WCAG AA's 4.5:1;
+     0.55 brings it to ~5.4:1 while staying a clearly vivid red. */
+  --destructive: oklch(0.55 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.62 0.11 155 / 50%);
   --brand-gold: oklch(0.8 0.13 80);
   --brand-gold-foreground: oklch(0.16 0.02 50);
+  --accent-warm: oklch(0.8 0.13 80);
+  --accent-warm-foreground: oklch(0.16 0.02 50);
+  --chart-1: var(--primary);
+  --chart-2: var(--brand-gold);
 }
 
 @theme inline {
@@ -90,6 +180,8 @@
   --color-ring: var(--ring);
   --color-brand-gold: var(--brand-gold);
   --color-brand-gold-foreground: var(--brand-gold-foreground);
+  --color-accent-warm: var(--accent-warm);
+  --color-accent-warm-foreground: var(--accent-warm-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -103,10 +195,16 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+  /* No blanket font-serif on h1-h3 -- every place that wants the editorial
+     display font (marketing/auth headings, dashboard stat numbers) already
+     opts in with an explicit font-serif class. Leaving headings on the
+     default sans by default keeps operational dashboard pages (Orders,
+     Customers, order/detail titles) reading as a standard, professional
+     admin UI rather than an editorial one. */
   h1,
   h2,
   h3 {
-    @apply font-serif tracking-tight;
+    @apply tracking-tight;
   }
 }
 

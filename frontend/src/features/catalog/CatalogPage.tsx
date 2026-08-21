@@ -1,16 +1,20 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Search, UtensilsCrossed } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { ApiError } from '@/shared/api/client'
 import type { MenuItem } from '@/shared/api/types'
+import { EmptyState } from '@/shared/components/EmptyState'
 import { ItemImage } from '@/shared/components/ItemImage'
+import { PageHeader } from '@/shared/components/PageHeader'
 import { formatItemNumber } from '@/shared/lib/itemNumber'
 
 import { useCreateMenuItem } from './useCreateMenuItem'
@@ -89,13 +93,13 @@ function CatalogItemRow({
   }
 
   return (
-    <div className="flex flex-col gap-3 px-5 py-4">
+    <div className="hover:bg-muted/30 flex flex-col gap-3 px-5 py-4 transition-colors duration-150">
       <div className="flex items-center gap-4">
         <button
           type="button"
           onClick={() => (editingImage ? setEditingImage(false) : startEditing())}
           aria-label={`Edit image for ${item.name}`}
-          className="focus-visible:ring-ring/30 shrink-0 rounded-lg outline-none focus-visible:ring-4"
+          className="focus-visible:ring-ring/30 shrink-0 rounded-lg outline-none transition-opacity duration-150 hover:opacity-80 focus-visible:ring-4"
         >
           <ItemImage url={item.image_url} name={item.name} />
         </button>
@@ -118,13 +122,13 @@ function CatalogItemRow({
       </div>
 
       {editingImage && (
-        <div className="border-border bg-muted/30 flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-2 pl-[4rem]">
+        <div className="border-border bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg border py-2 pr-2 pl-[4rem]">
           <Input
             value={imageDraft}
             onChange={(e) => setImageDraft(e.target.value)}
             placeholder="https://example.com/photo.jpg"
             aria-label={`Image URL for ${item.name}`}
-            className="h-8 flex-1 text-sm"
+            className="bg-background h-8 flex-1 text-sm"
           />
           <Button type="button" size="sm" onClick={save}>
             Save
@@ -135,6 +139,38 @@ function CatalogItemRow({
         </div>
       )}
     </div>
+  )
+}
+
+// Mirrors CatalogItemRow's real layout (image tile, two text lines, a
+// toggle-shaped control on the right) so the loading state reads as "menu
+// items are loading" rather than a couple of unrelated gray bars.
+function CatalogItemRowSkeleton() {
+  return (
+    <div className="flex items-center gap-4 px-5 py-4">
+      <Skeleton className="size-12 shrink-0 rounded-lg" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-3 w-16" />
+      </div>
+      <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
+    </div>
+  )
+}
+
+function CatalogSectionSkeleton() {
+  return (
+    <Card className="overflow-hidden py-0">
+      <div className="border-border/60 flex items-center justify-between gap-3 border-b px-5 py-4">
+        <Skeleton className="h-5 w-24" />
+        <Skeleton className="h-3 w-14" />
+      </div>
+      <div className="divide-border/60 divide-y">
+        <CatalogItemRowSkeleton />
+        <CatalogItemRowSkeleton />
+        <CatalogItemRowSkeleton />
+      </div>
+    </Card>
   )
 }
 
@@ -167,12 +203,10 @@ export function CatalogPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Catalog</h1>
-        <p className="text-muted-foreground text-sm">
-          Manage your menu items and control what customers can order.
-        </p>
-      </div>
+      <PageHeader
+        title="Catalog"
+        description="Manage your menu items and control what customers can order."
+      />
 
       <Input
         type="search"
@@ -183,25 +217,26 @@ export function CatalogPage() {
         aria-label="Search menu items"
       />
 
-      {isLoading && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {isLoading && (
+        <div className="space-y-6">
+          <CatalogSectionSkeleton />
+          <CatalogSectionSkeleton />
+        </div>
+      )}
 
       {!isLoading && items?.length === 0 && (
-        <Card className="p-6 text-center">
-          <p className="text-muted-foreground text-sm">No menu items yet. Add one below.</p>
-        </Card>
+        <EmptyState icon={UtensilsCrossed} title="No menu items yet. Add one below." />
       )}
 
       {!isLoading && items && items.length > 0 && sections.length === 0 && (
-        <Card className="p-6 text-center">
-          <p className="text-muted-foreground text-sm">No items match "{search}".</p>
-        </Card>
+        <EmptyState icon={Search} title={`No items match "${search}".`} />
       )}
 
       <div className="space-y-6">
         {sections.map((section) => (
           <Card key={section.category} className="overflow-hidden py-0">
             <div className="border-border/60 flex items-baseline justify-between gap-3 border-b px-5 py-4">
-              <h2 className="font-serif text-lg font-semibold">{section.category}</h2>
+              <h2 className="text-lg font-semibold">{section.category}</h2>
               <span className="text-muted-foreground text-xs">
                 {section.items.length} item{section.items.length === 1 ? '' : 's'}
               </span>
@@ -230,54 +265,58 @@ export function CatalogPage() {
         ))}
       </div>
 
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="bg-card max-w-md space-y-4 rounded-xl border p-4 shadow-sm"
-      >
-        <h2 className="text-lg font-medium">Add item</h2>
+      <Card className="max-w-md">
+        <CardHeader>
+          <CardTitle>Add item</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="category">Category</Label>
+              <Input id="category" placeholder="Mains" {...register('category')} />
+              {errors.category && (
+                <p className="text-destructive text-sm">{errors.category.message}</p>
+              )}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="category">Category</Label>
-          <Input id="category" placeholder="Mains" {...register('category')} />
-          {errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input id="name" placeholder="Butter Chicken" {...register('name')} />
+              {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="name">Name</Label>
-          <Input id="name" placeholder="Butter Chicken" {...register('name')} />
-          {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="price">Price</Label>
+              <Input id="price" inputMode="decimal" placeholder="349.00" {...register('price')} />
+              {errors.price && <p className="text-destructive text-sm">{errors.price.message}</p>}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="price">Price</Label>
-          <Input id="price" inputMode="decimal" placeholder="349.00" {...register('price')} />
-          {errors.price && <p className="text-destructive text-sm">{errors.price.message}</p>}
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="image_url">Image URL (optional)</Label>
+              <Input
+                id="image_url"
+                placeholder="https://example.com/photo.jpg"
+                {...register('image_url')}
+              />
+              {errors.image_url && (
+                <p className="text-destructive text-sm">{errors.image_url.message}</p>
+              )}
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="image_url">Image URL (optional)</Label>
-          <Input
-            id="image_url"
-            placeholder="https://example.com/photo.jpg"
-            {...register('image_url')}
-          />
-          {errors.image_url && (
-            <p className="text-destructive text-sm">{errors.image_url.message}</p>
-          )}
-        </div>
+            {createMenuItem.isError && (
+              <p className="text-destructive text-sm">
+                {createMenuItem.error instanceof ApiError
+                  ? 'Something went wrong. Please try again.'
+                  : 'Something went wrong.'}
+              </p>
+            )}
 
-        {createMenuItem.isError && (
-          <p className="text-destructive text-sm">
-            {createMenuItem.error instanceof ApiError
-              ? 'Something went wrong. Please try again.'
-              : 'Something went wrong.'}
-          </p>
-        )}
-
-        <Button type="submit" disabled={createMenuItem.isPending}>
-          {createMenuItem.isPending ? 'Adding…' : 'Add item'}
-        </Button>
-      </form>
+            <Button type="submit" disabled={createMenuItem.isPending}>
+              {createMenuItem.isPending ? 'Adding…' : 'Add item'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }

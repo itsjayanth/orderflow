@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CustomerOut } from '@/shared/api/types'
 
@@ -20,36 +20,62 @@ function daysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 }
 
+function findCallInit(mock: typeof apiFetchMock, method: string): RequestInit {
+  const call = mock.mock.calls.find(
+    ([, init]) => (init as RequestInit | undefined)?.method === method,
+  )
+  expect(call).toBeDefined()
+  return call?.[1] as RequestInit
+}
+
+// Radix's Tabs selects on `mousedown` (so keyboard/focus activation and
+// pointer activation share one code path), not on `click` -- a plain
+// fireEvent.click never fires that event, so the tab never actually
+// switches. Same category of quirk as OrdersPage.test.tsx's
+// DropdownMenuTrigger opening on `pointerdown`.
+function clickTab(trigger: HTMLElement) {
+  fireEvent.mouseDown(trigger, { button: 0 })
+}
+
 const customers: CustomerOut[] = [
   {
     customer_id: 'c1',
     customer_number: 1,
     whatsapp_number: '+919876543210',
     display_name: 'Asha',
+    default_contact_phone: null,
+    email: null,
     first_seen_at: daysAgo(10),
     last_order_at: daysAgo(3),
+    is_active: true,
   },
   {
     customer_id: 'c2',
     customer_number: 2,
     whatsapp_number: '+919876543211',
     display_name: null,
+    default_contact_phone: null,
+    email: null,
     first_seen_at: daysAgo(9),
     last_order_at: null,
+    is_active: true,
   },
   {
     customer_id: 'c3',
     customer_number: 3,
     whatsapp_number: '+919812340000',
     display_name: 'Ravi Kumar',
+    default_contact_phone: null,
+    email: null,
     first_seen_at: daysAgo(90),
     last_order_at: daysAgo(54),
+    is_active: true,
   },
 ]
 
 function renderPage() {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={queryClient}>
@@ -61,6 +87,10 @@ function renderPage() {
 }
 
 describe('CustomersPage', () => {
+  beforeEach(() => {
+    apiFetchMock.mockReset()
+  })
+
   it('renders customers from the query, falling back to phone number when no name', async () => {
     apiFetchMock.mockResolvedValueOnce(customers)
 
@@ -80,7 +110,7 @@ describe('CustomersPage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('No customers yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No customers yet. Add one to get started.')).toBeInTheDocument()
   })
 
   it('filters by name via the search input', async () => {
@@ -124,13 +154,13 @@ describe('CustomersPage', () => {
     expect(screen.queryByText('Asha')).not.toBeInTheDocument()
   })
 
-  it('filters by the last-7-days timeline preset', async () => {
+  it('filters by the last-7-days timeline tab', async () => {
     apiFetchMock.mockResolvedValueOnce(customers)
 
     renderPage()
     await screen.findByText('Asha')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }))
+    clickTab(screen.getByRole('tab', { name: /Last 7 days/ }))
 
     expect(screen.getByText('Asha')).toBeInTheDocument()
     expect(screen.queryByText('Ravi Kumar')).not.toBeInTheDocument()
@@ -149,6 +179,220 @@ describe('CustomersPage', () => {
     })
 
     expect(await screen.findByText('No customers match your search or filter.')).toBeInTheDocument()
-    expect(screen.queryByText('No customers yet.')).not.toBeInTheDocument()
+    expect(screen.queryByText('No customers yet. Add one to get started.')).not.toBeInTheDocument()
+  })
+
+  it('creates a customer via the Add customer sheet', async () => {
+    apiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (!init || init.method === undefined) return Promise.resolve([])
+      if (init.method === 'POST') return Promise.resolve({ ...customers[0] })
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+    await screen.findByText('No customers yet. Add one to get started.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add customer' }))
+    fireEvent.change(screen.getByLabelText('WhatsApp number'), {
+      target: { value: '+919876543210' },
+    })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Asha Rao' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save customer' }))
+
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/customers',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+    const init = findCallInit(apiFetchMock, 'POST')
+    expect(JSON.parse(init.body as string)).toEqual({
+      whatsapp_number: '+919876543210',
+      display_name: 'Asha Rao',
+    })
+  })
+
+  it('edits a customer via the row edit action', async () => {
+    apiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (!init || init.method === undefined) return Promise.resolve(customers)
+      if (init.method === 'PATCH')
+        return Promise.resolve({ ...customers[0], display_name: 'Asha K' })
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Asha' }))
+    const nameInput = await screen.findByLabelText('Name')
+    fireEvent.change(nameInput, { target: { value: 'Asha K' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/customers/c1',
+        expect.objectContaining({ method: 'PATCH' }),
+      ),
+    )
+    const init = findCallInit(apiFetchMock, 'PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ display_name: 'Asha K' })
+  })
+
+  it('gates removing a customer behind a confirmation dialog, then removes on confirm', async () => {
+    apiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (!init || init.method === undefined) return Promise.resolve(customers)
+      if (init.method === 'PATCH') return Promise.resolve({ ...customers[0], is_active: false })
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Asha' }))
+
+    // The mutation must not fire yet -- a confirmation dialog opens instead.
+    expect(apiFetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/customers/c1'),
+      expect.objectContaining({ method: 'PATCH' }),
+    )
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByText('Remove Asha?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove customer' }))
+
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/customers/c1',
+        expect.objectContaining({ method: 'PATCH' }),
+      ),
+    )
+    const init = findCallInit(apiFetchMock, 'PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ is_active: false })
+  })
+
+  it('does not remove the customer when the confirmation dialog is dismissed', async () => {
+    apiFetchMock.mockResolvedValueOnce(customers)
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Asha' }))
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep customer' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(apiFetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/customers/c1'),
+      expect.objectContaining({ method: 'PATCH' }),
+    )
+  })
+
+  it('toggling "Show removed" requests the include_inactive list', async () => {
+    apiFetchMock.mockResolvedValue([])
+
+    renderPage()
+    await screen.findByText('No customers yet. Add one to get started.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show removed' }))
+
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith('/api/v1/customers?include_inactive=true'),
+    )
+  })
+
+  it('selects customers via checkboxes and bulk-removes the active ones behind a confirmation', async () => {
+    apiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (!init || init.method === undefined) return Promise.resolve(customers)
+      if (init.method === 'PATCH') return Promise.resolve({ ...customers[0], is_active: false })
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    expect(screen.queryByText('2 selected')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Asha' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Ravi Kumar' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+
+    // Both selected customers are active -- only "Remove selected" shows,
+    // not "Restore selected".
+    expect(screen.queryByRole('button', { name: 'Restore selected' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove selected' }))
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByText('Remove 2 customers?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove customers' }))
+
+    await waitFor(() => {
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/customers/c1',
+        expect.objectContaining({ method: 'PATCH' }),
+      )
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/customers/c3',
+        expect.objectContaining({ method: 'PATCH' }),
+      )
+    })
+
+    // Selection clears once the bulk action fires.
+    expect(screen.queryByText('2 selected')).not.toBeInTheDocument()
+  })
+
+  it('shows a bulk "Restore selected" action for a mixed active/inactive selection, firing immediately with no confirmation', async () => {
+    const mixedCustomers = [customers[0], { ...customers[1], is_active: false }]
+    apiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (!init || init.method === undefined) return Promise.resolve(mixedCustomers)
+      if (init.method === 'PATCH') return Promise.resolve({ ...mixedCustomers[1], is_active: true })
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+    // c2 has no display_name, so it renders under its formatted phone number.
+    await screen.findByText('Asha')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Asha' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select +91 98765 43211' }))
+
+    // Mixed selection -- both bulk actions are offered.
+    expect(screen.getByRole('button', { name: 'Restore selected' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove selected' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore selected' }))
+
+    // Restore is non-destructive -- no confirmation dialog, fires right away.
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(apiFetchMock).toHaveBeenCalledWith(
+        '/api/v1/customers/c2',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ is_active: true }) }),
+      ),
+    )
+  })
+
+  it('shows pagination controls only once the filtered set exceeds one page', async () => {
+    const manyCustomers: CustomerOut[] = Array.from({ length: 20 }, (_, i) => ({
+      ...customers[0],
+      customer_id: `customer-${i}`,
+      customer_number: i + 1,
+      display_name: `Customer ${i}`,
+    }))
+    apiFetchMock.mockResolvedValueOnce(manyCustomers)
+
+    renderPage()
+
+    await screen.findByText('Customer 0')
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument()
+    // Only the first page (15 rows) renders.
+    expect(screen.queryByText('Customer 14')).toBeInTheDocument()
+    expect(screen.queryByText('Customer 15')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to next page' }))
+
+    expect(await screen.findByText('Customer 15')).toBeInTheDocument()
+    expect(screen.queryByText('Customer 0')).not.toBeInTheDocument()
   })
 })

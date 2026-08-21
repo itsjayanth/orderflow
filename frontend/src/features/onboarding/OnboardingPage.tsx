@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Check, Info } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCreateMenuItem } from '@/features/catalog/useCreateMenuItem'
 import { useMenuItems } from '@/features/catalog/useMenuItems'
 import {
@@ -19,7 +21,10 @@ import {
   useUpdateWhatsAppSettings,
   useWhatsAppSettings,
 } from '@/features/settings/useWhatsAppSettings'
+import { cn } from '@/lib/utils'
 import type { OnboardingStatus } from '@/shared/api/types'
+import { PageHeader } from '@/shared/components/PageHeader'
+import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { useOnboardingWizardStore } from './onboardingWizardStore'
 
@@ -53,37 +58,64 @@ function Stepper({
   onSelect: (step: number) => void
 }) {
   return (
-    <ol className="flex flex-wrap gap-4 text-sm">
-      {STEP_LABELS.map((label, index) => {
-        const state = index < furthestReached ? 'done' : index === current ? 'active' : 'upcoming'
-        const clickable = state === 'done' && index !== current
-        return (
-          <li key={label}>
-            <button
-              type="button"
-              disabled={!clickable}
-              onClick={() => onSelect(index)}
-              className={`flex items-center gap-2 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
-            >
-              <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium transition-colors duration-150 ${
-                  state === 'done'
-                    ? 'bg-primary text-primary-foreground'
-                    : state === 'active'
-                      ? 'bg-brand-gold text-brand-gold-foreground'
-                      : 'bg-muted text-muted-foreground'
-                }`}
+    <Card className="p-5 sm:p-6">
+      <ol className="flex items-start">
+        {STEP_LABELS.map((label, index) => {
+          const state = index < furthestReached ? 'done' : index === current ? 'active' : 'upcoming'
+          const clickable = state === 'done' && index !== current
+          const isLast = index === STEP_LABELS.length - 1
+          return (
+            <li key={label} className={cn('flex items-start gap-2 sm:gap-3', !isLast && 'flex-1')}>
+              <button
+                type="button"
+                disabled={!clickable}
+                onClick={() => onSelect(index)}
+                className={cn(
+                  'flex flex-col items-center gap-2 text-center',
+                  clickable ? 'cursor-pointer' : 'cursor-default',
+                )}
               >
-                {state === 'done' ? '✓' : index + 1}
-              </span>
-              <span className={state === 'upcoming' ? 'text-muted-foreground' : 'font-medium'}>
-                {label}
-              </span>
-            </button>
-          </li>
-        )
-      })}
-    </ol>
+                <span
+                  className={cn(
+                    'flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-colors duration-150',
+                    state === 'done'
+                      ? 'bg-primary text-primary-foreground'
+                      : state === 'active'
+                        ? 'bg-brand-gold text-brand-gold-foreground ring-brand-gold/30 ring-4'
+                        : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {state === 'done' ? <Check className="size-4" aria-hidden /> : index + 1}
+                </span>
+                <span
+                  className={cn(
+                    'w-20 text-xs leading-tight sm:w-24 sm:text-sm',
+                    state === 'upcoming' ? 'text-muted-foreground' : 'text-foreground font-medium',
+                  )}
+                >
+                  {label}
+                </span>
+              </button>
+              {!isLast && (
+                // mt-[17px] lines this up with the *circle's* vertical center
+                // (size-9 = 36px tall, so half minus half the line's own
+                // height), not the center of the whole button -- the button
+                // is taller than the circle alone once the label wraps below
+                // it, and centering against the full button would pull the
+                // connector down off the circle.
+                <div
+                  className={cn(
+                    'mt-[17px] h-0.5 flex-1 rounded-full transition-colors duration-150',
+                    index < furthestReached ? 'bg-primary' : 'bg-border',
+                  )}
+                  aria-hidden
+                />
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </Card>
   )
 }
 
@@ -134,7 +166,21 @@ function ConnectWhatsAppStep() {
           for now -- switching to real credentials later doesn't require redoing this step.
         </p>
         <div className="space-y-2">
-          <Label htmlFor="phone_number_id">Phone number ID</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="phone_number_id">Phone number ID</Label>
+            <Tooltip>
+              <TooltipTrigger>
+                <Info
+                  className="text-muted-foreground size-3.5"
+                  aria-label="Phone number ID help"
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                Found on Meta's WhatsApp API Setup page, labeled "Phone number ID" -- not the phone
+                number itself.
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <Input id="phone_number_id" {...register('phone_number_id')} />
           {errors.phone_number_id && (
             <p className="text-destructive text-sm">{errors.phone_number_id.message}</p>
@@ -149,7 +195,18 @@ function ConnectWhatsAppStep() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="access_token">Access token</Label>
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="access_token">Access token</Label>
+            <Tooltip>
+              <TooltipTrigger>
+                <Info className="text-muted-foreground size-3.5" aria-label="Access token help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                A permanent or temporary token generated for your WhatsApp Business app in Meta's
+                developer console. Never pre-filled here -- re-paste it to rotate.
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <Input
             id="access_token"
             type="password"
@@ -167,17 +224,7 @@ function ConnectWhatsAppStep() {
           <Button type="submit" disabled={update.isPending}>
             {update.isPending ? 'Connecting…' : 'Connect & continue'}
           </Button>
-          {justSaved && !update.isPending && (
-            <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
-              <span
-                className="flex size-4 items-center justify-center rounded-full bg-green-600 text-[10px] text-white"
-                aria-hidden
-              >
-                ✓
-              </span>
-              Saved and connected
-            </p>
-          )}
+          {justSaved && !update.isPending && <SavedIndicator message="Saved and connected" />}
         </div>
       </form>
       {data?.access_token_set && <TestWhatsAppMessageCard />}
@@ -370,12 +417,10 @@ export function OnboardingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Onboarding</h1>
-        <p className="text-muted-foreground text-sm">
-          Connect WhatsApp, add your kitchen details, and list at least one menu item to go live.
-        </p>
-      </div>
+      <PageHeader
+        title="Onboarding"
+        description="Connect WhatsApp, add your kitchen details, and list at least one menu item to go live."
+      />
 
       <Stepper current={currentStep} furthestReached={serverStep} onSelect={setStep} />
 

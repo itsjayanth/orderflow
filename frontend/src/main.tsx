@@ -5,16 +5,19 @@ import { BrowserRouter } from 'react-router-dom'
 
 import { App } from './App.tsx'
 import './index.css'
+import { ThemeProvider } from './shared/theme/ThemeProvider.tsx'
 
 const queryClient = new QueryClient()
 
 // biome-ignore lint/style/noNonNullAssertion: #root is guaranteed by index.html
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

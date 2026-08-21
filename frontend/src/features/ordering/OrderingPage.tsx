@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeft, ShoppingCart } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useParams } from 'react-router-dom'
 import { z } from 'zod'
 
@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Sheet } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/shared/api/client'
@@ -260,6 +267,7 @@ export function OrderingPage() {
     watch,
     setValue,
     getValues,
+    control,
     formState: { errors },
   } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
@@ -592,18 +600,29 @@ export function OrderingPage() {
                 <div className="space-y-2">
                   <Label htmlFor="local_number">Your WhatsApp number</Label>
                   <div className="flex gap-2">
-                    <select
-                      id="country_code"
-                      aria-label="Country code"
-                      className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-36 shrink-0 rounded-lg border px-3 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
-                      {...register('country_code')}
-                    >
-                      {COUNTRY_CODES.map(({ code, label }) => (
-                        <option key={code} value={code}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
+                    <Controller
+                      name="country_code"
+                      control={control}
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger
+                            id="country_code"
+                            aria-label="Country code"
+                            onBlur={field.onBlur}
+                            className="w-36 shrink-0"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COUNTRY_CODES.map(({ code, label }) => (
+                              <SelectItem key={code} value={code}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
                     <Input
                       id="local_number"
                       inputMode="numeric"
@@ -736,14 +755,21 @@ export function OrderingPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="payment_method">Payment method</Label>
-                  <select
-                    id="payment_method"
-                    className="border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-full rounded-lg border px-3.5 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4"
-                    {...register('payment_method')}
-                  >
-                    <option value="online">Pay online</option>
-                    <option value="cod">Cash on delivery/pickup</option>
-                  </select>
+                  <Controller
+                    name="payment_method"
+                    control={control}
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger id="payment_method" onBlur={field.onBlur} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="online">Pay online</SelectItem>
+                          <SelectItem value="cod">Cash on delivery/pickup</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
                 </div>
 
                 {checkout.isError && (
@@ -763,7 +789,16 @@ export function OrderingPage() {
 
       {cartLines.length > 0 && (
         <div
-          className="fixed inset-x-0 z-20 border-t bg-card/95 p-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur"
+          // Standard Tailwind `shadow-*` utilities cast a downward/
+          // all-around shadow, which is invisible on a bar pinned to the
+          // bottom edge of the viewport -- there's no utility for an
+          // upward-cast shadow, so this stays a custom arbitrary value.
+          // Tuned per-theme rather than reusing one rgba value everywhere:
+          // the light-mode figure reads as a soft lift off the page, but
+          // the same black-based shadow all but disappears against the
+          // app's near-black dark background, so the dark variant raises
+          // opacity/blur to stay visible there too.
+          className="fixed inset-x-0 z-20 border-t bg-card/95 p-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur dark:shadow-[0_-4px_20px_rgba(0,0,0,0.45)]"
           style={{ bottom: keyboardInset }}
         >
           {/* Always present once there's something in the cart -- through

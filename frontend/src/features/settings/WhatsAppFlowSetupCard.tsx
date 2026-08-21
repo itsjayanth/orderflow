@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError } from '@/shared/api/client'
+import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { useSetupWhatsAppFlow } from './useWhatsAppSettings'
 
@@ -43,15 +44,7 @@ export function WhatsAppFlowSetupCard({ disabled = false }: { disabled?: boolean
       </div>
 
       {setupFlow.isSuccess ? (
-        <p className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
-          <span
-            className="flex size-4 items-center justify-center rounded-full bg-green-600 text-[10px] text-white"
-            aria-hidden
-          >
-            ✓
-          </span>
-          Native ordering enabled!
-        </p>
+        <SavedIndicator message="Native ordering enabled!" />
       ) : (
         <div className="space-y-2">
           <Label htmlFor="meta_waba_id">WhatsApp Business Account ID</Label>

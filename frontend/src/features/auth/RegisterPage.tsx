@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Loader2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError } from '@/shared/api/client'
 
+import { PasswordInput } from './PasswordInput'
 import { useRegister } from './useAuth'
 
 const registerSchema = z.object({
@@ -80,9 +82,8 @@ export function RegisterPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   autoComplete="new-password"
                   {...register('password')}
                 />
@@ -106,6 +107,7 @@ export function RegisterPage() {
                 size="lg"
                 disabled={registerMerchant.isPending}
               >
+                {registerMerchant.isPending && <Loader2 className="animate-spin" />}
                 {registerMerchant.isPending ? 'Creating account…' : 'Create account'}
               </Button>
             </form>

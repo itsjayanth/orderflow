@@ -1,7 +1,6 @@
 import {
   Bell,
   Check,
-  ChevronDown,
   ClipboardList,
   CreditCard,
   LayoutDashboard,
@@ -17,10 +16,15 @@ import {
   X,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { OrderflowLogo } from '@/assets/logo'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -235,38 +239,6 @@ function CompareCard({
   )
 }
 
-function FaqRow({ question, answer }: { question: string; answer: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="border-border/70 border-b">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-4 py-5 text-left"
-      >
-        <span className="font-medium">{question}</span>
-        <ChevronDown
-          className={cn(
-            'text-muted-foreground size-4.5 shrink-0 transition-transform duration-300',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
-      <div
-        className={cn(
-          'grid transition-[grid-template-rows] duration-300 ease-out',
-          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
-        )}
-      >
-        <div className="overflow-hidden">
-          <p className="text-muted-foreground pb-5 text-sm leading-relaxed">{answer}</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function HomePage() {
   return (
     <div className="min-h-svh">
@@ -439,9 +411,22 @@ export function HomePage() {
             </Reveal>
 
             <Reveal delayMs={100} className="mt-10">
-              {FAQ_ITEMS.map((item) => (
-                <FaqRow key={item.question} question={item.question} answer={item.answer} />
-              ))}
+              <Accordion type="multiple">
+                {FAQ_ITEMS.map((item) => (
+                  <AccordionItem
+                    key={item.question}
+                    value={item.question}
+                    className="border-border/70"
+                  >
+                    <AccordionTrigger className="py-5 text-base font-medium hover:no-underline">
+                      {item.question}
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <p className="text-muted-foreground text-sm leading-relaxed">{item.answer}</p>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
             </Reveal>
           </div>
         </section>

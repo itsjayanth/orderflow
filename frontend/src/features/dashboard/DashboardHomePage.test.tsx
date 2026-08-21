@@ -45,6 +45,8 @@ const sampleOrder: OrderOut = {
   payment_method: 'online',
   payment_status: 'paid',
   fulfillment_status: 'new',
+  contact_phone: null,
+  notes: null,
   subtotal: '349.00',
   total: '349.00',
   currency: 'INR',

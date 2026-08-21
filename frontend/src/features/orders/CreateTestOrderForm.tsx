@@ -1,11 +1,18 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useMenuItems } from '@/features/catalog/useMenuItems'
 
 import { useTestCheckout } from './useTestCheckout'
@@ -19,9 +26,6 @@ const schema = z.object({
 })
 type FormValues = z.infer<typeof schema>
 
-const selectClassName =
-  'border-input bg-card focus-visible:border-ring focus-visible:ring-ring/30 h-10 w-full rounded-lg border px-3.5 text-sm shadow-xs transition-all duration-150 outline-none focus-visible:ring-4'
-
 export function CreateTestOrderForm() {
   const [open, setOpen] = useState(false)
   const { data: menuItems } = useMenuItems()
@@ -29,6 +33,7 @@ export function CreateTestOrderForm() {
   const {
     register,
     handleSubmit,
+    control,
     reset,
     formState: { errors },
   } = useForm<FormValues>({
@@ -95,14 +100,24 @@ export function CreateTestOrderForm() {
 
       <div className="space-y-2">
         <Label htmlFor="menu_item_id">Item</Label>
-        <select id="menu_item_id" className={selectClassName} {...register('menu_item_id')}>
-          <option value="">Select an item…</option>
-          {menuItems?.map((item) => (
-            <option key={item.menu_item_id} value={item.menu_item_id}>
-              {item.name} (INR {item.price})
-            </option>
-          ))}
-        </select>
+        <Controller
+          name="menu_item_id"
+          control={control}
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger id="menu_item_id" onBlur={field.onBlur}>
+                <SelectValue placeholder="Select an item…" />
+              </SelectTrigger>
+              <SelectContent>
+                {menuItems?.map((item) => (
+                  <SelectItem key={item.menu_item_id} value={item.menu_item_id}>
+                    {item.name} (INR {item.price})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
         {errors.menu_item_id && (
           <p className="text-destructive text-sm">{errors.menu_item_id.message}</p>
         )}
@@ -123,10 +138,21 @@ export function CreateTestOrderForm() {
 
       <div className="space-y-2">
         <Label htmlFor="payment_method">Payment method</Label>
-        <select id="payment_method" className={selectClassName} {...register('payment_method')}>
-          <option value="online">Online (payment link)</option>
-          <option value="cod">Cash on delivery/pickup</option>
-        </select>
+        <Controller
+          name="payment_method"
+          control={control}
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger id="payment_method" onBlur={field.onBlur}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="online">Online (payment link)</SelectItem>
+                <SelectItem value="cod">Cash on delivery/pickup</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
       </div>
 
       {checkout.isError && (

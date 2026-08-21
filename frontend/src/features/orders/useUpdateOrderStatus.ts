@@ -2,6 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { apiFetch } from '@/shared/api/client'
 import type { FulfillmentStatus, OrderOut } from '@/shared/api/types'
+import { toast } from '@/shared/lib/toastStore'
+
+import { STATUS_LABELS } from './statusTransitions'
 
 interface UpdateOrderStatusInput {
   orderId: string
@@ -41,6 +44,10 @@ export function useUpdateOrderStatus() {
       for (const [queryKey, data] of context.previousQueries) {
         queryClient.setQueryData(queryKey, data)
       }
+      toast.error('Could not update order status. Please try again.')
+    },
+    onSuccess: (_data, { toStatus }) => {
+      toast(`Order marked ${STATUS_LABELS[toStatus]}.`)
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
