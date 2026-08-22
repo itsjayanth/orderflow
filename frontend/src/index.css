@@ -129,7 +129,13 @@
   --foreground: oklch(0.96 0.01 85);
   --card: oklch(0.2 0.016 50);
   --card-foreground: oklch(0.96 0.01 85);
-  --popover: oklch(0.2 0.016 50);
+  /* Deliberately lighter than --card (0.2) -- popovers/dropdowns/selects
+     float *over* cards (e.g. the orders table's status dropdown), so if
+     --popover matched --card's lightness the menu had no visible surface
+     against the row it was open on top of, making it read as barely
+     there. Bumped to sit clearly above both --card and --background
+     (0.16) as its own elevated layer. */
+  --popover: oklch(0.29 0.018 50);
   --popover-foreground: oklch(0.96 0.01 85);
   --primary: oklch(0.62 0.11 155);
   --primary-foreground: oklch(0.14 0.02 50);

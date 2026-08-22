@@ -1,11 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Pencil, RotateCcw, Search, Trash2, UserPlus, Users } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, Search, UserPlus, Users } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useSearchParams } from 'react-router-dom'
 import { z } from 'zod'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -38,6 +37,7 @@ import { PageHeader } from '@/shared/components/PageHeader'
 import { formatCustomerNumber } from '@/shared/lib/customerNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
+import { CustomerDetailCard } from './CustomerDetailCard'
 import { RemoveCustomerDialog } from './RemoveCustomerDialog'
 import { useCreateCustomer } from './useCreateCustomer'
 import { useCustomers } from './useCustomers'
@@ -58,9 +58,13 @@ const TIMELINE_OPTIONS: { value: TimelineFilter; label: string }[] = [
 const PAGE_SIZE = 15
 const SKELETON_ROW_COUNT = 5
 
-// Leading checkbox column + Customer ID, Name, Phone, Last order, Status,
-// Actions.
-const COLUMN_COUNT = 7
+// Leading checkbox + expand-chevron columns, plus Customer ID and Name --
+// the list is deliberately just enough to recognize a customer at a
+// glance. Everything else (phone, addresses, email, status, order
+// history, edit/remove actions) lives one click away in the expanded
+// CustomerDetailCard, mirroring OrdersPage's "monitoring row expands into
+// a rich detail card" pattern.
+const COLUMN_COUNT = 4
 
 // Applied per-<th> rather than on <thead> -- see OrdersPage.tsx for why
 // (Blink doesn't honor `position: sticky` on <thead> itself).
@@ -110,11 +114,6 @@ function countByTimeline(customers: CustomerOut[] | undefined): Record<TimelineF
     if (matchesTimeline(customer, '30d', now)) counts['30d'] += 1
   }
   return counts
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—'
-  return new Date(value).toLocaleDateString()
 }
 
 const customerFormSchema = z.object({
@@ -244,10 +243,11 @@ function CustomerFormSheet({ open, onOpenChange, editingCustomer }: CustomerForm
   )
 }
 
-// What's being confirmed in RemoveCustomerDialog -- a single row's Trash2
-// button, or the bulk-bar's "Remove selected" (which only ever targets the
-// *active* customers within the current selection; removing an
-// already-removed customer is meaningless).
+// What's being confirmed in RemoveCustomerDialog -- a single row's Remove
+// action (row-level or from inside the expanded detail card), or the
+// bulk-bar's "Remove selected" (which only ever targets the *active*
+// customers within the current selection; removing an already-removed
+// customer is meaningless).
 type RemoveTarget = { kind: 'single'; customer: CustomerOut } | { kind: 'bulk' }
 
 export function CustomersPage() {
@@ -263,6 +263,7 @@ export function CustomersPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<CustomerOut | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null)
 
@@ -287,6 +288,10 @@ export function CustomersPage() {
   function openEditSheet(customer: CustomerOut) {
     setEditingCustomer(customer)
     setSheetOpen(true)
+  }
+
+  function toggleExpanded(customerId: string) {
+    setExpandedCustomerId((current) => (current === customerId ? null : customerId))
   }
 
   function toggleSelectOne(customerId: string, checked: boolean) {
@@ -384,7 +389,7 @@ export function CustomersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Customers"
-        description="Everyone who has messaged your WhatsApp number, plus anyone you add manually."
+        description="Everyone who has messaged your WhatsApp number, plus anyone you add manually. Expand a row for full details."
         actions={
           <Button type="button" onClick={openCreateSheet}>
             <UserPlus />
@@ -493,12 +498,9 @@ export function CustomersPage() {
                         disabled={pageCustomerIds.length === 0}
                       />
                     </TableHead>
+                    <TableHead className={cn(STICKY_HEAD_CLASS, 'w-8')} />
                     <TableHead className={STICKY_HEAD_CLASS}>Customer ID</TableHead>
                     <TableHead className={STICKY_HEAD_CLASS}>Name</TableHead>
-                    <TableHead className={STICKY_HEAD_CLASS}>Phone</TableHead>
-                    <TableHead className={STICKY_HEAD_CLASS}>Last order</TableHead>
-                    <TableHead className={STICKY_HEAD_CLASS}>Status</TableHead>
-                    <TableHead className={cn(STICKY_HEAD_CLASS, 'text-right')}>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -511,25 +513,13 @@ export function CustomersPage() {
                           <Skeleton className="size-4 rounded-[4px]" />
                         </TableCell>
                         <TableCell className="py-2.5">
+                          <Skeleton className="size-4 rounded-full" />
+                        </TableCell>
+                        <TableCell className="py-2.5">
                           <Skeleton className="h-4 w-14" />
                         </TableCell>
                         <TableCell className="py-2.5">
                           <Skeleton className="h-4 w-32" />
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <Skeleton className="h-4 w-28" />
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <Skeleton className="h-4 w-20" />
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <Skeleton className="h-5 w-16 rounded-full" />
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <div className="flex justify-end gap-1">
-                            <Skeleton className="size-8 rounded-md" />
-                            <Skeleton className="size-8 rounded-md" />
-                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -566,84 +556,73 @@ export function CustomersPage() {
                   {!isLoading &&
                     pagedCustomers?.map((customer) => {
                       const isSelected = selectedIds.has(customer.customer_id)
+                      const isExpanded = expandedCustomerId === customer.customer_id
                       const label = customerLabel(customer)
+                      const detailRowId = `customer-detail-${customer.customer_id}`
                       return (
-                        <TableRow
-                          key={customer.customer_id}
-                          className={cn(
-                            !customer.is_active && 'opacity-60',
-                            isSelected && 'bg-primary/5',
-                          )}
-                        >
-                          <TableCell className="py-2.5" onClick={(e) => e.stopPropagation()}>
-                            <Checkbox
-                              aria-label={`Select ${label}`}
-                              checked={isSelected}
-                              onCheckedChange={(checked) =>
-                                toggleSelectOne(customer.customer_id, checked === true)
-                              }
-                            />
-                          </TableCell>
-                          <TableCell className="text-muted-foreground py-2.5 font-mono text-sm">
-                            {formatCustomerNumber(customer.customer_number)}
-                          </TableCell>
-                          <TableCell className="py-2.5">{label}</TableCell>
-                          <TableCell className="py-2.5 tabular-nums">
-                            {formatPhoneNumber(customer.whatsapp_number)}
-                          </TableCell>
-                          <TableCell className="py-2.5">
-                            {formatDate(customer.last_order_at)}
-                          </TableCell>
-                          <TableCell className="py-2.5">
-                            {customer.is_active ? (
-                              <Badge tone="green">Active</Badge>
-                            ) : (
-                              <Badge tone="gray">Removed</Badge>
+                        <Fragment key={customer.customer_id}>
+                          <TableRow
+                            onClick={() => toggleExpanded(customer.customer_id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={detailRowId}
+                            className={cn(
+                              'cursor-pointer',
+                              !customer.is_active && 'opacity-60',
+                              isExpanded && 'bg-muted/40',
+                              isSelected && !isExpanded && 'bg-primary/5',
                             )}
-                          </TableCell>
-                          <TableCell className="py-2.5 text-right">
-                            <div className="flex justify-end gap-1">
+                          >
+                            <TableCell className="py-2.5" onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                aria-label={`Select ${label}`}
+                                checked={isSelected}
+                                onCheckedChange={(checked) =>
+                                  toggleSelectOne(customer.customer_id, checked === true)
+                                }
+                              />
+                            </TableCell>
+                            <TableCell className="py-2.5">
                               <Button
                                 type="button"
                                 size="icon"
                                 variant="ghost"
-                                aria-label={`Edit ${label}`}
-                                onClick={() => openEditSheet(customer)}
+                                aria-label={isExpanded ? `Collapse ${label}` : `Expand ${label}`}
+                                aria-expanded={isExpanded}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleExpanded(customer.customer_id)
+                                }}
                               >
-                                <Pencil className="size-4" />
+                                <ChevronDown
+                                  className={cn(
+                                    'text-muted-foreground size-4 transition-transform duration-150',
+                                    isExpanded && 'rotate-180',
+                                  )}
+                                />
                               </Button>
-                              {customer.is_active ? (
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  className="hover:text-destructive"
-                                  aria-label={`Remove ${label}`}
-                                  disabled={updateCustomer.isPending}
-                                  onClick={() => setRemoveTarget({ kind: 'single', customer })}
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="ghost"
-                                  aria-label={`Restore ${label}`}
-                                  disabled={updateCustomer.isPending}
-                                  onClick={() =>
-                                    updateCustomer.mutate({
-                                      customer_id: customer.customer_id,
-                                      is_active: true,
-                                    })
+                            </TableCell>
+                            <TableCell className="text-muted-foreground py-2.5 font-mono text-sm">
+                              {formatCustomerNumber(customer.customer_number)}
+                            </TableCell>
+                            <TableCell className="py-2.5 font-medium">{label}</TableCell>
+                          </TableRow>
+                          {isExpanded && (
+                            <TableRow id={detailRowId} className="hover:bg-transparent">
+                              <TableCell
+                                colSpan={COLUMN_COUNT}
+                                className="bg-muted/30 whitespace-normal p-5"
+                              >
+                                <CustomerDetailCard
+                                  customer={customer}
+                                  onEdit={openEditSheet}
+                                  onRemove={(target) =>
+                                    setRemoveTarget({ kind: 'single', customer: target })
                                   }
-                                >
-                                  <RotateCcw className="size-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
+                                />
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
                       )
                     })}
                 </TableBody>
