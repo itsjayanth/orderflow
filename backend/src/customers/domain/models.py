@@ -43,10 +43,19 @@ class Customer(Base):
     # choice doesn't need to be made every time; ordering_flow.domain.
     # checkout.perform_checkout is the only writer.
     default_contact_phone: Mapped[str | None] = mapped_column(String(32), default=None)
+    # Optional, dashboard-only -- never collected over WhatsApp, purely a
+    # manual reference field staff can fill in from the Customers tab.
+    email: Mapped[str | None] = mapped_column(String(255), default=None)
     first_seen_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC)
     )
     last_order_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
+    # Soft-delete flag for the dashboard's Customers CRUD (deactivate, not
+    # a hard DELETE) -- orders.customer_id FK's every past order to this
+    # row, so removing it outright would either violate that FK or destroy
+    # order history. Deactivated customers are excluded from the default
+    # list view but stay fully intact for their existing orders.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     addresses: Mapped[list["Address"]] = relationship(back_populates="customer")
 

@@ -3,7 +3,9 @@ import uuid
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from customers.api.schemas import AddressOut
 
 FulfillmentStatus = Literal["new", "preparing", "ready", "completed", "cancelled"]
 
@@ -30,6 +32,8 @@ class OrderOut(BaseModel):
     payment_method: str
     payment_status: str
     fulfillment_status: str | None
+    contact_phone: str | None
+    notes: str | None
     subtotal: Decimal
     total: Decimal
     currency: str
@@ -42,8 +46,23 @@ class OrderOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OrderDetailOut(OrderOut):
+    """The single-order GET's response -- adds the one field (delivery
+    address) that needs an extra join/eager-load and so isn't worth
+    fetching for every row of the list endpoint. `order_type` on the base
+    OrderOut already tells the caller whether to expect this to be
+    non-null ("delivery" vs "pickup")."""
+
+    delivery_address: AddressOut | None
+
+
 class FulfillmentStatusUpdate(BaseModel):
     to_status: FulfillmentStatus
+
+
+class OrderUpdate(BaseModel):
+    contact_phone: str | None = Field(default=None, max_length=32)
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 class OrderSummaryOut(BaseModel):

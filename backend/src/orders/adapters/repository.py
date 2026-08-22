@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from orders.domain.models import MerchantOrderCounter, Order, OrderItem, OrderStatusEvent
-from orders.domain.state_machine import transition_fulfillment_status
+from orders.domain.state_machine import transition_fulfillment_status, transition_payment_status
 from shared.tenant import TenantContext
 
 
@@ -142,7 +142,11 @@ class OrderRepository:
         result = await self._session.execute(
             select(Order)
             .where(Order.order_id == order_id, Order.merchant_id == tenant.merchant_id)
-            .options(selectinload(Order.items), selectinload(Order.customer))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.customer),
+                selectinload(Order.delivery_address),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -152,6 +156,7 @@ class OrderRepository:
         fulfillment_status: str | None = None,
         from_date: datetime.date | None = None,
         to_date: datetime.date | None = None,
+        customer_id: uuid.UUID | None = None,
     ) -> list[Order]:
         stmt = (
             select(Order)
@@ -161,6 +166,8 @@ class OrderRepository:
         )
         if fulfillment_status is not None:
             stmt = stmt.where(Order.fulfillment_status == fulfillment_status)
+        if customer_id is not None:
+            stmt = stmt.where(Order.customer_id == customer_id)
         lower, upper = _day_range_bounds(from_date, to_date)
         if lower is not None:
             stmt = stmt.where(Order.placed_at >= lower)
@@ -198,6 +205,51 @@ class OrderRepository:
                 notified_customer=notified_customer,
             )
         )
+        await self._session.flush()
+        return order
+
+    async def transition_payment_status(
+        self, tenant: TenantContext, order_id: uuid.UUID, to_status: str
+    ) -> Order:
+        """Manual payment-side transitions triggered from the dashboard --
+        today, only "mark COD payment collected" (cod_pending ->
+        cod_collected), the one payment_status value the codebase
+        otherwise has no writer for. Goes through the same domain state
+        machine as the Razorpay webhook, so an illegal call (e.g. an
+        already-collected or online order) is rejected the same way.
+        Audit trail is a PaymentEvent, written by the caller (api layer)
+        alongside this, not here -- OrderStatusEvent above is
+        fulfillment-only by design (see its docstring)."""
+        order = await self.get(tenant, order_id)
+        if order is None:
+            raise OrderNotFoundError(order_id)
+
+        transition_payment_status(order, to_status)
+        await self._session.flush()
+        return order
+
+    async def update_details(
+        self,
+        tenant: TenantContext,
+        order_id: uuid.UUID,
+        *,
+        contact_phone: str | None = None,
+        notes: str | None = None,
+    ) -> Order | None:
+        """Dashboard order-detail edit. Like CustomerRepository.update, only
+        touches fields the caller actually passed (exclude_unset on the
+        request schema) -- contact_phone/notes can't be explicitly cleared
+        to null through this path, same limitation MenuItemRepository.update
+        already accepts for image_url."""
+        order = await self.get(tenant, order_id)
+        if order is None:
+            return None
+
+        if contact_phone is not None:
+            order.contact_phone = contact_phone
+        if notes is not None:
+            order.notes = notes
+
         await self._session.flush()
         return order
 
