@@ -37,6 +37,19 @@ function clickTab(trigger: HTMLElement) {
   fireEvent.mouseDown(trigger, { button: 0 })
 }
 
+// Expanding a row now mounts CustomerDetailCard, which fires its own
+// useCustomer (detail+addresses) and useOrders (order history) GET
+// requests alongside the list endpoint -- this routes those by path so
+// tests that expand a row don't need to special-case them individually.
+function mockCustomerDetailAndOrders(customers: CustomerOut[], path: string): unknown | undefined {
+  if (/^\/api\/v1\/customers\/[^/?]+$/.test(path)) {
+    const id = path.split('/').pop()
+    return { ...customers.find((c) => c.customer_id === id), addresses: [] }
+  }
+  if (path.startsWith('/api/v1/orders')) return []
+  return undefined
+}
+
 const customers: CustomerOut[] = [
   {
     customer_id: 'c1',
@@ -91,18 +104,63 @@ describe('CustomersPage', () => {
     apiFetchMock.mockReset()
   })
 
-  it('renders customers from the query, falling back to phone number when no name', async () => {
+  it('renders customers from the query, falling back to phone number when no name, with the collapsed row showing only ID + name', async () => {
     apiFetchMock.mockResolvedValueOnce(customers)
 
     renderPage()
 
     expect(await screen.findByText('Asha')).toBeInTheDocument()
-    // Customer c2 has no display_name, so its formatted phone number
-    // appears twice: once as the name-column fallback, once in the phone
-    // column.
-    expect(screen.getAllByText('+91 98765 43211')).toHaveLength(2)
-    expect(screen.getAllByText('+91 98765 43210')).toHaveLength(1)
-    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('Ravi Kumar')).toBeInTheDocument()
+    expect(screen.getByText('#0001')).toBeInTheDocument()
+    // Customer c2 has no display_name, so its formatted phone number is
+    // shown as the name-column fallback.
+    expect(screen.getByText('+91 98765 43211')).toBeInTheDocument()
+    // The collapsed row is deliberately just Customer ID + Name -- c1's
+    // phone number shouldn't appear anywhere until its row is expanded.
+    expect(screen.queryByText('+91 98765 43210')).not.toBeInTheDocument()
+  })
+
+  it('expands a row to show the full profile table, and collapses on a second click', async () => {
+    apiFetchMock.mockImplementation((path: string) => {
+      const detail = mockCustomerDetailAndOrders(customers, path)
+      if (detail !== undefined) return Promise.resolve(detail)
+      return Promise.resolve(customers)
+    })
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    expect(screen.queryByText('WhatsApp number')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Asha' }))
+
+    // The profile table surfaces everything the collapsed row hides.
+    expect(await screen.findByText('WhatsApp number')).toBeInTheDocument()
+    expect(screen.getByText('+91 98765 43210')).toBeInTheDocument()
+    expect(screen.getByText('Order history')).toBeInTheDocument()
+    expect(await screen.findByText('No orders yet.')).toBeInTheDocument()
+    expect(screen.getByText('No saved addresses.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Asha' }))
+
+    await waitFor(() => expect(screen.queryByText('WhatsApp number')).not.toBeInTheDocument())
+  })
+
+  it('expands a row by clicking anywhere on it, not just the chevron', async () => {
+    apiFetchMock.mockImplementation((path: string) => {
+      const detail = mockCustomerDetailAndOrders(customers, path)
+      if (detail !== undefined) return Promise.resolve(detail)
+      return Promise.resolve(customers)
+    })
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    expect(screen.queryByText('WhatsApp number')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Asha'))
+
+    expect(await screen.findByText('WhatsApp number')).toBeInTheDocument()
   })
 
   it('renders an empty state when there are no customers at all', async () => {
@@ -136,9 +194,9 @@ describe('CustomersPage', () => {
     })
 
     expect(screen.getByText('Asha')).toBeInTheDocument()
-    // c2 has no name, so its formatted phone number appears twice: once as
-    // the name-column fallback, once in the phone column.
-    expect(screen.getAllByText('+91 98765 43211')).toHaveLength(2)
+    // c2 has no name, so its formatted phone number is shown as the
+    // name-column fallback.
+    expect(screen.getByText('+91 98765 43211')).toBeInTheDocument()
     expect(screen.queryByText('Ravi Kumar')).not.toBeInTheDocument()
   })
 
@@ -212,18 +270,22 @@ describe('CustomersPage', () => {
     })
   })
 
-  it('edits a customer via the row edit action', async () => {
+  it('edits a customer via the expanded row detail card', async () => {
     apiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
-      if (!init || init.method === undefined) return Promise.resolve(customers)
-      if (init.method === 'PATCH')
+      if (init?.method === 'PATCH')
         return Promise.resolve({ ...customers[0], display_name: 'Asha K' })
+      if (!init || init.method === undefined) {
+        const detail = mockCustomerDetailAndOrders(customers, path)
+        if (detail !== undefined) return Promise.resolve(detail)
+        return Promise.resolve(customers)
+      }
       return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
     })
 
     renderPage()
-    await screen.findByText('Asha')
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand Asha' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Asha' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Asha' }))
     const nameInput = await screen.findByLabelText('Name')
     fireEvent.change(nameInput, { target: { value: 'Asha K' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
@@ -240,15 +302,19 @@ describe('CustomersPage', () => {
 
   it('gates removing a customer behind a confirmation dialog, then removes on confirm', async () => {
     apiFetchMock.mockImplementation((path: string, init?: RequestInit) => {
-      if (!init || init.method === undefined) return Promise.resolve(customers)
-      if (init.method === 'PATCH') return Promise.resolve({ ...customers[0], is_active: false })
+      if (init?.method === 'PATCH') return Promise.resolve({ ...customers[0], is_active: false })
+      if (!init || init.method === undefined) {
+        const detail = mockCustomerDetailAndOrders(customers, path)
+        if (detail !== undefined) return Promise.resolve(detail)
+        return Promise.resolve(customers)
+      }
       return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
     })
 
     renderPage()
-    await screen.findByText('Asha')
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand Asha' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Asha' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Asha' }))
 
     // The mutation must not fire yet -- a confirmation dialog opens instead.
     expect(apiFetchMock).not.toHaveBeenCalledWith(
@@ -271,12 +337,16 @@ describe('CustomersPage', () => {
   })
 
   it('does not remove the customer when the confirmation dialog is dismissed', async () => {
-    apiFetchMock.mockResolvedValueOnce(customers)
+    apiFetchMock.mockImplementation((path: string) => {
+      const detail = mockCustomerDetailAndOrders(customers, path)
+      if (detail !== undefined) return Promise.resolve(detail)
+      return Promise.resolve(customers)
+    })
 
     renderPage()
-    await screen.findByText('Asha')
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand Asha' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Asha' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Asha' }))
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep customer' }))
