@@ -84,6 +84,17 @@ describe('OrderDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Mark Cancelled' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Mark Ready' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Mark Completed' })).not.toBeInTheDocument()
+    // Everything about the order renders as rows of one profile table,
+    // the same convention as the Customers tab's expanded detail card.
+    expect(screen.getByText('Fulfillment')).toBeInTheDocument()
+    expect(screen.getByText('Pickup')).toBeInTheDocument()
+    expect(screen.getByText('Placed')).toBeInTheDocument()
+    expect(screen.getByText('Total')).toBeInTheDocument()
+    // The item's line total and the order total happen to share the same
+    // value in this fixture, so both the item row and the Total row show
+    // "INR 349.00" -- assert there are (at least) two, rather than picking
+    // one and getting an ambiguous-match failure.
+    expect(screen.getAllByText('INR 349.00').length).toBeGreaterThanOrEqual(2)
   })
 
   it('shows the delivery address for a delivery order, and nothing for pickup', async () => {
