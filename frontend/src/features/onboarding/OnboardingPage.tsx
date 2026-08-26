@@ -8,9 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCreateMenuItem } from '@/features/catalog/useCreateMenuItem'
 import { useMenuItems } from '@/features/catalog/useMenuItems'
+import { useCreateFAQItem } from '@/features/faq/useCreateFAQItem'
+import { useFAQItems } from '@/features/faq/useFAQItems'
 import {
   useKitchenProfile,
   useOnboardingStatus,
@@ -28,11 +31,20 @@ import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { useOnboardingWizardStore } from './onboardingWizardStore'
 
-const STEP_LABELS = ['Connect WhatsApp', 'Kitchen details', 'Add a menu item', 'Go live'] as const
+const STEP_LABELS = [
+  'Connect WhatsApp',
+  'Kitchen details',
+  'Add a menu item',
+  'FAQs (optional)',
+  'Go live',
+] as const
 
 // The wizard's displayed step is driven by Merchant.onboarding_status (the
 // server-side source of truth, per IMPLEMENTATION_PLAN.md's Phase 8 note),
-// not derived independently client-side.
+// not derived independently client-side. FAQs are a purely optional add-on
+// with no server-side gate of their own (unlike every other step here) --
+// `catalog_ready` still lands on it, but `live` skips straight past it, so
+// nothing about reaching "live" ever depends on visiting this step.
 function stepForStatus(status: OnboardingStatus): number {
   switch (status) {
     case 'registered':
@@ -43,8 +55,9 @@ function stepForStatus(status: OnboardingStatus): number {
     case 'profile_completed':
       return 2
     case 'catalog_ready':
-    case 'live':
       return 3
+    case 'live':
+      return 4
   }
 }
 
@@ -376,6 +389,101 @@ function AddMenuItemStep() {
   )
 }
 
+const FAQ_PLACEHOLDER_PROMPTS = [
+  'Where are you located?',
+  'What are your timings?',
+  'What do you recommend?',
+]
+
+const faqItemSchema = z.object({
+  question_text: z.string().min(1, 'Required'),
+  answer_text: z.string().min(1, 'Required'),
+  keywords: z.string().optional(),
+})
+type FAQItemForm = z.infer<typeof faqItemSchema>
+
+function AddFAQStep() {
+  const { data: items } = useFAQItems()
+  const createFAQItem = useCreateFAQItem()
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FAQItemForm>({ resolver: zodResolver(faqItemSchema) })
+
+  const onSubmit = (values: FAQItemForm) => {
+    createFAQItem.mutate(
+      {
+        question_text: values.question_text,
+        answer_text: values.answer_text,
+        keywords: (values.keywords ?? '')
+          .split(',')
+          .map((keyword) => keyword.trim())
+          .filter(Boolean),
+      },
+      { onSuccess: () => reset() },
+    )
+  }
+
+  return (
+    <div className="max-w-md space-y-4">
+      <p className="text-muted-foreground text-sm">
+        Add answers to questions customers often ask on WhatsApp -- the bot replies automatically
+        when it recognizes one. This step is entirely optional and won't hold up going live; add as
+        many or as few as you like now, or manage them anytime from the FAQs page.
+      </p>
+      {items && items.length > 0 ? (
+        <ul className="space-y-1 text-sm">
+          {items.map((item) => (
+            <li key={item.faq_item_id} className="text-muted-foreground">
+              {item.question_text}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          For example: "{FAQ_PLACEHOLDER_PROMPTS.join('", "')}"
+        </p>
+      )}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="question_text">Question</Label>
+          <Input
+            id="question_text"
+            placeholder={FAQ_PLACEHOLDER_PROMPTS[0]}
+            {...register('question_text')}
+          />
+          {errors.question_text && (
+            <p className="text-destructive text-sm">{errors.question_text.message}</p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="answer_text">Answer</Label>
+          <Textarea
+            id="answer_text"
+            placeholder="We're at 12 MG Road, Bengaluru."
+            {...register('answer_text')}
+          />
+          {errors.answer_text && (
+            <p className="text-destructive text-sm">{errors.answer_text.message}</p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="keywords">Keywords (comma-separated, optional)</Label>
+          <Input id="keywords" placeholder="location, address, where" {...register('keywords')} />
+        </div>
+        {createFAQItem.isError && (
+          <p className="text-destructive text-sm">Failed to save. Please try again.</p>
+        )}
+        <Button type="submit" disabled={createFAQItem.isPending}>
+          {createFAQItem.isPending ? 'Adding…' : 'Add another'}
+        </Button>
+      </form>
+    </div>
+  )
+}
+
 function LiveStep() {
   return (
     <div className="max-w-md space-y-3">
@@ -419,7 +527,7 @@ export function OnboardingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Onboarding"
-        description="Connect WhatsApp, add your kitchen details, and list at least one menu item to go live."
+        description="Connect WhatsApp, add your kitchen details, and list at least one menu item to go live. FAQs are optional."
       />
 
       <Stepper current={currentStep} furthestReached={serverStep} onSelect={setStep} />
@@ -436,7 +544,8 @@ export function OnboardingPage() {
         {currentStep === 0 && <ConnectWhatsAppStep />}
         {currentStep === 1 && <KitchenDetailsStep />}
         {currentStep === 2 && <AddMenuItemStep />}
-        {currentStep === 3 && <LiveStep />}
+        {currentStep === 3 && <AddFAQStep />}
+        {currentStep === 4 && <LiveStep />}
       </Card>
     </div>
   )

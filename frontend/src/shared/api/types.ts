@@ -163,6 +163,16 @@ export interface KitchenProfileOut {
   fssai_license_no: string | null
 }
 
+export interface FAQItemOut {
+  faq_item_id: string
+  question_text: string
+  answer_text: string
+  keywords: string[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type NotificationKind =
   | 'order_confirmed'
   | 'order_preparing'
