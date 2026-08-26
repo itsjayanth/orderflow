@@ -219,3 +219,83 @@ the real-data finding above:
 SQLAlchemy model changes and Alembic migrations must be committed
 together per phase so `alembic upgrade head` and the ORM models never
 disagree mid-commit.
+
+---
+
+## Completion summary (Phases 1–7)
+
+All phases landed on `claude/orderflow-vertical-agnostic-g3g9tm`, one
+commit (or a small cluster) per phase, backend (`pytest`/`ruff`/`mypy`)
+and frontend (`tsc`/`biome`/`vitest`) green after every commit. Final
+state: 391 backend tests passing (389 baseline + 2 new non-food-vertical
+regression tests), 85 frontend tests passing (84 baseline + 1 new).
+
+### Renames, table by table
+
+| Area | Old | New |
+|---|---|---|
+| DB table | `menu_items` | `items` |
+| DB table | `merchant_menu_item_counters` | `merchant_item_counters` |
+| DB column | `items.menu_item_id` (PK) | `items.item_id` |
+| DB column | `order_items.menu_item_id` (FK) | `order_items.item_id` |
+| DB column | `merchants.kitchen_address_line1/2` | `merchants.business_address_line1/2` |
+| DB column | `merchants.kitchen_city` | `merchants.business_city` |
+| DB column | `merchants.kitchen_pincode` | `merchants.business_pincode` |
+| DB column | `merchants.cuisine_type` | `merchants.business_category` |
+| DB column | `merchants.fssai_license_no` | `merchants.license_no` |
+| DB data | `orders.fulfillment_status = 'preparing'` | `'processing'` |
+| DB data | `order_status_events.from_status/to_status = 'preparing'` | `'processing'` |
+| DB data | `notification_templates.notification_kind = 'order_preparing'` | `'order_processing'` |
+| Python model | `catalog.domain.models.MenuItem` | `Item` |
+| Python model | `catalog.domain.models.MerchantMenuItemCounter` | `MerchantItemCounter` |
+| Python schema | `catalog.api.schemas.MenuItemOut/Create/Update` | `ItemOut/Create/Update` |
+| Python schema | `onboarding.api.schemas.KitchenProfileOut/Update` | `BusinessProfileOut/Update` |
+| Python schema | `OnboardingStatusOut.has_available_menu_item` | `has_available_item` |
+| Python schema | `OrderSummary.preparing_orders` | `processing_orders` |
+| Python event | `orders.domain.events.OrderPreparing` | `OrderProcessing` |
+| Python file | `flows/domain/menu_order.py` | `flows/domain/order_builder.py` |
+| WhatsApp Flow JSON | `menu_options` key | `item_options` |
+| Conversation copy | "Talk to restaurant" | "Talk to us" |
+| Frontend hooks | `useMenuItems/useCreateMenuItem/useUpdateMenuItem` | `useItems/useCreateItem/useUpdateItem` |
+| Frontend copy | onboarding step "Kitchen details" | "Business details" |
+| Frontend field | "Cuisine type" free-text input | `business_category` select (Restaurant / Retail / Clothing / Auto Parts / Pharmacy / Other) |
+| Frontend copy | dashboard "Preparing" stat/status | "Processing" |
+| Frontend copy | "Menu & catalog control" heading | "Catalog control" |
+| Demo data | `demo_data_varkeys.sql`, `demo_data_existing.sql` | fixed to match renamed schema (were broken by the DB renames above until this pass) |
+| Demo data | — | added `demo_data_clothing_store.sql` (new, non-food vertical) |
+
+### Migrations added
+
+`b14b80115eb8` (menu_items→items rename), `9169aa688d5e` (stale
+index/constraint names left over from that rename), `74f76cb509a0`
+(merchant business-profile field renames), `70e512b414d0` (preparing→
+processing data migration, including `order_status_events` and
+`notification_templates`). All are straight renames/data updates, no
+drops, consistent with the Phase 0 real-data finding.
+
+### Manual follow-up required (cannot be automated from this repo)
+
+1. **WhatsApp Flow re-sync for onboarded merchants.** The real sandbox
+   merchant "Varkey's" (`merchant_id ede3aa6d-c111-47e2-bb75-65fbb915c5f1`)
+   already has a Flow published to Meta under the old `menu_options`
+   schema key. Meta caches the published Flow JSON independently of this
+   repo, so after this deploys, call
+   `POST /api/v1/onboarding/whatsapp/flow-sync` for that merchant (and
+   any other already-onboarded merchant) to push the renamed
+   `item_options` schema live. Until that runs, their live WhatsApp
+   ordering Flow keeps using the old key name (harmless — Meta doesn't
+   care what the key is called — but it means the deployed Flow and this
+   repo's JSON are out of sync until re-synced).
+2. **`docs/inventory-stock-management-feature.md` and
+   `docs/pos-logistics-integration-feature.md`** (separate feature-
+   proposal docs, out of this migration's scope per Phase 6) still
+   reference `MenuItem` — worth a pass next time either doc is revisited,
+   not urgent since they're proposals, not implemented code.
+3. **Demo data is dev-only.** `demo_data_varkeys.sql`/
+   `demo_data_existing.sql`/`demo_data_clothing_store.sql` are meant to
+   run against a local dev database (`psql -h localhost`). Don't run
+   them against a real deployed database without adjusting the merchant
+   IDs — `demo_data_existing.sql` in particular targets a specific real
+   merchant_id and will silently no-op the `UPDATE merchants` step (0
+   rows) if that merchant doesn't exist in the target database, then
+   fail on the `items` insert's FK constraint.
