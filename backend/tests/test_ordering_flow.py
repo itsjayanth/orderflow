@@ -54,7 +54,7 @@ async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: Asy
     assert body["items"][0]["image_url"] == "https://example.com/butter-chicken.jpg"
 
 
-async def test_public_menu_item_without_image_has_null_image_url(
+async def test_public_item_without_image_has_null_image_url(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
@@ -155,7 +155,7 @@ async def test_public_checkout_cod_gates_straight_to_new(
     assert body["fulfillment_status"] == "new"
 
 
-async def test_public_checkout_unknown_menu_item_returns_404(
+async def test_public_checkout_unknown_item_returns_404(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)

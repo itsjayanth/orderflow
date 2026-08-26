@@ -26,7 +26,7 @@ class Merchant(Base):
     onboarding_status: Mapped[str] = mapped_column(String(32), default="registered")
     status: Mapped[str] = mapped_column(String(16), default="active")
 
-    # Business details (ARCHITECTURE.md Section 1's `kitchen_details`), all
+    # Business details (ARCHITECTURE.md Section 1's "business details"), all
     # nullable until the onboarding wizard's "business details" step is
     # completed. License number is explicitly optional per the brief.
     business_address_line1: Mapped[str | None] = mapped_column(String(255), default=None)
