@@ -32,7 +32,7 @@ from shared.tenant import TenantContext
 def _merchant(onboarding_status: str) -> Merchant:
     return Merchant(
         merchant_id=uuid.uuid4(),
-        business_name="Test Kitchen",
+        business_name="Test Business",
         owner_contact=f"{uuid.uuid4()}@example.com",
         onboarding_status=onboarding_status,
     )
@@ -77,7 +77,7 @@ def test_step_skipping_is_rejected() -> None:
 
 async def _make_tenant(db_session: AsyncSession) -> TenantContext:
     merchant = await MerchantRepository(db_session).create(
-        business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     await db_session.commit()
     return TenantContext(merchant_id=merchant.merchant_id)
@@ -164,7 +164,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",

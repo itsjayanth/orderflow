@@ -18,7 +18,7 @@ from shared.tenant import TenantContext
 
 
 async def _make_tenant(
-    db_session: AsyncSession, business_name: str = "Test Kitchen"
+    db_session: AsyncSession, business_name: str = "Test Business"
 ) -> TenantContext:
     merchant = await MerchantRepository(db_session).create(
         business_name=business_name, owner_contact=f"{uuid.uuid4()}@example.com"
@@ -30,7 +30,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -118,8 +118,8 @@ async def test_order_numbers_increment_sequentially_per_merchant(
 
 
 async def test_order_numbers_isolated_per_merchant(db_session: AsyncSession) -> None:
-    tenant_a = await _make_tenant(db_session, business_name="Kitchen A")
-    tenant_b = await _make_tenant(db_session, business_name="Kitchen B")
+    tenant_a = await _make_tenant(db_session, business_name="Business A")
+    tenant_b = await _make_tenant(db_session, business_name="Business B")
 
     order_a1 = await _seed_order(db_session, tenant_a)
     order_b1 = await _seed_order(db_session, tenant_b)

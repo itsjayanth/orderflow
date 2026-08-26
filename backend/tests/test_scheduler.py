@@ -14,7 +14,7 @@ from shared.tenant import TenantContext
 
 async def _make_tenant(db_session: AsyncSession) -> TenantContext:
     merchant = await MerchantRepository(db_session).create(
-        business_name="Sweep Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Sweep Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     return TenantContext(merchant_id=merchant.merchant_id)
 

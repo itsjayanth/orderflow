@@ -12,7 +12,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Public Kitchen",
+            "business_name": "Public Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -48,7 +48,7 @@ async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: Asy
 
     assert response.status_code == 200
     body = response.json()
-    assert body["business_name"] == "Public Kitchen"
+    assert body["business_name"] == "Public Business"
     assert len(body["items"]) == 1
     assert body["items"][0]["name"] == "Butter Chicken"
     assert body["items"][0]["image_url"] == "https://example.com/butter-chicken.jpg"

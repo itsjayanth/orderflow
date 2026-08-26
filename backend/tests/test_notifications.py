@@ -78,7 +78,7 @@ class RecordingChannel:
 
 async def _seed_order(db_session: AsyncSession, *, connect_whatsapp: bool = True):
     merchant = await MerchantRepository(db_session).create(
-        business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
 

@@ -104,7 +104,7 @@ class RecordingNotificationChannel:
 
 async def _seed_connected_merchant(db_session: AsyncSession, phone_number_id: str = "PNID1"):
     merchant = await MerchantRepository(db_session).create(
-        business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     await WhatsAppBusinessAccountRepository(db_session).upsert(
@@ -156,7 +156,7 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
     assert result.intent == Intent.GREETING
     assert result.reply_sent is True
     assert len(sender.button_calls) == 1
-    assert "Test Kitchen" in sender.button_calls[0]["body"]
+    assert "Test Business" in sender.button_calls[0]["body"]
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
     assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
 

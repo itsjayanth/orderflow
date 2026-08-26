@@ -17,7 +17,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -169,7 +169,7 @@ async def test_checkout_cod_creates_new_order_immediately(
     assert body["payment_link_url"] is None
 
 
-async def test_checkout_unknown_menu_item_returns_404(
+async def test_checkout_unknown_item_returns_404(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
@@ -188,7 +188,7 @@ async def test_checkout_unknown_menu_item_returns_404(
     assert response.status_code == 404
 
 
-async def test_checkout_menu_item_from_another_merchant_returns_404(
+async def test_checkout_item_from_another_merchant_returns_404(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens_a = await _register(client, owner_contact="owner-a@example.com")
@@ -413,7 +413,7 @@ async def test_order_repository_finds_stale_awaiting_payment_orders(
     from orders.adapters.repository import OrderItemInput
 
     merchant = await MerchantRepository(db_session).create(
-        business_name="Stale Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Stale Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     customer, item = await _seed_customer_and_item(db_session, tenant)

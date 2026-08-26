@@ -280,6 +280,36 @@ def test_build_new_delivery_address_none_when_incomplete() -> None:
     assert build_new_delivery_address(submission) is None
 
 
+def test_build_category_and_items_screen_data_shape_identical_for_clothing_vertical() -> None:
+    """Regression check: the Flow screen builders don't branch on category
+    content -- a non-food vertical (clothing store, categories like
+    "Shirts"/"Shoes") produces JSON with the exact same structure/keys as
+    a restaurant's items."""
+    items = [
+        _item(name="Blue Denim Shirt", price="899.00", category="Shirts"),
+        _item(name="Running Sneakers", price="2499.00", category="Shoes"),
+        _item(name="Sold Out Boots", price="3499.00", category="Shoes", is_available=False),
+    ]
+
+    category_data = build_category_screen_data(business_name="Threads & Co", items=items)
+
+    assert set(category_data.keys()) == {"business_name", "categories"}
+    assert category_data["business_name"] == "Threads & Co"
+    assert category_data["categories"] == [
+        {"id": "Shirts", "title": "Shirts"},
+        {"id": "Shoes", "title": "Shoes"},
+    ]
+    for category in category_data["categories"]:
+        assert set(category.keys()) == {"id", "title"}
+
+    items_data = build_items_screen_data(category="Shoes", items=items)
+
+    assert set(items_data.keys()) == {"category_name", "item_options"}
+    assert items_data["category_name"] == "Shoes"
+    assert len(items_data["item_options"]) == 1
+    assert "Running Sneakers" in items_data["item_options"][0]["title"]
+
+
 def test_build_new_delivery_address_when_complete() -> None:
     submission = parse_flow_completion(
         {

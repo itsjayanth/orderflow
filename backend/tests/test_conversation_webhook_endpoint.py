@@ -46,7 +46,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",

@@ -106,3 +106,108 @@ psql -U orderflow -h localhost -d orderflow -f demo_data_varkeys.sql
 - Order IDs: `666666...01` through `666666...06`
 - Order Item IDs: `777777...01` through `777777...18`
 - Template IDs: `888888...01` through `888888...03`
+
+# Demo Data for Urban Threads Clothing (non-food vertical)
+
+A second, separate demo dataset for a `Retail / Clothing` merchant --
+exercises the same schema as the Varkeys dataset above with no
+restaurant-specific data, as a concrete check that the platform doesn't
+assume food semantics anywhere.
+
+## Merchant Details
+- **Business Name**: Urban Threads Clothing
+- **Owner Contact**: +919876509999
+- **Business Category**: Retail / Clothing
+- **Location**: 45 Commercial Street, Shivaji Nagar, Bangalore 560001
+- **Status**: Active (`onboarding_status` = `live`)
+
+## Staff Login
+- **Email**: admin@urbanthreads.example
+- **Password**: password123
+- **Role**: Owner
+
+## Items (16 items across 4 categories)
+
+### Shirts (4 items)
+- Classic White Shirt - Rs 1299
+- Blue Denim Shirt - Rs 1499
+- Checked Flannel Shirt - Rs 1199
+- Black Polo Shirt - Rs 899
+
+### Trousers (4 items)
+- Slim Fit Chinos - Rs 1799
+- Formal Black Trousers - Rs 1999
+- Cargo Trousers - Rs 1699
+- Grey Track Pants - Rs 999
+
+### Shoes (4 items)
+- Running Sneakers - Rs 2999
+- Leather Formal Shoes - Rs 3499
+- Canvas Casuals - Rs 1499
+- Sports Sandals - Rs 899
+
+### Accessories (4 items)
+- Leather Belt - Rs 699
+- Analog Wrist Watch - Rs 2499
+- Canvas Backpack - Rs 1899
+- Aviator Sunglasses - Rs 1299
+
+## Customers (5 customers)
+1. **Ananya Iyer** (+919812345601) - Indiranagar
+2. **Rohit Malhotra** (+919812345602) - Whitefield
+3. **Fatima Sheikh** (+919812345603) - Jayanagar
+4. **Karan Mehta** (+919812345604) - Malleswaram
+5. **Divya Nair** (+919812345605) - Electronic City
+
+## Orders (6 orders across fulfillment states)
+
+### New (1)
+- **Fatima Sheikh** - Rs 1199 - Checked Flannel Shirt (placed 10 mins ago, pickup, online)
+
+### Processing (1)
+- **Rohit Malhotra** - Rs 2999 - Running Sneakers (placed 40 mins ago, COD)
+
+### Ready (1)
+- **Karan Mehta** - Rs 1998 - Leather Belt, Aviator Sunglasses (ready 10 mins ago, COD)
+
+### Completed (2)
+- **Ananya Iyer** - Rs 3098 - Classic White Shirt, Slim Fit Chinos (completed 4 days ago)
+- **Divya Nair** - Rs 5398 - Leather Formal Shoes, Canvas Backpack (completed 6 days ago)
+
+### Cancelled (1)
+- **Ananya Iyer** - Rs 999 - Grey Track Pants (placed 2 days ago, payment abandoned)
+
+## How to Use
+
+### Load Demo Data
+```bash
+cd backend
+PGPASSWORD=orderflow psql -U orderflow -h localhost -d orderflow -f demo_data_clothing_store.sql
+```
+
+### Login to Dashboard
+1. Navigate to http://localhost:5173
+2. Login with: admin@urbanthreads.example / password123
+3. You'll see:
+   - 1 new order
+   - 1 order processing
+   - 1 order ready for pickup/delivery
+   - 2 completed orders
+   - 1 cancelled order
+
+### Reset Demo Data
+Simply re-run the SQL script - it cleans up and recreates everything:
+```bash
+PGPASSWORD=orderflow psql -U orderflow -h localhost -d orderflow -f demo_data_clothing_store.sql
+```
+
+## Database IDs Reference
+
+- Merchant ID: `99999999-9999-9999-9999-999999999999`
+- Staff User ID: `aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa`
+- Item IDs: `bbbbbbbb...01` through `bbbbbbbb...16`
+- Customer IDs: `cccccccc...01` through `cccccccc...05`
+- Address IDs: `dddddddd...01` through `dddddddd...05`
+- Order IDs: `eeeeeeee...01` through `eeeeeeee...06`
+- Order Item IDs: `ffffffff...01` through `ffffffff...09`
+- Template IDs: `00000000...01` through `00000000...03`

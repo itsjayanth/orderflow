@@ -20,11 +20,11 @@ from shared.tenant import TenantContext
 
 def test_render_template_substitutes_known_variables() -> None:
     body = "Hi {{customer_name}}, your order at {{business_name}} is confirmed!"
-    context = {"customer_name": "Asha", "business_name": "Test Kitchen"}
+    context = {"customer_name": "Asha", "business_name": "Test Business"}
 
     result = render_template(body, context)
 
-    assert result == "Hi Asha, your order at Test Kitchen is confirmed!"
+    assert result == "Hi Asha, your order at Test Business is confirmed!"
 
 
 def test_render_template_leaves_unknown_variables_untouched() -> None:
@@ -69,7 +69,7 @@ class FakeSender:
 
 async def _seed_order(db_session: AsyncSession):
     merchant = await MerchantRepository(db_session).create(
-        business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     await WhatsAppBusinessAccountRepository(db_session).upsert(
@@ -130,7 +130,7 @@ async def test_notify_uses_active_template_when_configured(db_session: AsyncSess
     await channel.notify_order_confirmed(merchant_id=tenant.merchant_id, order_id=order.order_id)
 
     body = sender.calls[0]["body"]
-    assert body == f"Hi Asha, Test Kitchen received your order {order.order_id}!"
+    assert body == f"Hi Asha, Test Business received your order {order.order_id}!"
 
 
 async def test_notify_falls_back_to_default_when_template_inactive(
@@ -181,7 +181,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
