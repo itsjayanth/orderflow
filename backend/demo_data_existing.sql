@@ -157,7 +157,7 @@ BEGIN
         (gen_random_uuid(), order1_id, item_vada, 'Medu Vada (2 pcs)', 50.00, 1, 50.00),
         (gen_random_uuid(), order1_id, item_filter_coffee, 'Filter Coffee', 40.00, 2, 80.00);
 
-    -- Order 2: Preparing order
+    -- Order 2: Processing order
     INSERT INTO orders (order_id, merchant_id, customer_id, order_type, delivery_address_id, payment_method, payment_status, fulfillment_status, subtotal, total, currency, placed_at, created_at, updated_at)
     VALUES (
         order2_id,
@@ -167,7 +167,7 @@ BEGIN
         addr2_id,
         'cod',
         'pending',
-        'preparing',
+        'processing',
         470.00,
         470.00,
         'INR',

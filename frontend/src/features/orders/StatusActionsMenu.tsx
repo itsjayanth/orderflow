@@ -30,7 +30,7 @@ import { useUpdateOrderStatus } from './useUpdateOrderStatus'
 
 const STATUS_ICONS: Record<FulfillmentStatus, LucideIcon> = {
   new: Clock,
-  preparing: Flame,
+  processing: Flame,
   ready: CheckCircle,
   completed: PackageCheck,
   cancelled: XCircle,
@@ -42,7 +42,7 @@ const STATUS_ICONS: Record<FulfillmentStatus, LucideIcon> = {
 // pill it lives under.
 const STATUS_ICON_CLASSES: Record<FulfillmentStatus, string> = {
   new: 'text-brand-gold-foreground',
-  preparing: 'text-blue-600 dark:text-blue-300',
+  processing: 'text-blue-600 dark:text-blue-300',
   ready: 'text-primary',
   completed: 'text-muted-foreground',
   cancelled: 'text-destructive',

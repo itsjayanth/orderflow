@@ -6,7 +6,7 @@ from orders.domain.events import (
     OrderConfirmedCOD,
     OrderEvent,
     OrderPaid,
-    OrderPreparing,
+    OrderProcessing,
     OrderReady,
     subscribe,
 )
@@ -32,8 +32,8 @@ async def _on_order_confirmed(event: OrderEvent) -> None:
     await _channel.notify_order_confirmed(merchant_id=event.merchant_id, order_id=event.order_id)
 
 
-async def _on_order_preparing(event: OrderEvent) -> None:
-    await _channel.notify_order_preparing(merchant_id=event.merchant_id, order_id=event.order_id)
+async def _on_order_processing(event: OrderEvent) -> None:
+    await _channel.notify_order_processing(merchant_id=event.merchant_id, order_id=event.order_id)
 
 
 async def _on_order_ready(event: OrderEvent) -> None:
@@ -54,7 +54,7 @@ def register_notification_handlers() -> None:
         return
     subscribe(OrderPaid, _on_order_confirmed)
     subscribe(OrderConfirmedCOD, _on_order_confirmed)
-    subscribe(OrderPreparing, _on_order_preparing)
+    subscribe(OrderProcessing, _on_order_processing)
     subscribe(OrderReady, _on_order_ready)
     subscribe(OrderCompleted, _on_order_completed)
     _registered = True

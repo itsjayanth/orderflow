@@ -62,7 +62,7 @@
 ### New Orders (1)
 - **Amit Patel** - ₹255 - Rava Masala Dosa, Paneer Dosa, Fresh Lime Soda (placed 12 mins ago)
 
-### Preparing (1)
+### Processing (1)
 - **Priya Sharma** - ₹460 - Schezwan Fried Rice, Chilli Paneer, Gobi Manchurian (placed 35 mins ago, COD)
 
 ### Ready (1)

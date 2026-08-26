@@ -56,7 +56,7 @@ class OrderSummary:
     amount_collected: Decimal
     cod_orders: int
     new_orders: int
-    preparing_orders: int
+    processing_orders: int
     ready_orders: int
     completed_orders: int
     cancelled_orders: int
@@ -295,7 +295,7 @@ class OrderRepository:
             _sum_when(collected),
             _count_when(Order.payment_method == "cod"),
             _count_when(Order.fulfillment_status == "new"),
-            _count_when(Order.fulfillment_status == "preparing"),
+            _count_when(Order.fulfillment_status == "processing"),
             _count_when(Order.fulfillment_status == "ready"),
             _count_when(Order.fulfillment_status == "completed"),
             _count_when(Order.fulfillment_status == "cancelled"),
@@ -314,7 +314,7 @@ class OrderRepository:
             amount_collected=row[2],
             cod_orders=row[3],
             new_orders=row[4],
-            preparing_orders=row[5],
+            processing_orders=row[5],
             ready_orders=row[6],
             completed_orders=row[7],
             cancelled_orders=row[8],

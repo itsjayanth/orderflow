@@ -13,7 +13,7 @@ from orders.api.schemas import (
     OrderSummaryOut,
     OrderUpdate,
 )
-from orders.domain.events import OrderCompleted, OrderPreparing, OrderReady, publish
+from orders.domain.events import OrderCompleted, OrderProcessing, OrderReady, publish
 from orders.domain.models import Order
 from orders.domain.state_machine import IllegalTransitionError
 from payments.adapters.repository import PaymentEventRepository
@@ -22,7 +22,7 @@ from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 _EVENT_BY_STATUS = {
-    "preparing": OrderPreparing,
+    "processing": OrderProcessing,
     "ready": OrderReady,
     "completed": OrderCompleted,
 }
@@ -103,7 +103,7 @@ async def get_order_summary(
         amount_collected=summary.amount_collected,
         cod_orders=summary.cod_orders,
         new_orders=summary.new_orders,
-        preparing_orders=summary.preparing_orders,
+        processing_orders=summary.processing_orders,
         ready_orders=summary.ready_orders,
         completed_orders=summary.completed_orders,
         cancelled_orders=summary.cancelled_orders,

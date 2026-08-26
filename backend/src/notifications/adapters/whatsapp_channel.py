@@ -69,8 +69,8 @@ class WhatsAppNotificationChannel:
     async def notify_order_confirmed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_confirmed")
 
-    async def notify_order_preparing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
-        return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_preparing")
+    async def notify_order_processing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_processing")
 
     async def notify_order_ready(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_ready")

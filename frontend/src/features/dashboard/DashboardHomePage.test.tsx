@@ -63,7 +63,7 @@ const sampleSummary: OrderSummaryOut = {
   amount_collected: '349.00',
   cod_orders: 0,
   new_orders: 1,
-  preparing_orders: 0,
+  processing_orders: 0,
   ready_orders: 0,
   completed_orders: 0,
   cancelled_orders: 0,

@@ -72,7 +72,7 @@ const ORDER_STEPS: {
     icon: Bell,
     title: 'Track',
     description:
-      'Once payment clears, the customer gets automatic updates — confirmed, preparing, ready for pickup.',
+      'Once payment clears, the customer gets automatic updates — confirmed, processing, ready for pickup.',
   },
 ]
 
@@ -85,7 +85,7 @@ const DASHBOARD_FEATURES: {
     icon: LayoutDashboard,
     title: 'Live order queue',
     description:
-      'New orders appear within seconds of payment, sorted by status — New, Preparing, Ready, Completed.',
+      'New orders appear within seconds of payment, sorted by status — New, Processing, Ready, Completed.',
   },
   {
     icon: Bell,

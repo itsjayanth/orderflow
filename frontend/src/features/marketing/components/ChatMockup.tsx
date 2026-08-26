@@ -91,7 +91,7 @@ export function ChatMockup() {
             ✅ Payment received — your order is confirmed!
           </ChatBubble>
           <ChatBubble from="them" tone="gold">
-            🍳 Preparing your order…
+            🔄 Processing your order…
           </ChatBubble>
         </div>
       </div>

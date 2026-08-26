@@ -5,13 +5,13 @@ import { cn } from '@/lib/utils'
 const STATS: { label: string; value: number; tone?: 'gold' }[] = [
   { label: 'Today', value: 18 },
   { label: 'New', value: 3, tone: 'gold' },
-  { label: 'Preparing', value: 5 },
+  { label: 'Processing', value: 5 },
   { label: 'Ready', value: 2 },
 ]
 
 const ORDERS: { total: string; time: string; status: string; tone: 'gold' | 'gray' | 'green' }[] = [
   { total: 'INR 220.00', time: '2 minutes ago', status: 'New', tone: 'gold' },
-  { total: 'INR 540.00', time: '11 minutes ago', status: 'Preparing', tone: 'gray' },
+  { total: 'INR 540.00', time: '11 minutes ago', status: 'Processing', tone: 'gray' },
   { total: 'INR 180.00', time: '24 minutes ago', status: 'Ready', tone: 'green' },
 ]
 

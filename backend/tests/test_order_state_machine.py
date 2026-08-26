@@ -106,11 +106,11 @@ def test_payment_cancelled_mirrors_onto_fulfillment_status() -> None:
 
 
 def test_cod_collected_does_not_reset_fulfillment_status() -> None:
-    order = _order(payment_status="cod_pending", fulfillment_status="preparing")
+    order = _order(payment_status="cod_pending", fulfillment_status="processing")
 
     transition_payment_status(order, "cod_collected")
 
-    assert order.fulfillment_status == "preparing"
+    assert order.fulfillment_status == "processing"
 
 
 # --- fulfillment_status: every legal transition succeeds --------------------
@@ -154,7 +154,7 @@ def test_fulfillment_transition_before_gate_raises() -> None:
     order = _order(payment_status="awaiting_payment", fulfillment_status=None)
 
     with pytest.raises(IllegalTransitionError):
-        transition_fulfillment_status(order, "preparing")
+        transition_fulfillment_status(order, "processing")
 
 
 def test_illegal_fulfillment_transition_does_not_mutate_order() -> None:
@@ -170,7 +170,7 @@ def test_illegal_fulfillment_transition_does_not_mutate_order() -> None:
 
 
 def test_ready_sets_ready_at() -> None:
-    order = _order(payment_status="paid", fulfillment_status="preparing")
+    order = _order(payment_status="paid", fulfillment_status="processing")
     assert order.ready_at is None
 
     transition_fulfillment_status(order, "ready")
@@ -188,7 +188,7 @@ def test_completed_sets_completed_at() -> None:
 
 
 def test_cancelled_from_any_non_terminal_state() -> None:
-    for from_status in ("new", "preparing", "ready"):
+    for from_status in ("new", "processing", "ready"):
         order = _order(payment_status="paid", fulfillment_status=from_status)
         transition_fulfillment_status(order, "cancelled")
         assert order.fulfillment_status == "cancelled"

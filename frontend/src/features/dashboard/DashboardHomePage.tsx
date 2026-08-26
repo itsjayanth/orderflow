@@ -39,7 +39,7 @@ const STAT_LABEL_CLASS = 'text-muted-foreground text-xs font-semibold tracking-w
 // surface is meant to stay inside the dashboard feature.
 const LIFECYCLE_ICONS: Record<FulfillmentStatus, LucideIcon> = {
   new: Clock,
-  preparing: Flame,
+  processing: Flame,
   ready: CheckCircle,
   completed: PackageCheck,
   cancelled: XCircle,
@@ -96,9 +96,9 @@ export function DashboardHomePage() {
       hint: 'Just placed, not yet started',
     },
     {
-      label: 'Preparing',
-      status: 'preparing',
-      count: summary?.preparing_orders ?? 0,
+      label: 'Processing',
+      status: 'processing',
+      count: summary?.processing_orders ?? 0,
       hint: 'In the kitchen right now',
     },
     {

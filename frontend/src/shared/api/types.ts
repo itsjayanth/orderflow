@@ -64,7 +64,7 @@ export interface Item {
   updated_at: string
 }
 
-export type FulfillmentStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
+export type FulfillmentStatus = 'new' | 'processing' | 'ready' | 'completed' | 'cancelled'
 
 export interface OrderItemOut {
   order_item_id: string
@@ -111,7 +111,7 @@ export interface OrderSummaryOut {
   amount_collected: string
   cod_orders: number
   new_orders: number
-  preparing_orders: number
+  processing_orders: number
   ready_orders: number
   completed_orders: number
   cancelled_orders: number
@@ -165,7 +165,7 @@ export interface BusinessProfileOut {
 
 export type NotificationKind =
   | 'order_confirmed'
-  | 'order_preparing'
+  | 'order_processing'
   | 'order_ready'
   | 'order_completed'
 

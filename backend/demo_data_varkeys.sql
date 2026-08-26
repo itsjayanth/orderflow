@@ -125,7 +125,7 @@ VALUES
     ('77777777-7777-7777-7777-777777777702', '66666666-6666-6666-6666-666666666601', '33333333-3333-3333-3333-333333333307', 'Medu Vada (2 pcs)', 50.00, 1, 50.00),
     ('77777777-7777-7777-7777-777777777703', '66666666-6666-6666-6666-666666666601', '33333333-3333-3333-3333-333333333319', 'Filter Coffee', 40.00, 2, 80.00);
 
--- Order 2: Preparing order
+-- Order 2: Processing order
 INSERT INTO orders (order_id, merchant_id, customer_id, order_type, delivery_address_id, payment_method, payment_status, fulfillment_status, subtotal, total, currency, placed_at, paid_at, created_at, updated_at)
 VALUES (
     '66666666-6666-6666-6666-666666666602',
@@ -135,7 +135,7 @@ VALUES (
     '55555555-5555-5555-5555-555555555502',
     'cod',
     'pending',
-    'preparing',
+    'processing',
     460.00,
     460.00,
     'INR',

@@ -150,7 +150,7 @@ async def test_repository_transition_writes_status_event(db_session: AsyncSessio
     repo = OrderRepository(db_session)
 
     await repo.transition_fulfillment_status(
-        tenant, order.order_id, "preparing", changed_by="staff-1"
+        tenant, order.order_id, "processing", changed_by="staff-1"
     )
 
     result = await db_session.execute(
@@ -159,7 +159,7 @@ async def test_repository_transition_writes_status_event(db_session: AsyncSessio
     events = result.scalars().all()
     assert len(events) == 1
     assert events[0].from_status == "new"
-    assert events[0].to_status == "preparing"
+    assert events[0].to_status == "processing"
     assert events[0].changed_by == "staff-1"
 
 
@@ -169,7 +169,7 @@ async def test_repository_transition_nonexistent_order_raises(db_session: AsyncS
 
     with pytest.raises(OrderNotFoundError):
         await repo.transition_fulfillment_status(
-            tenant, uuid.uuid4(), "preparing", changed_by="staff-1"
+            tenant, uuid.uuid4(), "processing", changed_by="staff-1"
         )
 
 
@@ -227,16 +227,16 @@ async def test_list_orders_filtered_by_fulfillment_status(
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
     await _seed_order(db_session, tenant, fulfillment_status="new")
-    await _seed_order(db_session, tenant, fulfillment_status="preparing")
+    await _seed_order(db_session, tenant, fulfillment_status="processing")
 
     response = await client.get(
-        "/api/v1/orders", params={"fulfillment_status": "preparing"}, headers=_auth_headers(tokens)
+        "/api/v1/orders", params={"fulfillment_status": "processing"}, headers=_auth_headers(tokens)
     )
 
     assert response.status_code == 200
     body = response.json()
     assert len(body) == 1
-    assert body[0]["fulfillment_status"] == "preparing"
+    assert body[0]["fulfillment_status"] == "processing"
 
 
 async def test_get_order_detail_includes_items(
@@ -288,12 +288,12 @@ async def test_update_fulfillment_status_happy_path(
 
     response = await client.patch(
         f"/api/v1/orders/{order.order_id}/fulfillment-status",
-        json={"to_status": "preparing"},
+        json={"to_status": "processing"},
         headers=_auth_headers(tokens),
     )
 
     assert response.status_code == 200
-    assert response.json()["fulfillment_status"] == "preparing"
+    assert response.json()["fulfillment_status"] == "processing"
 
 
 async def test_update_fulfillment_status_sets_ready_at(
@@ -301,7 +301,7 @@ async def test_update_fulfillment_status_sets_ready_at(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    order = await _seed_order(db_session, tenant, fulfillment_status="preparing")
+    order = await _seed_order(db_session, tenant, fulfillment_status="processing")
 
     response = await client.patch(
         f"/api/v1/orders/{order.order_id}/fulfillment-status",
@@ -364,7 +364,7 @@ async def test_orders_isolated_between_merchants(
 
     update_response = await client.patch(
         f"/api/v1/orders/{order_a.order_id}/fulfillment-status",
-        json={"to_status": "preparing"},
+        json={"to_status": "processing"},
         headers=_auth_headers(tokens_b),
     )
     assert update_response.status_code == 404
@@ -612,7 +612,7 @@ async def test_get_summary_aggregates_across_orders(
         db_session,
         tenant,
         payment_status="cod_pending",
-        fulfillment_status="preparing",
+        fulfillment_status="processing",
         payment_method="cod",
     )
     await _seed_order(
@@ -630,7 +630,7 @@ async def test_get_summary_aggregates_across_orders(
     assert body["amount_collected"] == "1396.00"
     assert body["cod_orders"] == 2
     assert body["new_orders"] == 1
-    assert body["preparing_orders"] == 1
+    assert body["processing_orders"] == 1
     assert body["ready_orders"] == 0
     assert body["completed_orders"] == 1
     assert body["cancelled_orders"] == 1
@@ -736,20 +736,20 @@ async def test_list_orders_combines_date_range_with_fulfillment_status(
     matching = await _seed_order(
         db_session,
         tenant,
-        fulfillment_status="preparing",
+        fulfillment_status="processing",
         placed_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
     )
     await _seed_order(
         db_session,
         tenant,
-        fulfillment_status="preparing",
+        fulfillment_status="processing",
         placed_at=datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC),
     )
 
     response = await client.get(
         "/api/v1/orders",
         params={
-            "fulfillment_status": "preparing",
+            "fulfillment_status": "processing",
             "from_date": "2026-01-01",
             "to_date": "2026-01-31",
         },

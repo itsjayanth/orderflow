@@ -8,9 +8,9 @@ from shared.db import Base
 
 # The four notification kinds sent over an order's lifecycle
 # (orders/domain/events.py's OrderPaid/OrderConfirmedCOD both map to
-# "order_confirmed"; "order_preparing" fires on the new -> preparing
+# "order_confirmed"; "order_processing" fires on the new -> processing
 # fulfillment transition).
-NOTIFICATION_KINDS = ("order_confirmed", "order_preparing", "order_ready", "order_completed")
+NOTIFICATION_KINDS = ("order_confirmed", "order_processing", "order_ready", "order_completed")
 
 # What actually goes out when a merchant hasn't configured (or has
 # deactivated) their own template for a kind -- the Phase 7 behavior,
@@ -23,7 +23,7 @@ NOTIFICATION_KINDS = ("order_confirmed", "order_preparing", "order_ready", "orde
 DEFAULT_MESSAGES: dict[str, str] = {
     "order_confirmed": "✅ *Order #{{order_number}} confirmed!*\n\n{{items}}\n\n"
     "Total: {{currency}} {{total}}\n\n_We'll let you know when it's ready._",
-    "order_preparing": "🍳 *Order #{{order_number}} is being prepared!*\n\n{{items}}\n\n"
+    "order_processing": "🔄 *Order #{{order_number}} is being processed!*\n\n{{items}}\n\n"
     "_We'll notify you the moment it's ready._",
     "order_ready": "🎉 *Order #{{order_number}} is ready!*\n\nIt's on its way — you should be "
     "expecting it soon! 🛵",
@@ -48,7 +48,7 @@ class NotificationTemplate(Base):
     template_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
 
-    # "order_confirmed" | "order_preparing" | "order_ready" | "order_completed"
+    # "order_confirmed" | "order_processing" | "order_ready" | "order_completed"
     notification_kind: Mapped[str] = mapped_column(String(32))
     template_name: Mapped[str] = mapped_column(String(255))
     language_code: Mapped[str] = mapped_column(String(16), default="en")

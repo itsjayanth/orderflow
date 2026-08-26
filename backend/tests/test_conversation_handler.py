@@ -68,7 +68,7 @@ class NoopNotificationChannel:
     async def notify_order_confirmed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         return True
 
-    async def notify_order_preparing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+    async def notify_order_processing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         return True
 
     async def notify_order_ready(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
@@ -92,7 +92,7 @@ class RecordingNotificationChannel:
         self.confirmed_calls.append(order_id)
         return True
 
-    async def notify_order_preparing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+    async def notify_order_processing(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         return True
 
     async def notify_order_ready(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
