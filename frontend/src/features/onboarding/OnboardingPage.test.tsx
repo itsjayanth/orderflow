@@ -4,7 +4,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from '@/shared/api/client'
-import type { OnboardingStatusOut, WhatsAppSettingsOut } from '@/shared/api/types'
+import type {
+  EmbeddedSignupConfigOut,
+  OnboardingStatusOut,
+  WhatsAppSettingsOut,
+} from '@/shared/api/types'
 
 import { OnboardingPage } from './OnboardingPage'
 import { useOnboardingWizardStore } from './onboardingWizardStore'
@@ -58,14 +62,23 @@ describe('OnboardingPage', () => {
   })
 
   it('submitting the WhatsApp form calls the update mutation with the right payload', async () => {
+    const embeddedSignupConfig: EmbeddedSignupConfigOut = {
+      app_id: '',
+      config_id: '',
+      graph_api_version: 'v21.0',
+      configured: false,
+    }
     mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
       if (path === '/api/v1/onboarding/status') return Promise.resolve(statusResponse())
+      if (path === '/api/v1/onboarding/whatsapp/embedded-signup/config')
+        return Promise.resolve(embeddedSignupConfig)
       if (path === '/api/v1/onboarding/whatsapp' && init?.method === 'PUT') {
         return Promise.resolve<WhatsAppSettingsOut>({
           phone_number_id: '1234567890',
           display_phone_number: null,
           access_token_set: true,
           connection_status: 'connected',
+          connection_method: 'manual',
         })
       }
       return Promise.reject(new Error(`Unexpected apiFetch call: ${path}`))

@@ -128,6 +128,14 @@ export interface WhatsAppSettingsOut {
   display_phone_number: string | null
   access_token_set: boolean
   connection_status: string
+  connection_method: 'manual' | 'embedded_signup' | null
+}
+
+export interface EmbeddedSignupConfigOut {
+  app_id: string
+  config_id: string
+  graph_api_version: string
+  configured: boolean
 }
 
 export interface WhatsAppTestMessageResult {

@@ -9,10 +9,16 @@ from shared.db import Base
 
 class WhatsAppBusinessAccount(Base):
     """One per Merchant (MVP single-outlet assumption), per ARCHITECTURE.md
-    Section 1. `connection_status` is set from whether phone_number_id and
-    access_token are both present, not a real Meta OAuth handshake yet --
-    the merchant pastes these values directly (a legitimate WhatsApp Cloud
-    API connection method, not just a placeholder for later)."""
+    Section 1. Two ways to populate this row, tracked by `connection_method`:
+    the merchant pastes phone_number_id + access_token directly ("manual",
+    a legitimate WhatsApp Cloud API connection method, not just a
+    placeholder for later), or they complete Meta's WhatsApp Embedded
+    Signup ("embedded_signup", see onboarding/domain/embedded_signup.py),
+    which drives the real Meta OAuth handshake and yields the same fields.
+    Everything downstream (conversation/adapters/whatsapp_client.py,
+    notifications, flows) reads phone_number_id/access_token_encrypted off
+    this row regardless of which method set them -- credential-source-
+    agnostic by construction, not by any special-casing."""
 
     __tablename__ = "whatsapp_business_accounts"
 
@@ -26,6 +32,14 @@ class WhatsAppBusinessAccount(Base):
     display_phone_number: Mapped[str | None] = mapped_column(String(32), default=None)
     access_token_encrypted: Mapped[str | None] = mapped_column(String(2048), default=None)
     token_expiry_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
+
+    # "manual" | "embedded_signup"
+    connection_method: Mapped[str] = mapped_column(String(32), default="manual")
+    # The 6-digit PIN registered against phone_number_id via the Embedded
+    # Signup setup call (POST /{phone_number_id}/register) -- Meta requires
+    # this PIN again for any future re-registration of the same number, so
+    # it's kept on file rather than only used once and discarded.
+    two_step_pin_encrypted: Mapped[str | None] = mapped_column(String(255), default=None)
 
     # "pending" | "connected" | "token_expired" | "disconnected"
     connection_status: Mapped[str] = mapped_column(String(32), default="pending")

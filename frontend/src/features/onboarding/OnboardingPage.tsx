@@ -16,6 +16,7 @@ import {
   useOnboardingStatus,
   useUpdateKitchenProfile,
 } from '@/features/onboarding/useOnboarding'
+import { EmbeddedSignupButton } from '@/features/settings/EmbeddedSignupButton'
 import { TestWhatsAppMessageCard } from '@/features/settings/TestWhatsAppMessageCard'
 import {
   useUpdateWhatsAppSettings,
@@ -160,6 +161,18 @@ function ConnectWhatsAppStep() {
 
   return (
     <>
+      <div className="max-w-md space-y-2">
+        <p className="text-muted-foreground text-sm">
+          Log into Facebook, then create or pick a Meta Business Portfolio and WhatsApp number -- no
+          copy-pasting IDs or tokens.
+        </p>
+        <EmbeddedSignupButton />
+      </div>
+
+      <div className="max-w-md border-t pt-4">
+        <p className="text-sm font-medium">Or connect manually</p>
+      </div>
+
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
         <p className="text-muted-foreground text-sm">
           Paste your WhatsApp Business phone number ID and access token. Test/dummy values work fine

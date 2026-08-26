@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { onboardingStatusQueryKey } from '@/features/onboarding/useOnboarding'
 import { apiFetch } from '@/shared/api/client'
 import type {
+  EmbeddedSignupConfigOut,
   WhatsAppFlowSetupResult,
   WhatsAppSettingsOut,
   WhatsAppTestMessageResult,
@@ -47,6 +48,35 @@ export function useSendTestWhatsAppMessage() {
         method: 'POST',
         body: JSON.stringify({ to }),
       }),
+  })
+}
+
+export function useEmbeddedSignupConfig() {
+  return useQuery({
+    queryKey: ['settings', 'whatsapp', 'embedded-signup', 'config'],
+    queryFn: () =>
+      apiFetch<EmbeddedSignupConfigOut>('/api/v1/onboarding/whatsapp/embedded-signup/config'),
+  })
+}
+
+interface CompleteEmbeddedSignupInput {
+  code: string
+  waba_id: string
+  phone_number_id: string
+}
+
+export function useCompleteEmbeddedSignup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CompleteEmbeddedSignupInput) =>
+      apiFetch<WhatsAppSettingsOut>('/api/v1/onboarding/whatsapp/embedded-signup/complete', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: onboardingStatusQueryKey })
+    },
   })
 }
 

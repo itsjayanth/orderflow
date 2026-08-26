@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     # sends in-chat (see conversation/domain/handler.py).
     frontend_base_url: str = "http://localhost:5173"
 
+    # App-level Meta credentials for WhatsApp Embedded Signup (Facebook
+    # Login for Business) -- unlike phone_number_id/access_token these are
+    # the same for every merchant (they identify *our* app to Meta, not a
+    # merchant's WABA), so they live in env vars rather than per-merchant
+    # DB rows. See onboarding/domain/embedded_signup.py.
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_configuration_id: str = ""
+    meta_graph_api_version: str = "v21.0"
+
     abandoned_order_timeout_minutes: int = 30
 
     cors_allow_origins: list[str] = ["http://localhost:5173"]

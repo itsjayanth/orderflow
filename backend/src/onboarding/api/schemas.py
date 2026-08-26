@@ -6,12 +6,37 @@ class WhatsAppSettingsOut(BaseModel):
     display_phone_number: str | None
     access_token_set: bool
     connection_status: str
+    # "manual" | "embedded_signup" | None (no account connected yet)
+    connection_method: str | None = None
 
 
 class WhatsAppSettingsUpdate(BaseModel):
     phone_number_id: str
     access_token: str
     display_phone_number: str | None = None
+
+
+class EmbeddedSignupConfigOut(BaseModel):
+    """App-level (non-secret) values the frontend needs to init Meta's
+    Facebook Login for Business JS SDK. `configured=False` means
+    META_APP_ID/META_APP_SECRET/META_CONFIGURATION_ID aren't set on this
+    deployment -- the frontend hides the "Connect WhatsApp" button rather
+    than launching a popup that can only fail."""
+
+    app_id: str
+    config_id: str
+    graph_api_version: str
+    configured: bool
+
+
+class EmbeddedSignupCompleteRequest(BaseModel):
+    code: str = Field(..., description="Auth code returned by FB.login's callback")
+    waba_id: str = Field(
+        ..., description="WABA ID captured from the SDK's WA_EMBEDDED_SIGNUP event"
+    )
+    phone_number_id: str = Field(
+        ..., description="Phone number ID captured from the SDK's WA_EMBEDDED_SIGNUP event"
+    )
 
 
 class WhatsAppTestMessageRequest(BaseModel):

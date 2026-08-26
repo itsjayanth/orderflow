@@ -16,6 +16,7 @@ import type { NotificationTemplateOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
+import { EmbeddedSignupButton } from './EmbeddedSignupButton'
 import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
@@ -181,8 +182,25 @@ function WhatsAppSettingsSection() {
         <p className="text-muted-foreground text-sm">
           Phone number ID: {data.phone_number_id ?? 'not set'} · Access token:{' '}
           {data.access_token_set ? 'configured' : 'not set'}
+          {data.connection_method && ` · Connected via ${data.connection_method.replace('_', ' ')}`}
         </p>
       )}
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium">Quick connect</h3>
+        <p className="text-muted-foreground text-xs">
+          Log into Facebook, then create or pick a Meta Business Portfolio and WhatsApp number -- no
+          copy-pasting IDs or tokens.
+        </p>
+        <EmbeddedSignupButton />
+      </div>
+
+      <div className="border-t pt-4">
+        <h3 className="text-sm font-medium">Or connect manually</h3>
+        <p className="text-muted-foreground text-xs">
+          Paste credentials from Meta's WhatsApp API Setup page directly.
+        </p>
+      </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
         <div className="space-y-2">

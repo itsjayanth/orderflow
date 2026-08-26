@@ -13,6 +13,8 @@ from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.api.schemas import (
+    EmbeddedSignupCompleteRequest,
+    EmbeddedSignupConfigOut,
     KitchenProfileOut,
     KitchenProfileUpdate,
     OnboardingStatusOut,
@@ -23,12 +25,18 @@ from onboarding.api.schemas import (
     WhatsAppTestMessageRequest,
     WhatsAppTestMessageResult,
 )
+from onboarding.domain.embedded_signup import (
+    EmbeddedSignupError,
+    complete_embedded_signup,
+    embedded_signup_configured,
+)
 from onboarding.domain.models import WhatsAppBusinessAccount
 from onboarding.domain.onboarding_service import (
     advance_after_profile_completed,
     advance_after_whatsapp_connected,
     get_checklist,
 )
+from shared.config import get_settings
 from shared.deps import CurrentTenant, DbSession
 from shared.encryption import decrypt, encrypt
 
@@ -44,12 +52,14 @@ def _whatsapp_to_out(account: WhatsAppBusinessAccount | None) -> WhatsAppSetting
             display_phone_number=None,
             access_token_set=False,
             connection_status="pending",
+            connection_method=None,
         )
     return WhatsAppSettingsOut(
         phone_number_id=account.phone_number_id,
         display_phone_number=account.display_phone_number,
         access_token_set=account.access_token_encrypted is not None,
         connection_status=account.connection_status,
+        connection_method=account.connection_method,
     )
 
 
@@ -81,6 +91,51 @@ async def update_whatsapp_settings(
         display_phone_number=body.display_phone_number,
     )
     await advance_after_whatsapp_connected(session, tenant)
+    await session.commit()
+    return _whatsapp_to_out(account)
+
+
+@router.get("/whatsapp/embedded-signup/config", response_model=EmbeddedSignupConfigOut)
+async def get_embedded_signup_config(tenant: CurrentTenant) -> EmbeddedSignupConfigOut:
+    """Non-secret, app-level values (Meta App ID isn't a secret -- it's
+    meant to be visible client-side, same as any OAuth client ID) the
+    frontend needs to init Meta's Facebook Login for Business JS SDK and
+    launch the Embedded Signup popup. `tenant` is only required so this
+    stays behind the same auth as the rest of the Settings page, not
+    because the response is merchant-specific."""
+    settings = get_settings()
+    return EmbeddedSignupConfigOut(
+        app_id=settings.meta_app_id,
+        config_id=settings.meta_configuration_id,
+        graph_api_version=settings.meta_graph_api_version,
+        configured=embedded_signup_configured(),
+    )
+
+
+@router.post("/whatsapp/embedded-signup/complete", response_model=WhatsAppSettingsOut)
+async def complete_embedded_signup_endpoint(
+    body: EmbeddedSignupCompleteRequest, tenant: CurrentTenant, session: DbSession
+) -> WhatsAppSettingsOut:
+    """Called once the frontend's Embedded Signup popup finishes (FB.login's
+    callback code + the waba_id/phone_number_id captured from the SDK's
+    WA_EMBEDDED_SIGNUP postMessage event). Does the server-side half of the
+    handshake -- code-for-token exchange, phone number registration,
+    webhook subscription -- then stores credentials on the same
+    WhatsAppBusinessAccount row the manual /whatsapp PUT writes, so both
+    connection methods work side by side."""
+    try:
+        account = await complete_embedded_signup(
+            session,
+            tenant,
+            code=body.code,
+            waba_id=body.waba_id,
+            phone_number_id=body.phone_number_id,
+        )
+    except EmbeddedSignupError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"Embedded Signup failed at '{exc.step}': {exc.detail}"
+        ) from exc
+
     await session.commit()
     return _whatsapp_to_out(account)
 

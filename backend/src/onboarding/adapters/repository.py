@@ -53,6 +53,42 @@ class WhatsAppBusinessAccountRepository:
         await self._session.flush()
         return account
 
+    async def upsert_from_embedded_signup(
+        self,
+        tenant: TenantContext,
+        *,
+        phone_number_id: str,
+        meta_waba_id: str,
+        access_token_encrypted: str,
+        display_phone_number: str | None,
+        token_expiry_at: datetime.datetime | None,
+        two_step_pin_encrypted: str,
+    ) -> WhatsAppBusinessAccount:
+        """Same shape as upsert() (manual entry), but also records
+        meta_waba_id/token_expiry_at/the registration PIN, which the manual
+        flow never collects, and marks connection_method + webhook_subscribed
+        since embedded_signup.py does the subscription itself before this
+        is called."""
+        account = await self.get(tenant)
+        if account is None:
+            account = WhatsAppBusinessAccount(merchant_id=tenant.merchant_id)
+            self._session.add(account)
+
+        account.phone_number_id = phone_number_id
+        account.meta_waba_id = meta_waba_id
+        account.access_token_encrypted = access_token_encrypted
+        account.display_phone_number = display_phone_number
+        account.token_expiry_at = token_expiry_at
+        account.two_step_pin_encrypted = two_step_pin_encrypted
+        account.connection_method = "embedded_signup"
+        account.connection_status = "connected"
+        account.webhook_subscribed = True
+        if account.connected_at is None:
+            account.connected_at = datetime.datetime.now(datetime.UTC)
+
+        await self._session.flush()
+        return account
+
     async def get_by_flow_id(self, flow_id: str) -> WhatsAppBusinessAccount | None:
         """Cross-tenant on purpose, same reason as get_by_phone_number_id --
         flows/api/router.py's data-exchange endpoint doesn't have a

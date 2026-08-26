@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from '@/shared/api/client'
 import type {
+  EmbeddedSignupConfigOut,
   NotificationTemplateOut,
   PaymentSettingsOut,
   WhatsAppSettingsOut,
@@ -32,6 +33,14 @@ const whatsappSettings: WhatsAppSettingsOut = {
   display_phone_number: null,
   access_token_set: false,
   connection_status: 'pending',
+  connection_method: null,
+}
+
+const embeddedSignupConfig: EmbeddedSignupConfigOut = {
+  app_id: '',
+  config_id: '',
+  graph_api_version: 'v21.0',
+  configured: false,
 }
 
 const defaultTemplates: NotificationTemplateOut[] = [
@@ -65,6 +74,8 @@ function mockRoutes(templates: NotificationTemplateOut[] = defaultTemplates) {
   mockedApiFetch.mockImplementation((path: string) => {
     if (path === '/api/v1/payments/settings') return Promise.resolve(paymentSettings)
     if (path === '/api/v1/onboarding/whatsapp') return Promise.resolve(whatsappSettings)
+    if (path === '/api/v1/onboarding/whatsapp/embedded-signup/config')
+      return Promise.resolve(embeddedSignupConfig)
     if (path === '/api/v1/notifications/templates') return Promise.resolve(templates)
     return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
   })
@@ -108,6 +119,8 @@ describe('SettingsPage templates section', () => {
     mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
       if (path === '/api/v1/payments/settings') return Promise.resolve(paymentSettings)
       if (path === '/api/v1/onboarding/whatsapp') return Promise.resolve(whatsappSettings)
+      if (path === '/api/v1/onboarding/whatsapp/embedded-signup/config')
+        return Promise.resolve(embeddedSignupConfig)
       if (path === '/api/v1/notifications/templates') return Promise.resolve(defaultTemplates)
       if (path === '/api/v1/notifications/templates/order_confirmed' && init?.method === 'PUT') {
         return Promise.resolve(updated)
