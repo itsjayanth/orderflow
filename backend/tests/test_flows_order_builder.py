@@ -5,7 +5,7 @@ import pytest
 
 from catalog.domain.models import Item
 from customers.domain.models import Address
-from flows.domain.menu_order import (
+from flows.domain.order_builder import (
     NoItemsSelectedError,
     build_category_screen_data,
     build_details_screen_data,
@@ -62,8 +62,8 @@ def test_build_items_screen_data_filters_to_one_category() -> None:
     data = build_items_screen_data(category="Mains", items=[mains_item, bread_item])
 
     assert data["category_name"] == "Mains"
-    assert len(data["menu_options"]) == 1
-    assert "Butter Chicken" in data["menu_options"][0]["title"]
+    assert len(data["item_options"]) == 1
+    assert "Butter Chicken" in data["item_options"][0]["title"]
 
 
 def test_build_items_screen_data_excludes_unavailable_items() -> None:
@@ -72,7 +72,7 @@ def test_build_items_screen_data_excludes_unavailable_items() -> None:
 
     data = build_items_screen_data(category="Mains", items=[available, unavailable])
 
-    assert len(data["menu_options"]) == 1
+    assert len(data["item_options"]) == 1
 
 
 def test_resolve_cart_computes_total_and_summary() -> None:

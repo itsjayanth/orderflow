@@ -9,7 +9,7 @@ from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.intents import Intent, classify
 from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import AddressRepository, CustomerRepository
-from flows.domain.menu_order import (
+from flows.domain.order_builder import (
     NoItemsSelectedError,
     build_new_delivery_address,
     parse_flow_completion,
@@ -29,7 +29,7 @@ from shared.tenant import TenantContext
 _INTENT_MENU_BUTTONS = [
     (Intent.PLACE_ORDER.value, "Place order"),
     (Intent.TRACK_ORDER.value, "Track order"),
-    (Intent.TALK_TO_RESTAURANT.value, "Talk to restaurant"),
+    (Intent.TALK_TO_RESTAURANT.value, "Talk to us"),
 ]
 
 
@@ -152,7 +152,7 @@ async def _reply_for_intent(
             phone_number_id=message.phone_number_id,
             access_token=access_token,
             to=message.from_phone,
-            body="A team member from the restaurant will reach out to you shortly.",
+            body="A team member will reach out to you shortly.",
         )
 
     return await sender.send_buttons(

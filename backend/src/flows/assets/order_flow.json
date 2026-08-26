@@ -37,8 +37,16 @@
           },
           "__example__": [
             {
-              "id": "Starters",
-              "title": "Starters"
+              "id": "Tops",
+              "title": "Tops"
+            },
+            {
+              "id": "Pharmacy",
+              "title": "Pharmacy"
+            },
+            {
+              "id": "Mains",
+              "title": "Mains"
             }
           ]
         }
@@ -86,9 +94,9 @@
       "data": {
         "category_name": {
           "type": "string",
-          "__example__": "Starters"
+          "__example__": "Tops"
         },
-        "menu_options": {
+        "item_options": {
           "type": "array",
           "items": {
             "type": "object",
@@ -107,8 +115,18 @@
           "__example__": [
             {
               "id": "11111111-1111-1111-1111-111111111111",
-              "title": "Paneer Tikka - Rs 220",
-              "description": "Starters"
+              "title": "Cotton T-Shirt - Rs 499",
+              "description": "Tops"
+            },
+            {
+              "id": "22222222-2222-2222-2222-222222222222",
+              "title": "Paracetamol 650mg - Rs 30",
+              "description": "Pharmacy"
+            },
+            {
+              "id": "33333333-3333-3333-3333-333333333333",
+              "title": "Veg Fried Rice - Rs 180",
+              "description": "Mains"
             }
           ]
         }
@@ -131,8 +149,8 @@
               {
                 "type": "CheckboxGroup",
                 "name": "selected_items",
-                "label": "Menu",
-                "data-source": "${data.menu_options}",
+                "label": "Items",
+                "data-source": "${data.item_options}",
                 "required": true
               },
               {
@@ -156,7 +174,7 @@
       "data": {
         "cart_summary": {
           "type": "string",
-          "__example__": "1x Paneer Tikka - Rs 220"
+          "__example__": "1x Cotton T-Shirt - Rs 499, 1x Paracetamol 650mg - Rs 30"
         },
         "saved_customer_name": {
           "type": "string",
@@ -354,7 +372,7 @@
       "data": {
         "final_total_text": {
           "type": "string",
-          "__example__": "1x Paneer Tikka - Rs 220"
+          "__example__": "1x Cotton T-Shirt - Rs 499, 1x Paracetamol 650mg - Rs 30"
         }
       },
       "layout": {

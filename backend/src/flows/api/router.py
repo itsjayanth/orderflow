@@ -12,7 +12,7 @@ from customers.domain.models import Customer
 from flows.api.schemas import FlowDataExchangeRequest
 from flows.domain.encryption import FlowDecryptionError, decrypt_request, encrypt_response
 from flows.domain.images import fetch_and_compress_image
-from flows.domain.menu_order import (
+from flows.domain.order_builder import (
     NoItemsSelectedError,
     build_category_screen_data,
     build_details_screen_data,

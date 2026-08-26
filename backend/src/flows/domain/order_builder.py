@@ -10,9 +10,10 @@ from ordering_flow.domain.checkout import CheckoutItem, NewDeliveryAddress
 def build_category_screen_data(*, business_name: str, items: list[Item]) -> dict[str, Any]:
     """The CATEGORY screen's `data` on Flow INIT -- distinct categories in
     first-seen catalog order (not alphabetical, so a merchant's own
-    ordering, e.g. Starters before Desserts, is preserved). A menu with
-    only one category still gets a (trivial) category screen rather than
-    special-casing straight to ITEMS -- one less branch to keep correct."""
+    ordering, e.g. Starters before Desserts, or Tops before Accessories,
+    is preserved). A catalog with only one category still gets a
+    (trivial) category screen rather than special-casing straight to
+    ITEMS -- one less branch to keep correct."""
     seen: list[str] = []
     for item in items:
         if item.is_available and item.category not in seen:
@@ -46,7 +47,7 @@ def build_items_screen_data(*, category: str, items: list[Item]) -> dict[str, An
             option["image"] = item.flow_image_base64
             option["alt-text"] = item.name
         options.append(option)
-    return {"category_name": category, "menu_options": options}
+    return {"category_name": category, "item_options": options}
 
 
 class NoItemsSelectedError(Exception):
@@ -65,7 +66,7 @@ class CartResolution:
 def resolve_cart(*, selected_item_ids: list[str], items: list[Item]) -> CartResolution:
     """Matches the ids the customer checked (strings, since CheckboxGroup
     values always round-trip as strings) back against the live catalog --
-    not against whatever the MENU screen was shown with, so a price change
+    not against whatever the ITEMS screen was shown with, so a price change
     or an item going unavailable between screens is picked up here rather
     than trusted from client state."""
     by_id = {str(item.item_id): item for item in items}

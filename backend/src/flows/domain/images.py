@@ -34,7 +34,7 @@ _USER_AGENT = "Orderflow-WhatsAppFlow/1.0 (+https://orderflow-sandbox.vercel.app
 
 
 async def fetch_and_compress_image(url: str) -> str | None:
-    """Fetches a menu item's photo (image_url) and re-encodes it as a small
+    """Fetches an item's photo (image_url) and re-encodes it as a small
     JPEG, base64-encoded, ready to embed directly as a WhatsApp Flow
     CheckboxGroup option's `image` field. Best-effort: returns None on any
     failure (unreachable URL, corrupt/unsupported image, whatever) rather

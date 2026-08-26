@@ -131,8 +131,8 @@ async def test_data_exchange_from_category_returns_filtered_items(
     decrypted = _decrypt_response(response.text, aes_key, iv)
     assert decrypted["screen"] == "ITEMS"
     assert decrypted["data"]["category_name"] == "Mains"
-    assert len(decrypted["data"]["menu_options"]) == 1
-    assert "Butter Chicken" in decrypted["data"]["menu_options"][0]["title"]
+    assert len(decrypted["data"]["item_options"]) == 1
+    assert "Butter Chicken" in decrypted["data"]["item_options"][0]["title"]
 
 
 async def test_data_exchange_from_items_returns_cart_summary_and_blank_address(
