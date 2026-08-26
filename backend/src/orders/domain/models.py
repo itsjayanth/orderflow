@@ -104,7 +104,7 @@ class OrderItem(Base):
 
     order_item_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.order_id"), index=True)
-    menu_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("menu_items.menu_item_id"))
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.item_id"))
 
     name_snapshot: Mapped[str] = mapped_column(String(255))
     price_snapshot: Mapped[Decimal] = mapped_column(Numeric(10, 2))

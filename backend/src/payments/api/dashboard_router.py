@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from ordering_flow.domain.checkout import CheckoutItem, MenuItemNotFoundError, perform_checkout
+from ordering_flow.domain.checkout import CheckoutItem, ItemNotFoundError, perform_checkout
 from payments.adapters.gateway_selector import REAL_KEY_PREFIXES
 from payments.adapters.repository import MerchantPaymentCredentialsRepository
 from payments.api.schemas import (
@@ -65,14 +65,14 @@ async def test_checkout(
             customer_whatsapp_number=body.customer_whatsapp_number,
             customer_display_name=body.customer_display_name,
             items=[
-                CheckoutItem(menu_item_id=line.menu_item_id, quantity=line.quantity)
+                CheckoutItem(item_id=line.item_id, quantity=line.quantity)
                 for line in body.items
             ],
             payment_method=body.payment_method,
             order_type=body.order_type,
             delivery_address_id=body.delivery_address_id,
         )
-    except MenuItemNotFoundError as exc:
+    except ItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
     return TestCheckoutResponse(

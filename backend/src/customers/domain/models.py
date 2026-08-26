@@ -10,7 +10,7 @@ from shared.db import Base
 class MerchantCustomerCounter(Base):
     """One row per merchant, tracking the next customer_number to hand out
     -- same pattern as orders/domain/models.py's MerchantOrderCounter and
-    catalog/domain/models.py's MerchantMenuItemCounter (see either for why
+    catalog/domain/models.py's MerchantItemCounter (see either for why
     a dedicated counter table beats MAX()+1 or a Postgres SEQUENCE here)."""
 
     __tablename__ = "merchant_customer_counters"

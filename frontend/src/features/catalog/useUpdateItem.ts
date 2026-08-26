@@ -2,12 +2,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { onboardingStatusQueryKey } from '@/features/onboarding/useOnboarding'
 import { apiFetch } from '@/shared/api/client'
-import type { MenuItem } from '@/shared/api/types'
+import type { Item } from '@/shared/api/types'
 
-import { menuItemsQueryKey } from './useMenuItems'
+import { itemsQueryKey } from './useItems'
 
-interface UpdateMenuItemInput {
-  menu_item_id: string
+interface UpdateItemInput {
+  item_id: string
   category?: string
   name?: string
   price?: string
@@ -15,16 +15,16 @@ interface UpdateMenuItemInput {
   image_url?: string
 }
 
-export function useUpdateMenuItem() {
+export function useUpdateItem() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ menu_item_id, ...body }: UpdateMenuItemInput) =>
-      apiFetch<MenuItem>(`/api/v1/catalog/items/${menu_item_id}`, {
+    mutationFn: ({ item_id, ...body }: UpdateItemInput) =>
+      apiFetch<Item>(`/api/v1/catalog/items/${item_id}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: menuItemsQueryKey })
+      queryClient.invalidateQueries({ queryKey: itemsQueryKey })
       queryClient.invalidateQueries({ queryKey: onboardingStatusQueryKey })
     },
   })

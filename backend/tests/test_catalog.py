@@ -45,7 +45,7 @@ async def test_create_then_list_menu_item(client: AsyncClient) -> None:
     assert list_response.status_code == 200
     items = list_response.json()
     assert len(items) == 1
-    assert items[0]["menu_item_id"] == created["menu_item_id"]
+    assert items[0]["item_id"] == created["item_id"]
     assert items[0]["image_url"] == "https://example.com/butter-chicken.jpg"
 
 
@@ -104,10 +104,10 @@ async def test_update_menu_item(client: AsyncClient) -> None:
         json={"category": "Mains", "name": "Butter Chicken", "price": "349.00"},
         headers=_auth_headers(tokens),
     )
-    menu_item_id = create_response.json()["menu_item_id"]
+    item_id = create_response.json()["item_id"]
 
     update_response = await client.patch(
-        f"/api/v1/catalog/items/{menu_item_id}",
+        f"/api/v1/catalog/items/{item_id}",
         json={
             "is_available": False,
             "price": "399.00",
@@ -134,7 +134,7 @@ async def test_update_nonexistent_menu_item_returns_404(client: AsyncClient) -> 
     assert response.status_code == 404
 
 
-async def test_menu_items_are_tenant_isolated(client: AsyncClient) -> None:
+async def test_items_are_tenant_isolated(client: AsyncClient) -> None:
     tokens_a = await _register(client, owner_contact="owner-a@example.com")
     tokens_b = await _register(client, owner_contact="owner-b@example.com")
 
@@ -143,7 +143,7 @@ async def test_menu_items_are_tenant_isolated(client: AsyncClient) -> None:
         json={"category": "Mains", "name": "Butter Chicken", "price": "349.00"},
         headers=_auth_headers(tokens_a),
     )
-    menu_item_id = create_response.json()["menu_item_id"]
+    item_id = create_response.json()["item_id"]
 
     # Merchant B can't see merchant A's item.
     list_response_b = await client.get("/api/v1/catalog/items", headers=_auth_headers(tokens_b))
@@ -151,7 +151,7 @@ async def test_menu_items_are_tenant_isolated(client: AsyncClient) -> None:
 
     # Merchant B can't update merchant A's item either.
     update_response_b = await client.patch(
-        f"/api/v1/catalog/items/{menu_item_id}",
+        f"/api/v1/catalog/items/{item_id}",
         json={"is_available": False},
         headers=_auth_headers(tokens_b),
     )

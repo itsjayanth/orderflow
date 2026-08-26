@@ -11,17 +11,17 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { ApiError } from '@/shared/api/client'
-import type { MenuItem } from '@/shared/api/types'
+import type { Item } from '@/shared/api/types'
 import { EmptyState } from '@/shared/components/EmptyState'
 import { ItemImage } from '@/shared/components/ItemImage'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { formatItemNumber } from '@/shared/lib/itemNumber'
 
-import { useCreateMenuItem } from './useCreateMenuItem'
-import { useMenuItems } from './useMenuItems'
-import { useUpdateMenuItem } from './useUpdateMenuItem'
+import { useCreateItem } from './useCreateItem'
+import { useItems } from './useItems'
+import { useUpdateItem } from './useUpdateItem'
 
-function matchesSearch(item: MenuItem, query: string): boolean {
+function matchesSearch(item: Item, query: string): boolean {
   const q = query.trim().toLowerCase().replace(/^#/, '')
   if (!q) return true
   return (
@@ -32,13 +32,13 @@ function matchesSearch(item: MenuItem, query: string): boolean {
   )
 }
 
-type CategorySection = { category: string; items: MenuItem[] }
+type CategorySection = { category: string; items: Item[] }
 
 // One card per category, items kept in each category's first-appearance
 // order -- the same grouping convention the customer-facing ordering
 // webview uses for its menu (see OrderingPage.tsx's groupByCategory), so
 // merchant and customer views read consistently.
-function groupByCategory(items: MenuItem[]): CategorySection[] {
+function groupByCategory(items: Item[]): CategorySection[] {
   const sections: CategorySection[] = []
   const indexByCategory = new Map<string, number>()
   for (const item of items) {
@@ -75,7 +75,7 @@ function CatalogItemRow({
   onToggleAvailability,
   onSaveImageUrl,
 }: {
-  item: MenuItem
+  item: Item
   onToggleAvailability: (checked: boolean) => void
   onSaveImageUrl: (imageUrl: string) => void
 }) {
@@ -175,9 +175,9 @@ function CatalogSectionSkeleton() {
 }
 
 export function CatalogPage() {
-  const { data: items, isLoading } = useMenuItems()
-  const createMenuItem = useCreateMenuItem()
-  const updateMenuItem = useUpdateMenuItem()
+  const { data: items, isLoading } = useItems()
+  const createItem = useCreateItem()
+  const updateItem = useUpdateItem()
   const [search, setSearch] = useState('')
 
   const {
@@ -188,7 +188,7 @@ export function CatalogPage() {
   } = useForm<AddItemForm>({ resolver: zodResolver(addItemSchema) })
 
   const onSubmit = (data: AddItemForm) => {
-    createMenuItem.mutate(
+    createItem.mutate(
       { ...data, image_url: data.image_url || undefined },
       { onSuccess: () => reset() },
     )
@@ -244,17 +244,17 @@ export function CatalogPage() {
             <div className="divide-border/60 divide-y">
               {section.items.map((item) => (
                 <CatalogItemRow
-                  key={item.menu_item_id}
+                  key={item.item_id}
                   item={item}
                   onToggleAvailability={(checked) =>
-                    updateMenuItem.mutate({
-                      menu_item_id: item.menu_item_id,
+                    updateItem.mutate({
+                      item_id: item.item_id,
                       is_available: checked,
                     })
                   }
                   onSaveImageUrl={(imageUrl) =>
-                    updateMenuItem.mutate({
-                      menu_item_id: item.menu_item_id,
+                    updateItem.mutate({
+                      item_id: item.item_id,
                       image_url: imageUrl,
                     })
                   }
@@ -303,16 +303,16 @@ export function CatalogPage() {
               )}
             </div>
 
-            {createMenuItem.isError && (
+            {createItem.isError && (
               <p className="text-destructive text-sm">
-                {createMenuItem.error instanceof ApiError
+                {createItem.error instanceof ApiError
                   ? 'Something went wrong. Please try again.'
                   : 'Something went wrong.'}
               </p>
             )}
 
-            <Button type="submit" disabled={createMenuItem.isPending}>
-              {createMenuItem.isPending ? 'Adding…' : 'Add item'}
+            <Button type="submit" disabled={createItem.isPending}>
+              {createItem.isPending ? 'Adding…' : 'Add item'}
             </Button>
           </form>
         </CardContent>

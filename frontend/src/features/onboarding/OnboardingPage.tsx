@@ -9,8 +9,8 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCreateMenuItem } from '@/features/catalog/useCreateMenuItem'
-import { useMenuItems } from '@/features/catalog/useMenuItems'
+import { useCreateItem } from '@/features/catalog/useCreateItem'
+import { useItems } from '@/features/catalog/useItems'
 import {
   useKitchenProfile,
   useOnboardingStatus,
@@ -313,7 +313,7 @@ function KitchenDetailsStep() {
   )
 }
 
-const menuItemSchema = z.object({
+const itemSchema = z.object({
   category: z.string().min(1, 'Required'),
   name: z.string().min(1, 'Required'),
   price: z
@@ -321,17 +321,17 @@ const menuItemSchema = z.object({
     .min(1, 'Required')
     .refine((value) => !Number.isNaN(Number(value)) && Number(value) > 0, 'Enter a valid price'),
 })
-type MenuItemForm = z.infer<typeof menuItemSchema>
+type ItemForm = z.infer<typeof itemSchema>
 
-function AddMenuItemStep() {
-  const { data: items } = useMenuItems()
-  const createMenuItem = useCreateMenuItem()
+function AddItemStep() {
+  const { data: items } = useItems()
+  const createItem = useCreateItem()
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<MenuItemForm>({ resolver: zodResolver(menuItemSchema) })
+  } = useForm<ItemForm>({ resolver: zodResolver(itemSchema) })
 
   return (
     <div className="max-w-md space-y-4">
@@ -345,9 +345,7 @@ function AddMenuItemStep() {
         </p>
       )}
       <form
-        onSubmit={handleSubmit((values) =>
-          createMenuItem.mutate(values, { onSuccess: () => reset() }),
-        )}
+        onSubmit={handleSubmit((values) => createItem.mutate(values, { onSuccess: () => reset() }))}
         className="space-y-4"
       >
         <div className="space-y-2">
@@ -365,11 +363,11 @@ function AddMenuItemStep() {
           <Input id="price" placeholder="349.00" {...register('price')} />
           {errors.price && <p className="text-destructive text-sm">{errors.price.message}</p>}
         </div>
-        {createMenuItem.isError && (
+        {createItem.isError && (
           <p className="text-destructive text-sm">Failed to save. Please try again.</p>
         )}
-        <Button type="submit" disabled={createMenuItem.isPending}>
-          {createMenuItem.isPending ? 'Adding…' : 'Add item & go live'}
+        <Button type="submit" disabled={createItem.isPending}>
+          {createItem.isPending ? 'Adding…' : 'Add item & go live'}
         </Button>
       </form>
     </div>
@@ -435,7 +433,7 @@ export function OnboardingPage() {
         )}
         {currentStep === 0 && <ConnectWhatsAppStep />}
         {currentStep === 1 && <KitchenDetailsStep />}
-        {currentStep === 2 && <AddMenuItemStep />}
+        {currentStep === 2 && <AddItemStep />}
         {currentStep === 3 && <LiveStep />}
       </Card>
     </div>

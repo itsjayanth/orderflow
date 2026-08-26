@@ -7,7 +7,7 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
 from orders.adapters.repository import OrderRepository
 from shared.tenant import TenantContext
@@ -39,11 +39,11 @@ async def _tenant_for(client: AsyncClient, tokens: dict) -> TenantContext:
 
 async def _seed_customer_and_item(db_session: AsyncSession, tenant: TenantContext) -> tuple:
     customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
-    return customer, menu_item
+    return customer, item
 
 
 # --- payment settings ------------------------------------------------------
@@ -101,14 +101,14 @@ async def test_checkout_online_creates_awaiting_payment_order_with_link(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    _, menu_item = await _seed_customer_and_item(db_session, tenant)
+    _, item = await _seed_customer_and_item(db_session, tenant)
 
     response = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 2}],
+            "items": [{"item_id": str(item.item_id), "quantity": 2}],
             "payment_method": "online",
         },
         headers=_auth_headers(tokens),
@@ -127,13 +127,13 @@ async def test_checkout_reuses_existing_customer_by_phone_number(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    customer, menu_item = await _seed_customer_and_item(db_session, tenant)
+    customer, item = await _seed_customer_and_item(db_session, tenant)
 
     response = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "cod",
         },
         headers=_auth_headers(tokens),
@@ -150,13 +150,13 @@ async def test_checkout_cod_creates_new_order_immediately(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    _, menu_item = await _seed_customer_and_item(db_session, tenant)
+    _, item = await _seed_customer_and_item(db_session, tenant)
 
     response = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "cod",
         },
         headers=_auth_headers(tokens),
@@ -180,7 +180,7 @@ async def test_checkout_unknown_menu_item_returns_404(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}],
+            "items": [{"item_id": str(uuid.uuid4()), "quantity": 1}],
         },
         headers=_auth_headers(tokens),
     )
@@ -197,13 +197,13 @@ async def test_checkout_menu_item_from_another_merchant_returns_404(
 
     tokens_b = await _register(client, owner_contact="owner-b@example.com")
     tenant_b = await _tenant_for(client, tokens_b)
-    _, menu_item_b = await _seed_customer_and_item(db_session, tenant_b)
+    _, item_b = await _seed_customer_and_item(db_session, tenant_b)
 
     response = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item_b.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item_b.item_id), "quantity": 1}],
         },
         headers=_auth_headers(tokens_a),
     )
@@ -232,13 +232,13 @@ async def test_webhook_marks_order_paid_and_gates_fulfillment(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    customer, menu_item = await _seed_customer_and_item(db_session, tenant)
+    customer, item = await _seed_customer_and_item(db_session, tenant)
 
     checkout = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "online",
         },
         headers=_auth_headers(tokens),
@@ -276,13 +276,13 @@ async def test_webhook_payment_failed_does_not_gate_fulfillment(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    customer, menu_item = await _seed_customer_and_item(db_session, tenant)
+    customer, item = await _seed_customer_and_item(db_session, tenant)
 
     checkout = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "online",
         },
         headers=_auth_headers(tokens),
@@ -315,13 +315,13 @@ async def test_webhook_rejects_invalid_signature(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    customer, menu_item = await _seed_customer_and_item(db_session, tenant)
+    customer, item = await _seed_customer_and_item(db_session, tenant)
 
     checkout = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "online",
         },
         headers=_auth_headers(tokens),
@@ -347,13 +347,13 @@ async def test_webhook_redelivery_is_idempotent(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    customer, menu_item = await _seed_customer_and_item(db_session, tenant)
+    customer, item = await _seed_customer_and_item(db_session, tenant)
 
     checkout = await client.post(
         "/api/v1/payments/test-checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "online",
         },
         headers=_auth_headers(tokens),
@@ -416,7 +416,7 @@ async def test_order_repository_finds_stale_awaiting_payment_orders(
         business_name="Stale Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
-    customer, menu_item = await _seed_customer_and_item(db_session, tenant)
+    customer, item = await _seed_customer_and_item(db_session, tenant)
 
     order = await OrderRepository(db_session).create(
         tenant,
@@ -426,9 +426,9 @@ async def test_order_repository_finds_stale_awaiting_payment_orders(
         payment_status="awaiting_payment",
         items=[
             OrderItemInput(
-                menu_item_id=menu_item.menu_item_id,
-                name_snapshot=menu_item.name,
-                price_snapshot=menu_item.price,
+                item_id=item.item_id,
+                name_snapshot=item.name,
+                price_snapshot=item.price,
                 quantity=1,
             )
         ],

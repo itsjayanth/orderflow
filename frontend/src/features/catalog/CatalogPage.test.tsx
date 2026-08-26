@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from '@/shared/api/client'
-import type { MenuItem } from '@/shared/api/types'
+import type { Item } from '@/shared/api/types'
 
 import { CatalogPage } from './CatalogPage'
 
@@ -18,9 +18,9 @@ vi.mock('@/shared/api/client', async () => {
 
 const mockedApiFetch = vi.mocked(apiFetch)
 
-const sampleItems: MenuItem[] = [
+const sampleItems: Item[] = [
   {
-    menu_item_id: '11111111-1111-1111-1111-111111111111',
+    item_id: '11111111-1111-1111-1111-111111111111',
     item_number: 1,
     category: 'Mains',
     name: 'Butter Chicken',
@@ -31,7 +31,7 @@ const sampleItems: MenuItem[] = [
     updated_at: '2026-01-01T00:00:00Z',
   },
   {
-    menu_item_id: '22222222-2222-2222-2222-222222222222',
+    item_id: '22222222-2222-2222-2222-222222222222',
     item_number: 2,
     category: 'Beverages',
     name: 'Mango Lassi',
@@ -124,7 +124,7 @@ describe('CatalogPage', () => {
 
     await waitFor(() =>
       expect(mockedApiFetch).toHaveBeenCalledWith(
-        `/api/v1/catalog/items/${sampleItems[0].menu_item_id}`,
+        `/api/v1/catalog/items/${sampleItems[0].item_id}`,
         {
           method: 'PATCH',
           body: JSON.stringify({ image_url: 'https://example.com/butter-chicken.jpg' }),

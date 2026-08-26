@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -57,14 +57,14 @@ async def advance_after_profile_completed(session: AsyncSession, tenant: TenantC
 
 async def try_advance_for_catalog_ready(session: AsyncSession, tenant: TenantContext) -> Merchant:
     """`catalog_ready` is gated by Catalog Service data (>=1 available
-    MenuItem) but owned by Onboarding Service (ARCHITECTURE.md Section 5:
+    Item) but owned by Onboarding Service (ARCHITECTURE.md Section 5:
     "Onboarding Service checks the gate") -- called from the catalog
     endpoints after anything that could newly satisfy the gate, and from the
     status endpoint as a fallback. `live` has no further precondition once
     `catalog_ready` is reached, so both steps cascade in one call."""
     merchant = await _require_merchant(session, tenant)
     if merchant.onboarding_status == "profile_completed":
-        available_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+        available_items = await ItemRepository(session).list(tenant, include_unavailable=False)
         if available_items:
             transition_onboarding_status(merchant, "catalog_ready")
     if merchant.onboarding_status == "catalog_ready":
@@ -76,7 +76,7 @@ async def try_advance_for_catalog_ready(session: AsyncSession, tenant: TenantCon
 async def get_checklist(session: AsyncSession, tenant: TenantContext) -> OnboardingChecklist:
     merchant = await try_advance_for_catalog_ready(session, tenant)
     waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
-    available_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+    available_items = await ItemRepository(session).list(tenant, include_unavailable=False)
 
     return OnboardingChecklist(
         onboarding_status=merchant.onboarding_status,

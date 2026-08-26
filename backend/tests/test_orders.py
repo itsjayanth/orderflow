@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from orders.adapters.repository import OrderItemInput, OrderNotFoundError, OrderRepository
@@ -66,7 +66,7 @@ async def _seed_order(
     customer = await CustomerRepository(db_session).find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
     )
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     order = await OrderRepository(db_session).create(
@@ -79,9 +79,9 @@ async def _seed_order(
         delivery_address_id=delivery_address_id,
         items=[
             OrderItemInput(
-                menu_item_id=menu_item.menu_item_id,
-                name_snapshot=menu_item.name,
-                price_snapshot=menu_item.price,
+                item_id=item.item_id,
+                name_snapshot=item.name,
+                price_snapshot=item.price,
                 quantity=2,
             )
         ],
@@ -419,7 +419,7 @@ async def test_update_order_notes_and_contact_phone_independently(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     """Sending only one field must not clobber the other (exclude_unset
-    semantics, same as CustomerRepository.update / MenuItemRepository.update)."""
+    semantics, same as CustomerRepository.update / ItemRepository.update)."""
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
     order = await _seed_order(db_session, tenant)

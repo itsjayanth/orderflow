@@ -40,7 +40,7 @@ async def fetch_and_compress_image(url: str) -> str | None:
     failure (unreachable URL, corrupt/unsupported image, whatever) rather
     than raising -- a missing photo shouldn't block an item from being
     orderable. Callers cache the result (catalog/domain/models.py's
-    MenuItem.flow_image_base64) rather than calling this on every Flow
+    Item.flow_image_base64) rather than calling this on every Flow
     screen load, since it's a real network fetch plus CPU-bound resize."""
     try:
         async with httpx.AsyncClient(

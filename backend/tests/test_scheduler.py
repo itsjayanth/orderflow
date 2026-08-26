@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
@@ -24,7 +24,7 @@ async def test_sweep_cancels_abandoned_orders_but_not_recent_ones(
 ) -> None:
     tenant = await _make_tenant(db_session)
     customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     order_repo = OrderRepository(db_session)
@@ -32,9 +32,9 @@ async def test_sweep_cancels_abandoned_orders_but_not_recent_ones(
     def _items() -> list[OrderItemInput]:
         return [
             OrderItemInput(
-                menu_item_id=menu_item.menu_item_id,
-                name_snapshot=menu_item.name,
-                price_snapshot=menu_item.price,
+                item_id=item.item_id,
+                name_snapshot=item.name,
+                price_snapshot=item.price,
                 quantity=1,
             )
         ]

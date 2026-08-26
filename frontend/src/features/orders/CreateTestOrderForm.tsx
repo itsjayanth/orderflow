@@ -13,14 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useMenuItems } from '@/features/catalog/useMenuItems'
+import { useItems } from '@/features/catalog/useItems'
 
 import { useTestCheckout } from './useTestCheckout'
 
 const schema = z.object({
   customer_whatsapp_number: z.string().min(1, 'Required'),
   customer_display_name: z.string().optional(),
-  menu_item_id: z.string().min(1, 'Pick an item'),
+  item_id: z.string().min(1, 'Pick an item'),
   quantity: z.number().int().min(1),
   payment_method: z.enum(['online', 'cod']),
 })
@@ -28,7 +28,7 @@ type FormValues = z.infer<typeof schema>
 
 export function CreateTestOrderForm() {
   const [open, setOpen] = useState(false)
-  const { data: menuItems } = useMenuItems()
+  const { data: items } = useItems()
   const checkout = useTestCheckout()
   const {
     register,
@@ -54,7 +54,7 @@ export function CreateTestOrderForm() {
       {
         customer_whatsapp_number: values.customer_whatsapp_number,
         customer_display_name: values.customer_display_name || undefined,
-        items: [{ menu_item_id: values.menu_item_id, quantity: values.quantity }],
+        items: [{ item_id: values.item_id, quantity: values.quantity }],
         payment_method: values.payment_method,
       },
       { onSuccess: () => reset({ quantity: 1, payment_method: 'online' }) },
@@ -99,18 +99,18 @@ export function CreateTestOrderForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="menu_item_id">Item</Label>
+        <Label htmlFor="item_id">Item</Label>
         <Controller
-          name="menu_item_id"
+          name="item_id"
           control={control}
           render={({ field }) => (
             <Select value={field.value} onValueChange={field.onChange}>
-              <SelectTrigger id="menu_item_id" onBlur={field.onBlur}>
+              <SelectTrigger id="item_id" onBlur={field.onBlur}>
                 <SelectValue placeholder="Select an item…" />
               </SelectTrigger>
               <SelectContent>
-                {menuItems?.map((item) => (
-                  <SelectItem key={item.menu_item_id} value={item.menu_item_id}>
+                {items?.map((item) => (
+                  <SelectItem key={item.item_id} value={item.item_id}>
                     {item.name} (INR {item.price})
                   </SelectItem>
                 ))}
@@ -118,10 +118,8 @@ export function CreateTestOrderForm() {
             </Select>
           )}
         />
-        {errors.menu_item_id && (
-          <p className="text-destructive text-sm">{errors.menu_item_id.message}</p>
-        )}
-        {menuItems?.length === 0 && (
+        {errors.item_id && <p className="text-destructive text-sm">{errors.item_id.message}</p>}
+        {items?.length === 0 && (
           <p className="text-muted-foreground text-sm">Add a menu item in Catalog first.</p>
         )}
       </div>

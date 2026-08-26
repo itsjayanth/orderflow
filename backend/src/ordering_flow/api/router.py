@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
@@ -12,12 +12,12 @@ from ordering_flow.api.schemas import (
     OrderingFlowCheckoutRequest,
     OrderingFlowCheckoutResponse,
     OrderingFlowCustomerLookupOut,
-    PublicMenuItemOut,
+    PublicItemOut,
     PublicMenuOut,
 )
 from ordering_flow.domain.checkout import (
     CheckoutItem,
-    MenuItemNotFoundError,
+    ItemNotFoundError,
     NewDeliveryAddress,
     perform_checkout,
 )
@@ -41,11 +41,11 @@ async def get_public_menu(merchant_id: uuid.UUID, session: DbSession) -> PublicM
     Section 6, in place of a live WhatsApp Flow connection) loads."""
     merchant = await _get_merchant_or_404(session, merchant_id)
     tenant = TenantContext(merchant_id=merchant.merchant_id)
-    items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+    items = await ItemRepository(session).list(tenant, include_unavailable=False)
     waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
     return PublicMenuOut(
         business_name=merchant.business_name,
-        items=[PublicMenuItemOut.model_validate(item) for item in items],
+        items=[PublicItemOut.model_validate(item) for item in items],
         merchant_whatsapp_number=waba.display_phone_number if waba else None,
     )
 
@@ -113,7 +113,7 @@ async def checkout(
             customer_whatsapp_number=body.customer_whatsapp_number,
             customer_display_name=body.customer_display_name,
             items=[
-                CheckoutItem(menu_item_id=line.menu_item_id, quantity=line.quantity)
+                CheckoutItem(item_id=line.item_id, quantity=line.quantity)
                 for line in body.items
             ],
             payment_method=body.payment_method,
@@ -121,7 +121,7 @@ async def checkout(
             new_delivery_address=new_delivery_address,
             contact_phone=body.contact_phone,
         )
-    except MenuItemNotFoundError as exc:
+    except ItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
     return OrderingFlowCheckoutResponse(

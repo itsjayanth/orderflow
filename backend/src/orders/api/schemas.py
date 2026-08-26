@@ -12,7 +12,7 @@ FulfillmentStatus = Literal["new", "preparing", "ready", "completed", "cancelled
 
 class OrderItemOut(BaseModel):
     order_item_id: uuid.UUID
-    menu_item_id: uuid.UUID
+    item_id: uuid.UUID
     name_snapshot: str
     price_snapshot: Decimal
     quantity: int

@@ -16,7 +16,7 @@ class PaymentSettingsUpdate(BaseModel):
 
 
 class TestCheckoutItem(BaseModel):
-    menu_item_id: uuid.UUID
+    item_id: uuid.UUID
     quantity: int
 
 

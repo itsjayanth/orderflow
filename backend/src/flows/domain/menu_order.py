@@ -2,19 +2,19 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from catalog.domain.models import MenuItem
+from catalog.domain.models import Item
 from customers.domain.models import Address
 from ordering_flow.domain.checkout import CheckoutItem, NewDeliveryAddress
 
 
-def build_category_screen_data(*, business_name: str, menu_items: list[MenuItem]) -> dict[str, Any]:
+def build_category_screen_data(*, business_name: str, items: list[Item]) -> dict[str, Any]:
     """The CATEGORY screen's `data` on Flow INIT -- distinct categories in
     first-seen catalog order (not alphabetical, so a merchant's own
     ordering, e.g. Starters before Desserts, is preserved). A menu with
     only one category still gets a (trivial) category screen rather than
     special-casing straight to ITEMS -- one less branch to keep correct."""
     seen: list[str] = []
-    for item in menu_items:
+    for item in items:
         if item.is_available and item.category not in seen:
             seen.append(item.category)
     return {
@@ -23,7 +23,7 @@ def build_category_screen_data(*, business_name: str, menu_items: list[MenuItem]
     }
 
 
-def build_items_screen_data(*, category: str, menu_items: list[MenuItem]) -> dict[str, Any]:
+def build_items_screen_data(*, category: str, items: list[Item]) -> dict[str, Any]:
     """The ITEMS screen's `data`, filtered to one category -- one
     CheckboxGroup option per available item in it. Flow JSON layouts are a
     static component tree, but a component's `data-source` array can be
@@ -34,11 +34,11 @@ def build_items_screen_data(*, category: str, menu_items: list[MenuItem]) -> dic
     slow/failed fetch for one item degrades gracefully rather than blocking
     the whole category."""
     options = []
-    for item in menu_items:
+    for item in items:
         if not (item.is_available and item.category == category):
             continue
         option: dict[str, Any] = {
-            "id": str(item.menu_item_id),
+            "id": str(item.item_id),
             "title": f"{item.name} - Rs {item.price}",
             "description": item.category,
         }
@@ -62,13 +62,13 @@ class CartResolution:
     summary_text: str
 
 
-def resolve_cart(*, selected_item_ids: list[str], menu_items: list[MenuItem]) -> CartResolution:
+def resolve_cart(*, selected_item_ids: list[str], items: list[Item]) -> CartResolution:
     """Matches the ids the customer checked (strings, since CheckboxGroup
     values always round-trip as strings) back against the live catalog --
     not against whatever the MENU screen was shown with, so a price change
     or an item going unavailable between screens is picked up here rather
     than trusted from client state."""
-    by_id = {str(item.menu_item_id): item for item in menu_items}
+    by_id = {str(item.item_id): item for item in items}
     checkout_items: list[CheckoutItem] = []
     lines: list[str] = []
     total = Decimal("0")
@@ -77,7 +77,7 @@ def resolve_cart(*, selected_item_ids: list[str], menu_items: list[MenuItem]) ->
         item = by_id.get(raw_id)
         if item is None or not item.is_available:
             continue
-        checkout_items.append(CheckoutItem(menu_item_id=item.menu_item_id, quantity=1))
+        checkout_items.append(CheckoutItem(item_id=item.item_id, quantity=1))
         lines.append(f"1x {item.name} - Rs {item.price}")
         total += item.price
 

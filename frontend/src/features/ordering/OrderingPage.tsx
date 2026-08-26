@@ -19,7 +19,7 @@ import {
 import { Sheet } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/shared/api/client'
-import type { OrderingFlowCustomerLookupOut, PublicMenuItemOut } from '@/shared/api/types'
+import type { OrderingFlowCustomerLookupOut, PublicItemOut } from '@/shared/api/types'
 import { ItemImage } from '@/shared/components/ItemImage'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 
@@ -97,9 +97,9 @@ type CheckoutForm = z.infer<typeof checkoutSchema>
 
 type Cart = Record<string, number>
 
-type MenuSection = { category: string; items: PublicMenuItemOut[] }
+type MenuSection = { category: string; items: PublicItemOut[] }
 
-function groupByCategory(items: PublicMenuItemOut[]): MenuSection[] {
+function groupByCategory(items: PublicItemOut[]): MenuSection[] {
   const sections: MenuSection[] = []
   const indexByCategory = new Map<string, number>()
   for (const item of items) {
@@ -186,7 +186,7 @@ function CartRow({
   quantity,
   onChange,
 }: {
-  item: PublicMenuItemOut
+  item: PublicItemOut
   quantity: number
   onChange: (quantity: number) => void
 }) {
@@ -342,11 +342,11 @@ export function OrderingPage() {
     () =>
       Object.entries(cart)
         .filter(([, quantity]) => quantity > 0)
-        .map(([menuItemId, quantity]) => {
-          const item = menu?.items.find((i) => i.menu_item_id === menuItemId)
+        .map(([itemId, quantity]) => {
+          const item = menu?.items.find((i) => i.item_id === itemId)
           return item ? { item, quantity } : null
         })
-        .filter((line): line is { item: PublicMenuItemOut; quantity: number } => line !== null),
+        .filter((line): line is { item: PublicItemOut; quantity: number } => line !== null),
     [cart, menu],
   )
 
@@ -400,7 +400,7 @@ export function OrderingPage() {
       payment_method: values.payment_method,
       order_type: values.order_type,
       items: cartLines.map((line) => ({
-        menu_item_id: line.item.menu_item_id,
+        item_id: line.item.item_id,
         quantity: line.quantity,
       })),
       contact_phone:
@@ -529,11 +529,11 @@ export function OrderingPage() {
               <Card className="divide-border overflow-hidden py-0">
                 {section.items.map((item) => (
                   <CartRow
-                    key={item.menu_item_id}
+                    key={item.item_id}
                     item={item}
-                    quantity={cart[item.menu_item_id] ?? 0}
+                    quantity={cart[item.item_id] ?? 0}
                     onChange={(quantity) =>
-                      setCart((prev) => ({ ...prev, [item.menu_item_id]: quantity }))
+                      setCart((prev) => ({ ...prev, [item.item_id]: quantity }))
                     }
                   />
                 ))}
@@ -851,11 +851,11 @@ export function OrderingPage() {
           <div className="-mx-1">
             {cartLines.map(({ item, quantity }) => (
               <CartRow
-                key={item.menu_item_id}
+                key={item.item_id}
                 item={item}
                 quantity={quantity}
                 onChange={(nextQuantity) =>
-                  setCart((prev) => ({ ...prev, [item.menu_item_id]: nextQuantity }))
+                  setCart((prev) => ({ ...prev, [item.item_id]: nextQuantity }))
                 }
               />
             ))}

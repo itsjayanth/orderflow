@@ -6,7 +6,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
 from conversation.domain.webhook_parser import InboundMessage
@@ -131,7 +131,7 @@ async def test_catalog_ready_and_live_cascade_once_gate_is_met(db_session: Async
     merchant = await try_advance_for_catalog_ready(db_session, tenant)
     assert merchant.onboarding_status == "profile_completed"
 
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
 
@@ -147,10 +147,10 @@ async def test_catalog_ready_gate_ignores_unavailable_items(db_session: AsyncSes
     merchant.kitchen_address_line1 = "1 MG Road"
     await advance_after_profile_completed(db_session, tenant)
 
-    item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
-    await MenuItemRepository(db_session).update(tenant, item.menu_item_id, is_available=False)
+    await ItemRepository(db_session).update(tenant, item.item_id, is_available=False)
 
     merchant = await try_advance_for_catalog_ready(db_session, tenant)
 

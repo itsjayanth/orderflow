@@ -37,7 +37,7 @@ const sampleMenu: PublicMenuOut = {
   business_name: 'Test Kitchen',
   items: [
     {
-      menu_item_id: '22222222-2222-2222-2222-222222222222',
+      item_id: '22222222-2222-2222-2222-222222222222',
       category: 'Mains',
       name: 'Butter Chicken',
       price: '349.00',
@@ -51,14 +51,14 @@ const multiCategoryMenu: PublicMenuOut = {
   business_name: 'Test Kitchen',
   items: [
     {
-      menu_item_id: '22222222-2222-2222-2222-222222222222',
+      item_id: '22222222-2222-2222-2222-222222222222',
       category: 'Mains',
       name: 'Butter Chicken',
       price: '349.00',
       image_url: null,
     },
     {
-      menu_item_id: '44444444-4444-4444-4444-444444444444',
+      item_id: '44444444-4444-4444-4444-444444444444',
       category: 'Desserts',
       name: 'Gulab Jamun',
       price: '99.00',

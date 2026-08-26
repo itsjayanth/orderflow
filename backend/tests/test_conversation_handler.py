@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
 from conversation.domain.intents import Intent
@@ -262,7 +262,7 @@ async def test_track_order_with_existing_order_shows_status(db_session: AsyncSes
     from notifications import wiring
 
     merchant, tenant = await _seed_connected_merchant(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
 
@@ -277,7 +277,7 @@ async def test_track_order_with_existing_order_shows_status(db_session: AsyncSes
             db_session,
             tenant,
             customer_whatsapp_number="919876543210",
-            items=[CheckoutItem(menu_item_id=menu_item.menu_item_id, quantity=1)],
+            items=[CheckoutItem(item_id=item.item_id, quantity=1)],
             payment_method="cod",
         )
     finally:
@@ -296,14 +296,14 @@ async def test_flow_completion_creates_cod_order(db_session: AsyncSession) -> No
     from notifications import wiring
 
     _, tenant = await _seed_connected_merchant(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     sender = FakeSender()
     message = _inbound(
         from_phone="919876543210",
         flow_response={
-            "selected_items": [str(menu_item.menu_item_id)],
+            "selected_items": [str(item.item_id)],
             "order_type": "pickup",
             "payment_method": "cod",
         },
@@ -340,14 +340,14 @@ async def test_flow_completion_online_payment_includes_payment_link(
     from notifications import wiring
 
     _, tenant = await _seed_connected_merchant(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     sender = FakeSender()
     message = _inbound(
         from_phone="919876543210",
         flow_response={
-            "selected_items": [str(menu_item.menu_item_id)],
+            "selected_items": [str(item.item_id)],
             "order_type": "pickup",
             "payment_method": "online",
         },
@@ -399,7 +399,7 @@ async def test_flow_completion_stores_name_and_alternate_contact_phone(
     from notifications import wiring
 
     _, tenant = await _seed_connected_merchant(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     sender = FakeSender()
@@ -407,7 +407,7 @@ async def test_flow_completion_stores_name_and_alternate_contact_phone(
         from_phone="919876543210",
         from_name="WhatsApp Profile Name",
         flow_response={
-            "selected_items": [str(menu_item.menu_item_id)],
+            "selected_items": [str(item.item_id)],
             "order_type": "pickup",
             "payment_method": "cod",
             "customer_name": "Ravi Kumar",
@@ -443,7 +443,7 @@ async def test_flow_completion_delivery_address_choice_same_reuses_saved_address
     from notifications import wiring
 
     _, tenant = await _seed_connected_merchant(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
@@ -463,7 +463,7 @@ async def test_flow_completion_delivery_address_choice_same_reuses_saved_address
     message = _inbound(
         from_phone="919876543210",
         flow_response={
-            "selected_items": [str(menu_item.menu_item_id)],
+            "selected_items": [str(item.item_id)],
             "order_type": "delivery",
             "payment_method": "cod",
             "customer_name": "Ravi Kumar",
@@ -498,7 +498,7 @@ async def test_flow_completion_delivery_address_choice_new_creates_fresh_address
     from notifications import wiring
 
     _, tenant = await _seed_connected_merchant(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
@@ -518,7 +518,7 @@ async def test_flow_completion_delivery_address_choice_new_creates_fresh_address
     message = _inbound(
         from_phone="919876543210",
         flow_response={
-            "selected_items": [str(menu_item.menu_item_id)],
+            "selected_items": [str(item.item_id)],
             "order_type": "delivery",
             "payment_method": "cod",
             "address_choice": "new",

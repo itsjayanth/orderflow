@@ -52,8 +52,8 @@ export interface CustomerWithAddressesOut extends CustomerOut {
   addresses: AddressOut[]
 }
 
-export interface MenuItem {
-  menu_item_id: string
+export interface Item {
+  item_id: string
   item_number: number
   category: string
   name: string
@@ -68,7 +68,7 @@ export type FulfillmentStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'c
 
 export interface OrderItemOut {
   order_item_id: string
-  menu_item_id: string
+  item_id: string
   name_snapshot: string
   price_snapshot: string
   quantity: number
@@ -187,8 +187,8 @@ export interface TestCheckoutResponse {
   payment_link_url: string | null
 }
 
-export interface PublicMenuItemOut {
-  menu_item_id: string
+export interface PublicItemOut {
+  item_id: string
   category: string
   name: string
   price: string
@@ -197,7 +197,7 @@ export interface PublicMenuItemOut {
 
 export interface PublicMenuOut {
   business_name: string
-  items: PublicMenuItemOut[]
+  items: PublicItemOut[]
   merchant_whatsapp_number: string | null
 }
 

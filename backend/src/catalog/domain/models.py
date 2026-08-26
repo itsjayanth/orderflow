@@ -8,13 +8,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.db import Base
 
 
-class MerchantMenuItemCounter(Base):
+class MerchantItemCounter(Base):
     """One row per merchant, tracking the next item_number to hand out --
     same pattern as orders/domain/models.py's MerchantOrderCounter (see its
     docstring for why a dedicated counter table beats MAX()+1 or a Postgres
     SEQUENCE here)."""
 
-    __tablename__ = "merchant_menu_item_counters"
+    __tablename__ = "merchant_item_counters"
 
     merchant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("merchants.merchant_id"), primary_key=True
@@ -22,11 +22,11 @@ class MerchantMenuItemCounter(Base):
     next_item_number: Mapped[int] = mapped_column(default=1)
 
 
-class MenuItem(Base):
-    __tablename__ = "menu_items"
+class Item(Base):
+    __tablename__ = "items"
     __table_args__ = (UniqueConstraint("merchant_id", "item_number"),)
 
-    menu_item_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
     # Human-facing sequential reference (per merchant, starts at 1, never
     # reused/reset) -- shown in the dashboard catalog table and usable as a

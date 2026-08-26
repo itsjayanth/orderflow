@@ -4,7 +4,7 @@ from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
 from orders.domain.events import OrderConfirmedCOD, publish
@@ -21,15 +21,15 @@ from payments.adapters.repository import (
 from shared.tenant import TenantContext
 
 
-class MenuItemNotFoundError(Exception):
-    def __init__(self, menu_item_id: uuid.UUID) -> None:
-        super().__init__(f"Menu item {menu_item_id} not found")
-        self.menu_item_id = menu_item_id
+class ItemNotFoundError(Exception):
+    def __init__(self, item_id: uuid.UUID) -> None:
+        super().__init__(f"Menu item {item_id} not found")
+        self.item_id = item_id
 
 
 @dataclass(frozen=True, slots=True)
 class CheckoutItem:
-    menu_item_id: uuid.UUID
+    item_id: uuid.UUID
     quantity: int
 
 
@@ -111,17 +111,17 @@ async def perform_checkout(
         )
         delivery_address_id = address.address_id
 
-    menu_repo = MenuItemRepository(session)
+    item_repo = ItemRepository(session)
     item_inputs: list[OrderItemInput] = []
     for line in items:
-        menu_item = await menu_repo.get(tenant, line.menu_item_id)
-        if menu_item is None:
-            raise MenuItemNotFoundError(line.menu_item_id)
+        item = await item_repo.get(tenant, line.item_id)
+        if item is None:
+            raise ItemNotFoundError(line.item_id)
         item_inputs.append(
             OrderItemInput(
-                menu_item_id=menu_item.menu_item_id,
-                name_snapshot=menu_item.name,
-                price_snapshot=menu_item.price,
+                item_id=item.item_id,
+                name_snapshot=item.name,
+                price_snapshot=item.price,
                 quantity=line.quantity,
             )
         )

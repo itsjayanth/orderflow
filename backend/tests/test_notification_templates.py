@@ -4,7 +4,7 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from notifications.adapters.repository import NotificationTemplateRepository
@@ -78,7 +78,7 @@ async def _seed_order(db_session: AsyncSession):
     customer = await CustomerRepository(db_session).find_or_create(
         tenant, "919876543210", display_name="Asha"
     )
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     order = await OrderRepository(db_session).create(
@@ -90,9 +90,9 @@ async def _seed_order(db_session: AsyncSession):
         fulfillment_status="new",
         items=[
             OrderItemInput(
-                menu_item_id=menu_item.menu_item_id,
-                name_snapshot=menu_item.name,
-                price_snapshot=menu_item.price,
+                item_id=item.item_id,
+                name_snapshot=item.name,
+                price_snapshot=item.price,
                 quantity=1,
             )
         ],

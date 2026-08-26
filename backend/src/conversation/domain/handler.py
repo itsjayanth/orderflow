@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from conversation.adapters.repository import MessageDedupeRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.intents import Intent, classify
@@ -191,10 +191,10 @@ async def _handle_flow_completion(
     assert message.flow_response is not None  # narrows for mypy; caller already checked
 
     submission = parse_flow_completion(message.flow_response)
-    menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+    items = await ItemRepository(session).list(tenant, include_unavailable=False)
 
     try:
-        cart = resolve_cart(selected_item_ids=submission.selected_item_ids, menu_items=menu_items)
+        cart = resolve_cart(selected_item_ids=submission.selected_item_ids, items=items)
     except NoItemsSelectedError:
         return await sender.send_text(
             phone_number_id=message.phone_number_id,

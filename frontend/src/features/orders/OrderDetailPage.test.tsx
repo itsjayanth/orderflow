@@ -42,7 +42,7 @@ const sampleOrder: OrderDetailOut = {
   items: [
     {
       order_item_id: '33333333-3333-3333-3333-333333333333',
-      menu_item_id: '44444444-4444-4444-4444-444444444444',
+      item_id: '44444444-4444-4444-4444-444444444444',
       name_snapshot: 'Butter Chicken',
       price_snapshot: '349.00',
       quantity: 1,
