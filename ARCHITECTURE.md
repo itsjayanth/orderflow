@@ -1,6 +1,6 @@
 # Orderflow — System Architecture (MVP)
 
-This document describes the system architecture for the WhatsApp Order-to-Kitchen MVP, as scoped in `docs/project-brief.txt`. It is stack-agnostic — no language, framework, or vendor SDK is prescribed. The goal is a design simple enough to build and pilot with 1-2 real restaurants, while staying multi-tenant-safe from day one and keeping the Order model open to a Phase 2 POS sync (Petpooja) without restructuring.
+This document describes the system architecture for the WhatsApp Commerce Platform MVP, as scoped in `docs/project-brief.txt`. It is stack-agnostic — no language, framework, or vendor SDK is prescribed. The goal is a design simple enough to build and pilot with 1-2 real restaurants, while staying multi-tenant-safe from day one and keeping the Order model open to a Phase 2 POS sync (Petpooja) without restructuring.
 
 > **Update note (this revision):** adds full merchant onboarding (register → login → Meta/WhatsApp connection → kitchen details → menu), a concrete customer ordering experience (in-chat structured "mini UI" browse/cart/checkout, WhatsApp-Flow-style — the Bangalore Metro-ticket-booking pattern), Cash-on-Delivery as a second payment path alongside the online payment link, and a first-class Customer/Address record. These go beyond what `docs/project-brief.txt` spells out line-by-line — see **Section 11: Deviations from the original brief** for exactly what's new vs. what's just detail added to something the brief left vague.
 
@@ -14,7 +14,7 @@ Every other tenant-scoped table traces back to a `merchant_id`. This is the tena
 - `business_name`, `legal_name` (optional)
 - `owner_contact` (phone/email used at registration)
 - `onboarding_status` — see Section 5 state machine
-- `kitchen_details`: `address` (line1/line2/city/pincode, geo optional), `cuisine_type`, `fssai_license_no` (optional)
+- business details: `business_address_line1`/`business_address_line2`/`business_city`/`business_pincode`, `business_category`, `license_no` (optional)
 - `status` (active / inactive / suspended)
 - `created_at` / `updated_at`
 
@@ -35,8 +35,8 @@ Created during onboarding's "Meta token setup" + "WhatsApp account setup" steps.
 - `webhook_subscribed` (bool)
 - `connected_at`
 
-### MenuItem
-- `menu_item_id`, `merchant_id` (FK)
+### Item
+- `item_id`, `merchant_id` (FK)
 - `category`, `name`, `price`, `is_available`
 - `external_pos_item_id` (nullable — Phase 2 seam, unused now)
 - `created_at` / `updated_at`
@@ -67,7 +67,7 @@ Central entity, kept POS-integration-friendly (Phase 2 seam fields below) and �
 - `created_at` / `updated_at`
 
 ### OrderItem
-- `order_item_id`, `order_id` (FK), `menu_item_id` (FK, traceability)
+- `order_item_id`, `order_id` (FK), `item_id` (FK, traceability)
 - `name_snapshot`, `price_snapshot`, `quantity`, `line_total`
 
 ### PaymentEvent
@@ -88,7 +88,7 @@ Append-only audit trail of `fulfillment_status` transitions only (payment transi
 - `notified_customer` (bool)
 - `changed_at`
 
-**Why this shape survives Phase 2 POS sync:** `Order` and `MenuItem` each carry a nullable `external_pos_*_id`. `OrderStatusEvent.changed_by` already accepts a system actor, so a future POS webhook pushing "Preparing" is the same code path a staff tap uses today. Nothing needs renaming to add Phase 2.
+**Why this shape survives Phase 2 POS sync:** `Order` and `Item` each carry a nullable `external_pos_*_id`. `OrderStatusEvent.changed_by` already accepts a system actor, so a future POS webhook pushing "Processing" is the same code path a staff tap uses today. Nothing needs renaming to add Phase 2.
 
 ---
 
@@ -112,7 +112,7 @@ Enforcement is structural, not a convention every engineer has to remember:
 | **Onboarding Service** | `Merchant.onboarding_status` state machine; Meta embedded-signup/token exchange; creates & updates `WhatsAppBusinessAccount` | Runtime chat handling, catalog content (delegates to Catalog Service for the menu step) |
 | **WhatsApp Conversation Handler** | Runtime chat orchestration: greeting, intent routing, launching the Ordering Flow UI, resolving tenant from `phone_number_id` | Menu data, order/payment logic, customer/address persistence — all delegated |
 | **Ordering Flow UI** (WhatsApp Flow or embedded webview — see Section 6) | The in-chat structured browse → cart → checkout experience and its data-exchange endpoint | Business rules — it calls Catalog/Customer/Order Service for everything, doesn't decide validity itself |
-| **Catalog Service** | `MenuItem` CRUD, availability | Pricing at order time (snapshotted by Order Service into `OrderItem`) |
+| **Catalog Service** | `Item` CRUD, availability | Pricing at order time (snapshotted by Order Service into `OrderItem`) |
 | **Customer Service** | `Customer` and `Address` CRUD — the "customer database" the merchant sees | Order history logic (Order Service owns that; Customer Service just serves profile/address lookups) |
 | **Order Service** | `Order`/`OrderItem` lifecycle, both state machines (Section 7), the only writer of `payment_status`/`fulfillment_status` | Talking to the payment provider or WhatsApp directly — reacts to Payment Service outcomes, delegates outbound messages to Notification Service |
 | **Payment Service** | Payment-link creation, webhook verification, idempotent `PaymentEvent` writes (online); recording `cod_selected`/`cod_collected` events (COD) | Deciding what happens to the order after a payment event — emits the fact, Order Service reacts |
@@ -156,8 +156,8 @@ Stack-agnostic, but these are the structural patterns any implementation should 
 | `registered` | Owner submits business name + contact + password; Identity & Access Service creates `Merchant` + owner `StaffUser` | Identity & Access Service |
 | `meta_connected` | Meta embedded signup / token exchange completes; `WhatsAppBusinessAccount` row created with encrypted token | Onboarding Service |
 | `whatsapp_verified` | Phone number verified and webhook subscription confirmed (`connection_status = connected`) | Onboarding Service |
-| `profile_completed` | Kitchen details saved (address, cuisine, FSSAI optional) on `Merchant` | Onboarding Service (writes to Merchant) |
-| `catalog_ready` | At least one category and one available `MenuItem` exist | Catalog Service (Onboarding Service checks the gate) |
+| `profile_completed` | Business details saved (address, business category, license number optional) on `Merchant` | Onboarding Service (writes to Merchant) |
+| `catalog_ready` | At least one category and one available `Item` exist | Catalog Service (Onboarding Service checks the gate) |
 | `live` | All above complete | Onboarding Service — this is the gate the Conversation Handler checks before treating inbound chats as order-capable |
 
 See the flow diagram in Section 9.
@@ -180,7 +180,7 @@ The Bangalore-Metro-ticket-booking-style experience you referenced is best imple
    - **COD**: Ordering Flow hands the cart to Order Service, which creates the `Order` directly with `payment_status = cod_pending`, `fulfillment_status = new` — no gateway round trip, order is immediately actionable by the kitchen.
 7. Either branch: **Order Service** publishes an `OrderConfirmed`-class domain event → **Notification Service** sends *"Order confirmed! We'll let you know when it's ready."*
 8. Order (with items, customer, and address if applicable) is now visible in **Merchant Dashboard UI**, and the `Customer`/`Address` records are persisted for future orders (repeat customers reuse saved addresses).
-9. Staff advances `fulfillment_status` (`new → preparing → ready → completed`) from the dashboard; per brief, the `ready` transition (minimum) triggers a WhatsApp message back to the customer. For **COD orders**, staff marks `cod_collected` (a `PaymentEvent`) at handover — this is manual and does not block fulfillment progress.
+9. Staff advances `fulfillment_status` (`new → processing → ready → completed`) from the dashboard; per brief, the `ready` transition (minimum) triggers a WhatsApp message back to the customer. For **COD orders**, staff marks `cod_collected` (a `PaymentEvent`) at handover — this is manual and does not block fulfillment progress.
 
 ### Failure paths (see also Section 8)
 - **Online payment fails/abandoned**: `payment_status → payment_failed` (webhook) or times out and is swept to `cancelled` (no webhook at all, background job) — order never reaches the kitchen.
@@ -209,15 +209,15 @@ Only `Payment Service`-verified events (or a staff tap for `cod_collected`) may 
 
 ### 7b. `fulfillment_status`
 
-`new → preparing → ready → completed`, plus `* → cancelled` (staff-initiated, any point before `completed`).
+`new → processing → ready → completed`, plus `* → cancelled` (staff-initiated, any point before `completed`).
 
 Gate: `fulfillment_status` starts at `new` the moment `payment_status` reaches `paid` **or** `cod_pending` — i.e. as soon as the order is either paid online or the customer has committed to COD. This is the one place the two state machines interact.
 
 | Transition | Trigger | Notifies customer? |
 |---|---|---|
 | `(none) → new` | `payment_status` reaches `paid` or `cod_pending` | Covered by the payment-side "Order confirmed!" above |
-| `new → preparing` | Staff taps in dashboard | Optional |
-| `preparing → ready` | Staff taps in dashboard | **Yes** — brief: minimum required |
+| `new → processing` | Staff taps in dashboard | Optional |
+| `processing → ready` | Staff taps in dashboard | **Yes** — brief: minimum required |
 | `ready → completed` | Staff taps in dashboard | Recommended (brief says "at minimum Ready/Completed" — see Section 11 open question) |
 | `* → cancelled` | Staff cancels | Recommended |
 
@@ -239,6 +239,8 @@ Order Service is the only writer of both fields and rejects any transition not i
 - **COD bypasses this integration entirely** — `provider = "cod"` in `PaymentEvent` exists only for audit symmetry, no external call is made.
 
 **Phase 2 seam — POS integration (Petpooja, later UrbanPiper).** Not built now. A future **POS Sync Service** subscribes to the same domain events Notification Service already consumes; on `OrderConfirmed`-class events it pushes the order to Petpooja's order-injection API and stores the id in `Order.external_pos_order_id`. Reverse-direction status pushes from Petpooja would call Order Service's existing transition path with `changed_by = "system:petpooja"`. Additive only — no migration needed, per the seam fields already in Section 1.
+
+Note this is a **restaurant-vertical-specific optional integration**, not a universal Phase 2 assumption for every merchant on the platform: Petpooja/UrbanPiper are food-service POS/KDS systems, so this seam only matters for restaurant tenants that use one. A non-restaurant vertical has no equivalent Phase 2 obligation — the seam fields (`external_pos_*_id`) simply stay unused for those tenants, same as they do for any restaurant that hasn't adopted a POS.
 
 ---
 
@@ -318,7 +320,7 @@ flowchart TD
     H --> I[Step 2: Verify WhatsApp number<br/>+ subscribe webhook]
     I --> J{Verified?}
     J -- No --> I
-    J -- Yes --> K[Step 3: Kitchen details<br/>address, cuisine, FSSAI optional]
+    J -- Yes --> K[Step 3: Business details<br/>address, business category, license optional]
     K --> L[Step 4: Menu and pricing<br/>add categories + items]
     L --> M{At least 1 category<br/>and 1 available item?}
     M -- No --> L
@@ -335,7 +337,7 @@ flowchart TD
     C --> D{Customer intent}
     D -- Place an order --> E[Bot launches Ordering Flow<br/>in-chat structured UI]
     D -- Track existing order --> T[Order status lookup<br/>by phone number]
-    D -- Talk to restaurant --> H[Hand off / show contact info]
+    D -- Talk to us --> H[Hand off / show contact info]
     E --> F[Browse menu, add items to cart]
     F --> G[Review cart + total]
     G --> I{Order type}
@@ -389,7 +391,7 @@ flowchart TD
 **Assumptions:**
 5. Customers are scoped per-merchant (`merchant_id` + `whatsapp_number` unique), not a global identity across restaurants.
 6. Abandoned online-payment orders need a timeout/expiry sweep — duration not specified by the brief. **Needs a decision**: e.g. 30 min vs 2 hours.
-7. Both `preparing→ready` and `ready→completed` are modeled as capable of notifying the customer; brief says "at minimum Ready/Completed" without fully disambiguating. **Needs a decision**: notify on both or just one.
+7. Both `processing→ready` and `ready→completed` are modeled as capable of notifying the customer; brief says "at minimum Ready/Completed" without fully disambiguating. **Needs a decision**: notify on both or just one.
 8. Single currency, no tax/discount modeling — `subtotal`/`total` are equal for MVP, kept separate only so tax logic has somewhere to go later.
 9. `Merchant Dashboard UI` and `Merchant Dashboard API` are one web app (brief confirms responsive web is sufficient, no native app).
 
