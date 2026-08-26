@@ -76,13 +76,13 @@ export function ChatMockup() {
           <ChatBubble from="them">
             Namaste! 👋 Here's today's menu — tap an item to add it to your order.
           </ChatBubble>
-          <MenuChip name="Veg Thali" price="₹220" />
-          <MenuChip name="Masala Dosa" price="₹120" />
-          <ChatBubble from="me">Added Veg Thali ×1 to cart</ChatBubble>
+          <MenuChip name="Classic Combo" price="₹220" />
+          <MenuChip name="Deluxe Pack" price="₹120" />
+          <ChatBubble from="me">Added Classic Combo ×1 to cart</ChatBubble>
           <ChatBubble from="them">
             <span className="font-medium">Order summary</span>
             <br />
-            1× Veg Thali — ₹220
+            1× Classic Combo — ₹220
             <br />
             <span className="font-semibold">Total: ₹220</span>
           </ChatBubble>

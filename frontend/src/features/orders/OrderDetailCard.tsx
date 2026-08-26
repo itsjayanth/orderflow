@@ -226,7 +226,7 @@ export function OrderDetailCard({
               <TableCell className="text-sm">{capitalize(order.order_type)}</TableCell>
             </TableRow>
             <TableRow>
-              <FieldLabel>Kitchen status</FieldLabel>
+              <FieldLabel>Order status</FieldLabel>
               <TableCell>
                 {order.fulfillment_status ? (
                   <StatusBadge status={order.fulfillment_status} />

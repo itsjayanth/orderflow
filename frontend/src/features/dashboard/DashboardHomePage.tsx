@@ -99,7 +99,7 @@ export function DashboardHomePage() {
       label: 'Processing',
       status: 'processing',
       count: summary?.processing_orders ?? 0,
-      hint: 'In the kitchen right now',
+      hint: 'In progress right now',
     },
     {
       label: 'Ready',
@@ -138,7 +138,7 @@ export function DashboardHomePage() {
             <div>
               <p className="font-medium">Finish setting up your restaurant</p>
               <p className="text-muted-foreground text-sm">
-                Connect WhatsApp, add your kitchen details, and list a menu item to start taking
+                Connect WhatsApp, add your business details, and list a menu item to start taking
                 orders.
               </p>
             </div>

@@ -5,6 +5,7 @@ import {
   CreditCard,
   LayoutDashboard,
   MessageCircle,
+  Package,
   Percent,
   ShieldCheck,
   ShoppingCart,
@@ -12,7 +13,6 @@ import {
   SmartphoneNfc,
   Sparkles,
   Store,
-  UtensilsCrossed,
   X,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
@@ -35,7 +35,7 @@ import { DashboardPreview } from './components/DashboardPreview'
 
 const TRUST_POINTS: { icon: ComponentType<{ className?: string }>; label: string }[] = [
   { icon: SmartphoneNfc, label: 'No app for customers to install' },
-  { icon: Store, label: 'Works alongside your kitchen setup' },
+  { icon: Store, label: 'Works alongside how you already run your business' },
   { icon: ShieldCheck, label: 'Payments verified before orders confirm' },
 ]
 
@@ -94,8 +94,8 @@ const DASHBOARD_FEATURES: {
       'Move an order forward and Orderflow messages the customer on WhatsApp automatically — no separate notification step.',
   },
   {
-    icon: UtensilsCrossed,
-    title: 'Menu & catalog control',
+    icon: Package,
+    title: 'Catalog control',
     description:
       'Add items, update prices, and mark things out of stock. Changes reflect in the WhatsApp catalog immediately.',
   },
@@ -156,9 +156,9 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
       'No. The entire ordering experience — browsing the menu, building a cart, paying, and getting status updates — happens inside WhatsApp, which almost every customer already has open.',
   },
   {
-    question: 'Does this replace my POS or kitchen setup?',
+    question: 'Does this replace my existing systems?',
     answer:
-      'No. Paid orders land in one clear dashboard your staff act on manually today — nothing about your kitchen workflow has to change to get started. POS integration (Petpooja) is on the roadmap for restaurants that want it later, not a requirement now.',
+      'No. Paid orders land in one clear dashboard your staff act on manually today — nothing about your existing workflow has to change to get started. POS integration (Petpooja) is on the roadmap for restaurants that want it later, not a requirement now.',
   },
   {
     question: 'How does payment actually work?',
@@ -171,7 +171,7 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
       'Yes. As your staff move an order forward on the dashboard, Orderflow automatically messages the customer on WhatsApp — at minimum when it’s ready — so nobody has to send that update by hand.',
   },
   {
-    question: 'Is my restaurant’s data kept separate from others?',
+    question: 'Is my business’s data kept separate from others?',
     answer:
       'Yes. Every restaurant’s orders, menu, and customers are isolated from every other restaurant on the platform, and sensitive credentials like your WhatsApp and payment keys are encrypted at rest.',
   },

@@ -273,7 +273,7 @@ export function CatalogPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="category">Category</Label>
-              <Input id="category" placeholder="Mains" {...register('category')} />
+              <Input id="category" placeholder="e.g. Category" {...register('category')} />
               {errors.category && (
                 <p className="text-destructive text-sm">{errors.category.message}</p>
               )}
@@ -281,7 +281,7 @@ export function CatalogPage() {
 
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input id="name" placeholder="Butter Chicken" {...register('name')} />
+              <Input id="name" placeholder="e.g. Product name" {...register('name')} />
               {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
             </div>
 

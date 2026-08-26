@@ -1,13 +1,20 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Check, Info } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCreateItem } from '@/features/catalog/useCreateItem'
 import { useItems } from '@/features/catalog/useItems'
@@ -28,7 +35,7 @@ import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { useOnboardingWizardStore } from './onboardingWizardStore'
 
-const STEP_LABELS = ['Connect WhatsApp', 'Kitchen details', 'Add a menu item', 'Go live'] as const
+const STEP_LABELS = ['Connect WhatsApp', 'Business details', 'Add a menu item', 'Go live'] as const
 
 // The wizard's displayed step is driven by Merchant.onboarding_status (the
 // server-side source of truth, per IMPLEMENTATION_PLAN.md's Phase 8 note),
@@ -232,6 +239,14 @@ function ConnectWhatsAppStep() {
   )
 }
 
+const BUSINESS_CATEGORY_OPTIONS = [
+  'Restaurant',
+  'Retail / Clothing',
+  'Auto Parts',
+  'Pharmacy',
+  'Other',
+] as const
+
 const profileSchema = z.object({
   address_line1: z.string().min(1, 'Required'),
   address_line2: z.string().optional(),
@@ -242,12 +257,13 @@ const profileSchema = z.object({
 })
 type ProfileForm = z.infer<typeof profileSchema>
 
-function KitchenDetailsStep() {
+function BusinessDetailsStep() {
   const { data } = useBusinessProfile()
   const update = useUpdateBusinessProfile()
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -289,11 +305,24 @@ function KitchenDetailsStep() {
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="business_category">Cuisine type</Label>
-        <Input
-          id="business_category"
-          placeholder="North Indian, South Indian, ..."
-          {...register('business_category')}
+        <Label htmlFor="business_category">Business category</Label>
+        <Controller
+          name="business_category"
+          control={control}
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger id="business_category" onBlur={field.onBlur}>
+                <SelectValue placeholder="Select a category…" />
+              </SelectTrigger>
+              <SelectContent>
+                {BUSINESS_CATEGORY_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         />
         {errors.business_category && (
           <p className="text-destructive text-sm">{errors.business_category.message}</p>
@@ -350,12 +379,12 @@ function AddItemStep() {
       >
         <div className="space-y-2">
           <Label htmlFor="category">Category</Label>
-          <Input id="category" placeholder="Mains" {...register('category')} />
+          <Input id="category" placeholder="e.g. Category" {...register('category')} />
           {errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}
         </div>
         <div className="space-y-2">
           <Label htmlFor="name">Item name</Label>
-          <Input id="name" placeholder="Butter Chicken" {...register('name')} />
+          <Input id="name" placeholder="e.g. Product name" {...register('name')} />
           {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
         </div>
         <div className="space-y-2">
@@ -417,7 +446,7 @@ export function OnboardingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Onboarding"
-        description="Connect WhatsApp, add your kitchen details, and list at least one menu item to go live."
+        description="Connect WhatsApp, add your business details, and list at least one menu item to go live."
       />
 
       <Stepper current={currentStep} furthestReached={serverStep} onSelect={setStep} />
@@ -432,7 +461,7 @@ export function OnboardingPage() {
           </div>
         )}
         {currentStep === 0 && <ConnectWhatsAppStep />}
-        {currentStep === 1 && <KitchenDetailsStep />}
+        {currentStep === 1 && <BusinessDetailsStep />}
         {currentStep === 2 && <AddItemStep />}
         {currentStep === 3 && <LiveStep />}
       </Card>

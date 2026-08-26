@@ -90,6 +90,32 @@ describe('OnboardingPage', () => {
     )
   })
 
+  it('shows a business category selector on the Business details step', async () => {
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path === '/api/v1/onboarding/status') {
+        return Promise.resolve(
+          statusResponse({ onboarding_status: 'whatsapp_verified', whatsapp_connected: true }),
+        )
+      }
+      if (path === '/api/v1/onboarding/profile') {
+        return Promise.resolve({
+          address_line1: null,
+          address_line2: null,
+          city: null,
+          pincode: null,
+          business_category: null,
+          license_no: null,
+        })
+      }
+      return Promise.reject(new Error(`Unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Business details')).toBeInTheDocument()
+    expect(screen.getByText('Select a category…')).toBeInTheDocument()
+  })
+
   it('shows the live confirmation once onboarding_status is live', async () => {
     mockedApiFetch.mockResolvedValueOnce(
       statusResponse({
