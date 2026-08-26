@@ -39,6 +39,17 @@ class WhatsAppSender(Protocol):
         cta: str,
     ) -> bool: ...
 
+    async def send_list(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        button_text: str,
+        rows: list[tuple[str, str]],  # (id, title)
+    ) -> bool: ...
+
 
 class GraphApiWhatsAppSender:
     """Real WhatsApp Cloud API client. Every call is best-effort: a failed
@@ -161,6 +172,36 @@ class GraphApiWhatsAppSender:
                             # the button is sent with "data_exchange" here.
                             "flow_action": "data_exchange",
                         },
+                    },
+                },
+            },
+        )
+
+    async def send_list(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        button_text: str,
+        rows: list[tuple[str, str]],
+    ) -> bool:
+        return await self._post(
+            phone_number_id,
+            access_token,
+            {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "interactive",
+                "interactive": {
+                    "type": "list",
+                    "body": {"text": body},
+                    "action": {
+                        "button": button_text,
+                        "sections": [
+                            {"rows": [{"id": row_id, "title": title} for row_id, title in rows]}
+                        ],
                     },
                 },
             },

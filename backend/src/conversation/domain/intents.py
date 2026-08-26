@@ -6,6 +6,16 @@ class Intent(StrEnum):
     TRACK_ORDER = "track_order"
     TALK_TO_RESTAURANT = "talk_to_restaurant"
     GREETING = "greeting"
+    # Button-driven, like the other menu intents above -- classify() maps
+    # the "FAQs" button's id straight to this via the generic button_id
+    # lookup below, no keyword list needed.
+    FAQ_MENU = "faq_menu"
+    # Reported on HandledMessage when a reply was resolved to a specific
+    # stored FAQItem (either a confident keyword match on free text, or a
+    # tap on a FAQ list-message row) -- never returned by classify() itself,
+    # since that requires a tenant-scoped DB lookup classify() deliberately
+    # doesn't do (see handler.py).
+    FAQ = "faq"
     # Reported on HandledMessage when an inbound message is a completed
     # WhatsApp Flow submission (InboundMessage.flow_response is set) --
     # never returned by classify(), which only sees text/button messages.

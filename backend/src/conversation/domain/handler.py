@@ -9,6 +9,8 @@ from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.intents import Intent, classify
 from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import AddressRepository, CustomerRepository
+from faq.adapters.repository import FAQItemRepository
+from faq.domain.models import FAQItem
 from flows.domain.menu_order import (
     NoItemsSelectedError,
     build_new_delivery_address,
@@ -30,7 +32,13 @@ _INTENT_MENU_BUTTONS = [
     (Intent.PLACE_ORDER.value, "Place order"),
     (Intent.TRACK_ORDER.value, "Track order"),
     (Intent.TALK_TO_RESTAURANT.value, "Talk to restaurant"),
+    (Intent.FAQ_MENU.value, "FAQs"),
 ]
+
+# WhatsApp interactive list messages cap out at 10 rows -- both the "browse
+# every FAQ" menu and the "did you mean" disambiguation list stay under it.
+_FAQ_MENU_MAX_ROWS = 10
+_FAQ_DISAMBIGUATION_MAX_ROWS = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +90,37 @@ async def handle_inbound_message(
         reply_sent = await _handle_flow_completion(session, sender, waba, tenant, message)
         return HandledMessage(intent=Intent.FLOW_ORDER_COMPLETED, reply_sent=reply_sent)
 
+    # A tap on a FAQ list-message row (either the full FAQ_MENU listing or
+    # the "did you mean" disambiguation list below) comes back as a
+    # button_id, but it's a FAQItem's id, not one of the fixed intent
+    # button ids classify() knows about -- resolve it here, before
+    # classify(), so it doesn't just fall through to the greeting menu.
+    faq_item = await _faq_item_for_button(session, tenant, message.button_id)
+    if faq_item is not None:
+        reply_sent = await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=_access_token(waba),
+            to=message.from_phone,
+            body=faq_item.answer_text,
+        )
+        return HandledMessage(intent=Intent.FAQ, reply_sent=reply_sent)
+
     intent = classify(text=message.text, button_id=message.button_id)
+
+    if intent == Intent.FAQ_MENU:
+        reply_sent = await _send_faq_menu(session, sender, waba, tenant, message)
+        return HandledMessage(intent=intent, reply_sent=reply_sent)
+
+    # classify() falls back to GREETING both for unrecognized free text and
+    # for "no text at all" -- only the former is worth checking against the
+    # merchant's FAQs, so this stays narrower than `intent == GREETING`
+    # alone (excludes button taps too, since those already had their shot
+    # at a specific intent above).
+    if intent == Intent.GREETING and message.button_id is None and (message.text or "").strip():
+        faq_reply_sent = await _try_faq_text_match(session, sender, waba, tenant, message)
+        if faq_reply_sent is not None:
+            return HandledMessage(intent=Intent.FAQ, reply_sent=faq_reply_sent)
+
     reply_sent = await _reply_for_intent(
         session, sender, waba, tenant, message, intent, customer.customer_id, merchant.business_name
     )
@@ -100,7 +138,7 @@ async def _reply_for_intent(
     customer_id: uuid.UUID,
     business_name: str,
 ) -> bool:
-    access_token = decrypt(waba.access_token_encrypted) if waba.access_token_encrypted else ""
+    access_token = _access_token(waba)
 
     if intent == Intent.PLACE_ORDER:
         if waba.whatsapp_flow_id:
@@ -172,6 +210,94 @@ def _track_order_reply(recent_orders: list[Order]) -> str:
     return f"Your most recent order is currently: {status}"
 
 
+def _access_token(waba: WhatsAppBusinessAccount) -> str:
+    return decrypt(waba.access_token_encrypted) if waba.access_token_encrypted else ""
+
+
+async def _faq_item_for_button(
+    session: AsyncSession, tenant: TenantContext, button_id: str | None
+) -> FAQItem | None:
+    """A FAQ list-message row's id is a FAQItem's own uuid, not one of the
+    fixed intent button ids -- an unparseable or unknown id here just means
+    "this button tap wasn't a FAQ row", not an error, so both cases return
+    None and let the caller fall through to normal intent classification."""
+    if button_id is None:
+        return None
+    try:
+        faq_item_id = uuid.UUID(button_id)
+    except ValueError:
+        return None
+    faq_item = await FAQItemRepository(session).get(tenant, faq_item_id)
+    if faq_item is None or not faq_item.is_active:
+        return None
+    return faq_item
+
+
+async def _send_faq_menu(
+    session: AsyncSession,
+    sender: WhatsAppSender,
+    waba: WhatsAppBusinessAccount,
+    tenant: TenantContext,
+    message: InboundMessage,
+) -> bool:
+    items = await FAQItemRepository(session).list(tenant, include_inactive=False)
+    access_token = _access_token(waba)
+    if not items:
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body="No FAQs have been added yet.",
+        )
+    rows = [(str(item.faq_item_id), item.question_text) for item in items[:_FAQ_MENU_MAX_ROWS]]
+    return await sender.send_list(
+        phone_number_id=message.phone_number_id,
+        access_token=access_token,
+        to=message.from_phone,
+        body="Here are some frequently asked questions:",
+        button_text="View FAQs",
+        rows=rows,
+    )
+
+
+async def _try_faq_text_match(
+    session: AsyncSession,
+    sender: WhatsAppSender,
+    waba: WhatsAppBusinessAccount,
+    tenant: TenantContext,
+    message: InboundMessage,
+) -> bool | None:
+    """Returns None (never sent anything) when nothing matched, so the
+    caller can fall through to the existing greeting/intent-menu reply
+    exactly as it did before this feature existed."""
+    assert message.text is not None  # caller already checked
+    matches = await FAQItemRepository(session).match(tenant, message.text)
+    if not matches:
+        return None
+
+    access_token = _access_token(waba)
+    if len(matches) == 1:
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body=matches[0].answer_text,
+        )
+
+    rows = [
+        (str(item.faq_item_id), item.question_text)
+        for item in matches[:_FAQ_DISAMBIGUATION_MAX_ROWS]
+    ]
+    return await sender.send_list(
+        phone_number_id=message.phone_number_id,
+        access_token=access_token,
+        to=message.from_phone,
+        body="Did you mean one of these?",
+        button_text="Choose one",
+        rows=rows,
+    )
+
+
 async def _handle_flow_completion(
     session: AsyncSession,
     sender: WhatsAppSender,
@@ -187,7 +313,7 @@ async def _handle_flow_completion(
     perform_checkout the public ordering webview calls, so a Flow order and
     a webview order become indistinguishable the moment they're an Order
     row -- no separate order-creation path to keep in sync."""
-    access_token = decrypt(waba.access_token_encrypted) if waba.access_token_encrypted else ""
+    access_token = _access_token(waba)
     assert message.flow_response is not None  # narrows for mypy; caller already checked
 
     submission = parse_flow_completion(message.flow_response)

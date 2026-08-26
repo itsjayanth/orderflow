@@ -5,7 +5,7 @@ from conversation.domain.intents import Intent, classify
 
 @pytest.mark.parametrize(
     "button_id",
-    ["place_order", "track_order", "talk_to_restaurant"],
+    ["place_order", "track_order", "talk_to_restaurant", "faq_menu"],
 )
 def test_button_reply_maps_directly_to_intent(button_id: str) -> None:
     assert classify(text=None, button_id=button_id) == Intent(button_id)

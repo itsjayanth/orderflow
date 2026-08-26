@@ -9,6 +9,7 @@ from conversation.domain.handler import handle_inbound_message
 from conversation.domain.intents import Intent
 from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import AddressRepository, CustomerRepository
+from faq.adapters.repository import FAQItemRepository
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.domain.checkout import CheckoutItem, perform_checkout
@@ -22,6 +23,7 @@ class FakeSender(WhatsAppSender):
         self.text_calls: list[dict] = []
         self.button_calls: list[dict] = []
         self.flow_calls: list[dict] = []
+        self.list_calls: list[dict] = []
         self._flow_send_succeeds = flow_send_succeeds
 
     async def send_text(
@@ -62,6 +64,19 @@ class FakeSender(WhatsAppSender):
             {"to": to, "flow_id": flow_id, "flow_token": flow_token, "body": body}
         )
         return self._flow_send_succeeds
+
+    async def send_list(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        button_text: str,
+        rows: list[tuple[str, str]],
+    ) -> bool:
+        self.list_calls.append({"to": to, "body": body, "button_text": button_text, "rows": rows})
+        return True
 
 
 class NoopNotificationChannel:
@@ -158,7 +173,7 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
     assert len(sender.button_calls) == 1
     assert "Test Kitchen" in sender.button_calls[0]["body"]
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
-    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+    assert button_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
 
 
 async def test_greeting_creates_customer_record(db_session: AsyncSession) -> None:
@@ -546,3 +561,154 @@ async def test_flow_completion_delivery_address_choice_new_creates_fresh_address
     assert orders[0].delivery_address_id in {a.address_id for a in addresses}
     new_address = next(a for a in addresses if a.line1 == "45 Residency Road")
     assert orders[0].delivery_address_id == new_address.address_id
+
+
+# --- FAQ ---
+
+
+async def test_unrecognized_text_with_strong_faq_match_sends_answer(
+    db_session: AsyncSession,
+) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    await FAQItemRepository(db_session).create(
+        tenant,
+        question_text="Where are you located?",
+        answer_text="We're at 12 MG Road, Bengaluru.",
+        keywords=["location", "address", "where"],
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(text="hey what's your location")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FAQ
+    assert result.reply_sent is True
+    assert sender.text_calls == [
+        {"to": message.from_phone, "body": "We're at 12 MG Road, Bengaluru."}
+    ]
+    # Not the greeting/intent menu -- a FAQ answer was sent instead.
+    assert sender.button_calls == []
+
+
+async def test_unrecognized_text_with_no_faq_match_falls_back_to_greeting_menu(
+    db_session: AsyncSession,
+) -> None:
+    """Unrecognized free text with zero FAQ matches still falls through to
+    the existing greeting/intent-menu behavior, unchanged -- the FAQ
+    feature must never make an unmatched message go unanswered."""
+    _, tenant = await _seed_connected_merchant(db_session)
+    await FAQItemRepository(db_session).create(
+        tenant,
+        question_text="Where are you located?",
+        answer_text="We're at 12 MG Road, Bengaluru.",
+        keywords=["location", "address", "where"],
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(text="asdkfjhaskdjf")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.GREETING
+    assert result.reply_sent is True
+    assert len(sender.button_calls) == 1
+    assert sender.text_calls == []
+    assert sender.list_calls == []
+
+
+async def test_unrecognized_text_with_close_matches_sends_disambiguation_list(
+    db_session: AsyncSession,
+) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    faq_repo = FAQItemRepository(db_session)
+    delivery = await faq_repo.create(
+        tenant,
+        question_text="Do you deliver?",
+        answer_text="Yes, we deliver within 5km.",
+        keywords=["deliver", "delivery", "area"],
+    )
+    timing = await faq_repo.create(
+        tenant,
+        question_text="What are your delivery timings?",
+        answer_text="We deliver 11am-11pm.",
+        keywords=["deliver", "delivery", "timings"],
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(text="what's your delivery area and timings")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FAQ
+    assert result.reply_sent is True
+    assert sender.text_calls == []
+    assert len(sender.list_calls) == 1
+    row_ids = {row[0] for row in sender.list_calls[0]["rows"]}
+    assert row_ids == {str(delivery.faq_item_id), str(timing.faq_item_id)}
+
+
+async def test_faq_menu_button_sends_list_of_active_faqs(db_session: AsyncSession) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    faq_repo = FAQItemRepository(db_session)
+    active = await faq_repo.create(
+        tenant,
+        question_text="Where are you located?",
+        answer_text="12 MG Road.",
+        keywords=["where"],
+    )
+    inactive = await faq_repo.create(
+        tenant, question_text="Old question?", answer_text="Old answer.", keywords=["old"]
+    )
+    await faq_repo.update(tenant, inactive.faq_item_id, is_active=False)
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(button_id="faq_menu")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FAQ_MENU
+    assert result.reply_sent is True
+    assert len(sender.list_calls) == 1
+    row_ids = {row[0] for row in sender.list_calls[0]["rows"]}
+    assert row_ids == {str(active.faq_item_id)}
+
+
+async def test_faq_menu_with_no_active_faqs_sends_text_instead_of_empty_list(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(button_id="faq_menu")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FAQ_MENU
+    assert sender.list_calls == []
+    assert "No FAQs" in sender.text_calls[0]["body"]
+
+
+async def test_tapping_faq_list_row_returns_stored_answer(db_session: AsyncSession) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    faq_item = await FAQItemRepository(db_session).create(
+        tenant,
+        question_text="Where are you located?",
+        answer_text="We're at 12 MG Road, Bengaluru.",
+        keywords=["where"],
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(button_id=str(faq_item.faq_item_id))
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FAQ
+    assert result.reply_sent is True
+    assert sender.text_calls == [
+        {"to": message.from_phone, "body": "We're at 12 MG Road, Bengaluru."}
+    ]
