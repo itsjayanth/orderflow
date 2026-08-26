@@ -26,11 +26,17 @@ from shared.config import get_settings
 from shared.encryption import decrypt
 from shared.tenant import TenantContext
 
-_INTENT_MENU_BUTTONS = [
-    (Intent.PLACE_ORDER.value, "Place order"),
-    (Intent.TRACK_ORDER.value, "Track order"),
-    (Intent.TALK_TO_RESTAURANT.value, "Talk to restaurant"),
-]
+
+def _menu_options(appointment_booking_enabled: bool) -> list[tuple[str, str]]:
+    """WhatsApp's interactive "button" message type is capped at 3 buttons
+    by Meta -- appointment booking, when enabled, is what pushes the menu
+    to 4 options, which is why the final "show the menu" branch below
+    switches to send_list once len(options) > 3."""
+    options = [(Intent.PLACE_ORDER.value, "Place order"), (Intent.TRACK_ORDER.value, "Track order")]
+    if appointment_booking_enabled:
+        options.append((Intent.BOOK_APPOINTMENT.value, "Book appointment"))
+    options.append((Intent.TALK_TO_RESTAURANT.value, "Talk to restaurant"))
+    return options
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +90,15 @@ async def handle_inbound_message(
 
     intent = classify(text=message.text, button_id=message.button_id)
     reply_sent = await _reply_for_intent(
-        session, sender, waba, tenant, message, intent, customer.customer_id, merchant.business_name
+        session,
+        sender,
+        waba,
+        tenant,
+        message,
+        intent,
+        customer.customer_id,
+        merchant.business_name,
+        merchant.appointment_booking_enabled,
     )
 
     return HandledMessage(intent=intent, reply_sent=reply_sent)
@@ -99,6 +113,7 @@ async def _reply_for_intent(
     intent: Intent,
     customer_id: uuid.UUID,
     business_name: str,
+    appointment_booking_enabled: bool,
 ) -> bool:
     access_token = decrypt(waba.access_token_encrypted) if waba.access_token_encrypted else ""
 
@@ -147,6 +162,15 @@ async def _reply_for_intent(
             body=_track_order_reply(recent_orders),
         )
 
+    if intent == Intent.BOOK_APPOINTMENT and appointment_booking_enabled:
+        booking_link = f"{get_settings().frontend_base_url}/book/{tenant.merchant_id}"
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body=f"Book your appointment here: {booking_link}",
+        )
+
     if intent == Intent.TALK_TO_RESTAURANT:
         return await sender.send_text(
             phone_number_id=message.phone_number_id,
@@ -155,12 +179,27 @@ async def _reply_for_intent(
             body="A team member from the restaurant will reach out to you shortly.",
         )
 
+    # Reaches here for Intent.GREETING, plus Intent.BOOK_APPOINTMENT when
+    # the merchant hasn't enabled the feature -- a customer typing "book
+    # appointment" for a merchant that never turned it on just sees the
+    # normal menu, same as any other unrecognized/unavailable request.
+    options = _menu_options(appointment_booking_enabled)
+    body = f"Hi! Welcome to {business_name}. What would you like to do?"
+    if len(options) > 3:
+        return await sender.send_list(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body=body,
+            button_label="Menu",
+            options=options,
+        )
     return await sender.send_buttons(
         phone_number_id=message.phone_number_id,
         access_token=access_token,
         to=message.from_phone,
-        body=f"Hi! Welcome to {business_name}. What would you like to do?",
-        buttons=_INTENT_MENU_BUTTONS,
+        body=body,
+        buttons=options,
     )
 
 

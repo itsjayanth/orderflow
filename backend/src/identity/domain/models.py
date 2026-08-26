@@ -35,6 +35,13 @@ class Merchant(Base):
     kitchen_pincode: Mapped[str | None] = mapped_column(String(16), default=None)
     cuisine_type: Mapped[str | None] = mapped_column(String(120), default=None)
     fssai_license_no: Mapped[str | None] = mapped_column(String(64), default=None)
+
+    # Per-merchant toggle for the Appointment Booking feature
+    # (appointments/, appointment_flow/) -- default OFF so existing
+    # restaurant merchant behavior is byte-for-byte unchanged until a
+    # merchant opts in from the dashboard Settings page.
+    appointment_booking_enabled: Mapped[bool] = mapped_column(default=False)
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC)
     )

@@ -22,6 +22,7 @@ class FakeSender(WhatsAppSender):
         self.text_calls: list[dict] = []
         self.button_calls: list[dict] = []
         self.flow_calls: list[dict] = []
+        self.list_calls: list[dict] = []
         self._flow_send_succeeds = flow_send_succeeds
 
     async def send_text(
@@ -62,6 +63,21 @@ class FakeSender(WhatsAppSender):
             {"to": to, "flow_id": flow_id, "flow_token": flow_token, "body": body}
         )
         return self._flow_send_succeeds
+
+    async def send_list(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        button_label: str,
+        options: list[tuple[str, str]],
+    ) -> bool:
+        self.list_calls.append(
+            {"to": to, "body": body, "button_label": button_label, "options": options}
+        )
+        return True
 
 
 class NoopNotificationChannel:
@@ -157,6 +173,75 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
     assert result.reply_sent is True
     assert len(sender.button_calls) == 1
     assert "Test Kitchen" in sender.button_calls[0]["body"]
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+
+
+async def test_greeting_sends_3_button_menu_when_appointment_booking_disabled(
+    db_session: AsyncSession,
+) -> None:
+    """Toggle OFF (the default) must send the exact same 3-button menu as
+    before this feature existed -- byte-for-byte unchanged behavior."""
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.button_calls) == 1
+    assert sender.list_calls == []
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+
+
+async def test_greeting_sends_4_option_list_when_appointment_booking_enabled(
+    db_session: AsyncSession,
+) -> None:
+    merchant, _ = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert sender.button_calls == []
+    assert len(sender.list_calls) == 1
+    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
+    assert option_ids == {"place_order", "track_order", "book_appointment", "talk_to_restaurant"}
+
+
+async def test_book_appointment_sends_booking_link_when_enabled(db_session: AsyncSession) -> None:
+    merchant, _ = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(button_id="book_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.BOOK_APPOINTMENT
+    assert len(sender.text_calls) == 1
+    assert f"/book/{merchant.merchant_id}" in sender.text_calls[0]["body"]
+
+
+async def test_book_appointment_falls_back_to_menu_when_disabled(
+    db_session: AsyncSession,
+) -> None:
+    """A customer typing "book appointment" for a merchant that never
+    enabled the feature just sees the normal 3-button menu, same as any
+    other unrecognized/unavailable request."""
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(button_id="book_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.BOOK_APPOINTMENT
+    assert sender.text_calls == []
+    assert len(sender.button_calls) == 1
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
     assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
 

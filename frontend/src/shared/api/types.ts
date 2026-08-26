@@ -7,6 +7,7 @@ export interface Merchant {
   merchant_id: string
   business_name: string
   onboarding_status: string
+  appointment_booking_enabled: boolean
 }
 
 export interface StaffUser {
@@ -168,6 +169,8 @@ export type NotificationKind =
   | 'order_preparing'
   | 'order_ready'
   | 'order_completed'
+  | 'appointment_confirmed'
+  | 'appointment_cancelled'
 
 export interface NotificationTemplateOut {
   notification_kind: NotificationKind
@@ -222,4 +225,41 @@ export interface OrderingFlowCustomerLookupOut {
   display_name: string | null
   address: OrderingFlowAddressOut | null
   default_contact_phone: string | null
+}
+
+export interface AppointmentSettingsOut {
+  appointment_booking_enabled: boolean
+}
+
+export type AppointmentStatus = 'requested' | 'confirmed' | 'completed' | 'cancelled'
+
+export interface AppointmentOut {
+  appointment_id: string
+  appointment_number: number
+  customer_id: string
+  customer_number: number
+  customer_whatsapp_number: string
+  customer_name: string | null
+  name: string
+  email: string
+  appointment_date: string // "YYYY-MM-DD"
+  appointment_time: string // "HH:MM:SS"
+  notes: string | null
+  status: AppointmentStatus
+  requested_at: string
+  confirmed_at: string | null
+  completed_at: string | null
+  cancelled_at: string | null
+}
+
+export interface AppointmentFlowInfoOut {
+  business_name: string
+}
+
+export interface AppointmentFlowBookingResponse {
+  appointment_id: string
+  appointment_number: number
+  status: string
+  appointment_date: string
+  appointment_time: string
 }
