@@ -19,7 +19,7 @@ class OnboardingChecklist:
     onboarding_status: str
     whatsapp_connected: bool
     profile_completed: bool
-    has_available_menu_item: bool
+    has_available_item: bool
 
 
 async def _require_merchant(session: AsyncSession, tenant: TenantContext) -> Merchant:
@@ -81,6 +81,6 @@ async def get_checklist(session: AsyncSession, tenant: TenantContext) -> Onboard
     return OnboardingChecklist(
         onboarding_status=merchant.onboarding_status,
         whatsapp_connected=waba is not None and waba.connection_status == "connected",
-        profile_completed=merchant.kitchen_address_line1 is not None,
-        has_available_menu_item=len(available_items) > 0,
+        profile_completed=merchant.business_address_line1 is not None,
+        has_available_item=len(available_items) > 0,
     )

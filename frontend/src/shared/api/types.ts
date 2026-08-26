@@ -151,16 +151,16 @@ export interface OnboardingStatusOut {
   onboarding_status: OnboardingStatus
   whatsapp_connected: boolean
   profile_completed: boolean
-  has_available_menu_item: boolean
+  has_available_item: boolean
 }
 
-export interface KitchenProfileOut {
+export interface BusinessProfileOut {
   address_line1: string | null
   address_line2: string | null
   city: string | null
   pincode: string | null
-  cuisine_type: string | null
-  fssai_license_no: string | null
+  business_category: string | null
+  license_no: string | null
 }
 
 export type NotificationKind =

@@ -84,7 +84,7 @@ function mockRoutes(overrides: {
         onboarding_status: onboardingStatus,
         whatsapp_connected: true,
         profile_completed: true,
-        has_available_menu_item: true,
+        has_available_item: true,
       })
     }
     // Must come before the generic /api/v1/orders prefix check below.

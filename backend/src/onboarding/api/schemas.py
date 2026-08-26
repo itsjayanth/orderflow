@@ -41,26 +41,26 @@ class WhatsAppFlowSetupResult(BaseModel):
     flow_id: str
 
 
-class KitchenProfileOut(BaseModel):
+class BusinessProfileOut(BaseModel):
     address_line1: str | None
     address_line2: str | None
     city: str | None
     pincode: str | None
-    cuisine_type: str | None
-    fssai_license_no: str | None
+    business_category: str | None
+    license_no: str | None
 
 
-class KitchenProfileUpdate(BaseModel):
+class BusinessProfileUpdate(BaseModel):
     address_line1: str
     address_line2: str | None = None
     city: str
     pincode: str
-    cuisine_type: str
-    fssai_license_no: str | None = None
+    business_category: str
+    license_no: str | None = None
 
 
 class OnboardingStatusOut(BaseModel):
     onboarding_status: str
     whatsapp_connected: bool
     profile_completed: bool
-    has_available_menu_item: bool
+    has_available_item: bool

@@ -110,7 +110,7 @@ async def test_reconnecting_whatsapp_does_not_move_status_backwards(
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
-    merchant.kitchen_address_line1 = "1 MG Road"
+    merchant.business_address_line1 = "1 MG Road"
     merchant = await advance_after_profile_completed(db_session, tenant)
     assert merchant.onboarding_status == "profile_completed"
 
@@ -124,7 +124,7 @@ async def test_catalog_ready_and_live_cascade_once_gate_is_met(db_session: Async
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
-    merchant.kitchen_address_line1 = "1 MG Road"
+    merchant.business_address_line1 = "1 MG Road"
     await advance_after_profile_completed(db_session, tenant)
 
     # Gate not met yet -- no menu items.
@@ -144,7 +144,7 @@ async def test_catalog_ready_gate_ignores_unavailable_items(db_session: AsyncSes
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
-    merchant.kitchen_address_line1 = "1 MG Road"
+    merchant.business_address_line1 = "1 MG Road"
     await advance_after_profile_completed(db_session, tenant)
 
     item = await ItemRepository(db_session).create(
@@ -188,7 +188,7 @@ async def test_onboarding_status_endpoint_reflects_progress(client: AsyncClient)
     assert body["onboarding_status"] == "registered"
     assert body["whatsapp_connected"] is False
     assert body["profile_completed"] is False
-    assert body["has_available_menu_item"] is False
+    assert body["has_available_item"] is False
 
 
 async def test_connect_whatsapp_endpoint_advances_status(client: AsyncClient) -> None:
@@ -218,7 +218,7 @@ async def test_save_profile_endpoint_advances_status(client: AsyncClient) -> Non
             "address_line1": "1 MG Road",
             "city": "Bangalore",
             "pincode": "560001",
-            "cuisine_type": "North Indian",
+            "business_category": "North Indian",
         },
         headers=_auth_headers(tokens),
     )
@@ -245,7 +245,7 @@ async def test_full_wizard_reaches_live(client: AsyncClient) -> None:
             "address_line1": "1 MG Road",
             "city": "Bangalore",
             "pincode": "560001",
-            "cuisine_type": "North Indian",
+            "business_category": "North Indian",
         },
         headers=headers,
     )
@@ -259,7 +259,7 @@ async def test_full_wizard_reaches_live(client: AsyncClient) -> None:
     response = await client.get("/api/v1/onboarding/status", headers=headers)
 
     assert response.json()["onboarding_status"] == "live"
-    assert response.json()["has_available_menu_item"] is True
+    assert response.json()["has_available_item"] is True
 
 
 # --- conversation handler guard ---------------------------------------------

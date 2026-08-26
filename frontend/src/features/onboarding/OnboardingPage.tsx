@@ -12,9 +12,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useCreateItem } from '@/features/catalog/useCreateItem'
 import { useItems } from '@/features/catalog/useItems'
 import {
-  useKitchenProfile,
+  useBusinessProfile,
   useOnboardingStatus,
-  useUpdateKitchenProfile,
+  useUpdateBusinessProfile,
 } from '@/features/onboarding/useOnboarding'
 import { TestWhatsAppMessageCard } from '@/features/settings/TestWhatsAppMessageCard'
 import {
@@ -237,14 +237,14 @@ const profileSchema = z.object({
   address_line2: z.string().optional(),
   city: z.string().min(1, 'Required'),
   pincode: z.string().min(1, 'Required'),
-  cuisine_type: z.string().min(1, 'Required'),
-  fssai_license_no: z.string().optional(),
+  business_category: z.string().min(1, 'Required'),
+  license_no: z.string().optional(),
 })
 type ProfileForm = z.infer<typeof profileSchema>
 
 function KitchenDetailsStep() {
-  const { data } = useKitchenProfile()
-  const update = useUpdateKitchenProfile()
+  const { data } = useBusinessProfile()
+  const update = useUpdateBusinessProfile()
   const {
     register,
     handleSubmit,
@@ -257,8 +257,8 @@ function KitchenDetailsStep() {
           address_line2: data.address_line2 ?? '',
           city: data.city ?? '',
           pincode: data.pincode ?? '',
-          cuisine_type: data.cuisine_type ?? '',
-          fssai_license_no: data.fssai_license_no ?? '',
+          business_category: data.business_category ?? '',
+          license_no: data.license_no ?? '',
         }
       : undefined,
   })
@@ -289,19 +289,19 @@ function KitchenDetailsStep() {
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="cuisine_type">Cuisine type</Label>
+        <Label htmlFor="business_category">Cuisine type</Label>
         <Input
-          id="cuisine_type"
+          id="business_category"
           placeholder="North Indian, South Indian, ..."
-          {...register('cuisine_type')}
+          {...register('business_category')}
         />
-        {errors.cuisine_type && (
-          <p className="text-destructive text-sm">{errors.cuisine_type.message}</p>
+        {errors.business_category && (
+          <p className="text-destructive text-sm">{errors.business_category.message}</p>
         )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="fssai_license_no">FSSAI license number (optional)</Label>
-        <Input id="fssai_license_no" {...register('fssai_license_no')} />
+        <Label htmlFor="license_no">License number (optional)</Label>
+        <Input id="license_no" {...register('license_no')} />
       </div>
       {update.isError && (
         <p className="text-destructive text-sm">Failed to save. Please try again.</p>

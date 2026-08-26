@@ -37,7 +37,7 @@ function statusResponse(overrides: Partial<OnboardingStatusOut> = {}): Onboardin
     onboarding_status: 'registered',
     whatsapp_connected: false,
     profile_completed: false,
-    has_available_menu_item: false,
+    has_available_item: false,
     ...overrides,
   }
 }
@@ -96,7 +96,7 @@ describe('OnboardingPage', () => {
         onboarding_status: 'live',
         whatsapp_connected: true,
         profile_completed: true,
-        has_available_menu_item: true,
+        has_available_item: true,
       }),
     )
 
