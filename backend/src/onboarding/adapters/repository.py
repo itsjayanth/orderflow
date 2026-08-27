@@ -65,6 +65,30 @@ class WhatsAppBusinessAccountRepository:
         )
         return result.scalar_one_or_none()
 
+    async def set_flow_private_key(
+        self, tenant: TenantContext, *, private_key_encrypted: str
+    ) -> WhatsAppBusinessAccount:
+        """Persists just the (shared, business-level) RSA private key --
+        called the moment its matching public half is confirmed uploaded
+        to Meta, *before* attempting to create a Flow object against it.
+        Splitting this out from set_flow_credentials/
+        set_appointment_flow_credentials closes a real gap that bit a live
+        merchant: uploading the public key and then failing to create the
+        Flow (e.g. Meta rejecting the create_flow call) used to leave the
+        newly-rotated public key live at Meta with no matching private key
+        ever saved here, since the old code only persisted the key
+        alongside a successful flow_id -- breaking decryption for every
+        Flow this merchant has (they share one key pair), not just the one
+        being set up. Now the key is safe on file the instant it's live,
+        independent of whether Flow creation goes on to succeed."""
+        account = await self.get(tenant)
+        if account is None:
+            raise ValueError(f"No WhatsAppBusinessAccount for merchant {tenant.merchant_id}")
+
+        account.flow_private_key_encrypted = private_key_encrypted
+        await self._session.flush()
+        return account
+
     async def set_flow_credentials(
         self, tenant: TenantContext, *, flow_id: str, private_key_encrypted: str
     ) -> WhatsAppBusinessAccount:

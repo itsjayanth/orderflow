@@ -269,6 +269,85 @@ async def test_setup_appointment_flow_persists_credentials_and_publishes(
     assert fake_client.calls[3]["url"].endswith("/APPT_FLOW_99/publish")
 
 
+async def test_setup_flow_persists_private_key_even_when_create_flow_fails(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    """Regression test for a real production incident: the public key
+    upload succeeded, but Meta then rejected create_flow (400) -- before
+    the fix, the private key was only persisted alongside a successful
+    flow_id, so this left the newly-rotated public key live at Meta with
+    no matching private key saved anywhere, breaking Flow decryption for
+    every Flow this merchant has (the key pair is shared). The private
+    key must be on file the moment its public half is confirmed uploaded,
+    independent of whether create_flow goes on to succeed."""
+    tenant = await _seed_merchant_tenant(db_session, "Create Flow Fails")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        phone_number_id="PHONE_2",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    fake_client = _FakeSequencedClient(
+        [
+            _FakeAssetUploadResponse(200),  # upload_public_key
+            _FakeAssetUploadResponse(400, "create_flow rejected"),  # create_flow
+        ]
+    )
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await setup_whatsapp_flow(
+            db_session,
+            tenant,
+            account,
+            meta_waba_id="META_WABA_2",
+            backend_base_url="https://example.com",
+        )
+
+    assert exc_info.value.step == "create_flow"
+    assert account.whatsapp_flow_id is None
+    assert account.flow_private_key_encrypted is not None
+
+
+async def test_setup_appointment_flow_persists_private_key_even_when_create_flow_fails(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    """Same regression coverage as
+    test_setup_flow_persists_private_key_even_when_create_flow_fails, for
+    the appointment Flow's setup path."""
+    tenant = await _seed_merchant_tenant(db_session, "Appt Create Flow Fails")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        phone_number_id="PHONE_3",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    fake_client = _FakeSequencedClient(
+        [
+            _FakeAssetUploadResponse(200),  # upload_public_key
+            _FakeAssetUploadResponse(400, "create_flow rejected"),  # create_flow
+        ]
+    )
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await setup_whatsapp_appointment_flow(
+            db_session,
+            tenant,
+            account,
+            meta_waba_id="META_WABA_3",
+            backend_base_url="https://example.com",
+        )
+
+    assert exc_info.value.step == "create_flow"
+    assert account.whatsapp_appointment_flow_id is None
+    assert account.flow_private_key_encrypted is not None
+
+
 async def test_update_appointment_flow_assets_fails_precondition_without_flow_id(
     db_session: AsyncSession,
 ) -> None:
