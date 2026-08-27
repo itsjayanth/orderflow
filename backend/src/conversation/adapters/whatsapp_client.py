@@ -46,8 +46,8 @@ class WhatsAppSender(Protocol):
         access_token: str,
         to: str,
         body: str,
-        button_text: str,
-        rows: list[tuple[str, str]],  # (id, title)
+        button_label: str,
+        options: list[tuple[str, str]],  # (id, title)
     ) -> bool: ...
 
 
@@ -184,9 +184,15 @@ class GraphApiWhatsAppSender:
         access_token: str,
         to: str,
         body: str,
-        button_text: str,
-        rows: list[tuple[str, str]],
+        button_label: str,
+        options: list[tuple[str, str]],
     ) -> bool:
+        """WhatsApp Cloud API's interactive "button" message type is capped
+        at 3 buttons by Meta -- once appointment booking or an active FAQ
+        pushes the greeting menu past 3 options, it switches to this "list"
+        message type instead (send_buttons still covers every merchant
+        whose menu stays at 3 options). Also used directly for the FAQ
+        menu/disambiguation lists themselves."""
         return await self._post(
             phone_number_id,
             access_token,
@@ -198,9 +204,15 @@ class GraphApiWhatsAppSender:
                     "type": "list",
                     "body": {"text": body},
                     "action": {
-                        "button": button_text,
+                        "button": button_label,
                         "sections": [
-                            {"rows": [{"id": row_id, "title": title} for row_id, title in rows]}
+                            {
+                                "title": "Options",
+                                "rows": [
+                                    {"id": option_id, "title": title}
+                                    for option_id, title in options
+                                ],
+                            }
                         ],
                     },
                 },

@@ -72,10 +72,12 @@ class FakeSender(WhatsAppSender):
         access_token: str,
         to: str,
         body: str,
-        button_text: str,
-        rows: list[tuple[str, str]],
+        button_label: str,
+        options: list[tuple[str, str]],
     ) -> bool:
-        self.list_calls.append({"to": to, "body": body, "button_text": button_text, "rows": rows})
+        self.list_calls.append(
+            {"to": to, "body": body, "button_label": button_label, "options": options}
+        )
         return True
 
 
@@ -173,7 +175,103 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
     assert len(sender.button_calls) == 1
     assert "Test Kitchen" in sender.button_calls[0]["body"]
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
-    assert button_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
+    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+
+
+async def test_greeting_sends_menu_including_faqs_when_merchant_has_an_active_faq(
+    db_session: AsyncSession,
+) -> None:
+    """Like appointment booking, the FAQs option is additive and only
+    appears once the merchant has actually set something up -- a merchant
+    with zero FAQItems sees the exact 3-button menu (previous test),
+    unaffected by this feature ever having been built."""
+    _, tenant = await _seed_connected_merchant(db_session)
+    await FAQItemRepository(db_session).create(
+        tenant,
+        question_text="Where are you located?",
+        answer_text="12 MG Road.",
+        keywords=["where"],
+    )
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert sender.button_calls == []
+    assert len(sender.list_calls) == 1
+    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
+    assert option_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
+
+
+async def test_greeting_sends_3_button_menu_when_appointment_booking_disabled(
+    db_session: AsyncSession,
+) -> None:
+    """Toggle OFF (the default) must send the exact same 3-button menu as
+    before this feature existed -- byte-for-byte unchanged behavior."""
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.button_calls) == 1
+    assert sender.list_calls == []
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+
+
+async def test_greeting_sends_4_option_list_when_appointment_booking_enabled(
+    db_session: AsyncSession,
+) -> None:
+    merchant, _ = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert sender.button_calls == []
+    assert len(sender.list_calls) == 1
+    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
+    assert option_ids == {"place_order", "track_order", "book_appointment", "talk_to_restaurant"}
+
+
+async def test_book_appointment_sends_booking_link_when_enabled(db_session: AsyncSession) -> None:
+    merchant, _ = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(button_id="book_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.BOOK_APPOINTMENT
+    assert len(sender.text_calls) == 1
+    assert f"/book/{merchant.merchant_id}" in sender.text_calls[0]["body"]
+
+
+async def test_book_appointment_falls_back_to_menu_when_disabled(
+    db_session: AsyncSession,
+) -> None:
+    """A customer typing "book appointment" for a merchant that never
+    enabled the feature just sees the normal 3-button menu, same as any
+    other unrecognized/unavailable request."""
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(button_id="book_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.BOOK_APPOINTMENT
+    assert sender.text_calls == []
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
 
 
 async def test_greeting_creates_customer_record(db_session: AsyncSession) -> None:
@@ -614,9 +712,15 @@ async def test_unrecognized_text_with_no_faq_match_falls_back_to_greeting_menu(
 
     assert result.intent == Intent.GREETING
     assert result.reply_sent is True
-    assert len(sender.button_calls) == 1
     assert sender.text_calls == []
-    assert sender.list_calls == []
+    # The merchant has an active FAQ (just not one matching this text), so
+    # the greeting menu itself includes the "FAQs" option and is sent as a
+    # list -- still the existing greeting/intent-menu behavior, not a FAQ
+    # answer.
+    assert sender.button_calls == []
+    assert len(sender.list_calls) == 1
+    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
+    assert option_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
 
 
 async def test_unrecognized_text_with_close_matches_sends_disambiguation_list(
@@ -647,7 +751,7 @@ async def test_unrecognized_text_with_close_matches_sends_disambiguation_list(
     assert result.reply_sent is True
     assert sender.text_calls == []
     assert len(sender.list_calls) == 1
-    row_ids = {row[0] for row in sender.list_calls[0]["rows"]}
+    row_ids = {row[0] for row in sender.list_calls[0]["options"]}
     assert row_ids == {str(delivery.faq_item_id), str(timing.faq_item_id)}
 
 
@@ -674,7 +778,7 @@ async def test_faq_menu_button_sends_list_of_active_faqs(db_session: AsyncSessio
     assert result.intent == Intent.FAQ_MENU
     assert result.reply_sent is True
     assert len(sender.list_calls) == 1
-    row_ids = {row[0] for row in sender.list_calls[0]["rows"]}
+    row_ids = {row[0] for row in sender.list_calls[0]["options"]}
     assert row_ids == {str(active.faq_item_id)}
 
 

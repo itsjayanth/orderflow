@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   BookOpen,
+  CalendarDays,
   ChevronsLeft,
   ChevronsRight,
   ClipboardList,
@@ -61,6 +62,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', end: true, icon: LayoutDashboard },
   { to: '/orders', label: 'Orders', icon: ClipboardList },
+  { to: '/appointments', label: 'Appointments', icon: CalendarDays },
   { to: '/catalog', label: 'Catalog', icon: BookOpen },
   { to: '/faq', label: 'FAQs', icon: HelpCircle },
   { to: '/customers', label: 'Customers', icon: Users },

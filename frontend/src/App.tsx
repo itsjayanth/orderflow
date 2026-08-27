@@ -1,8 +1,11 @@
 import { Route, Routes } from 'react-router-dom'
 
+import { AppointmentDetailPage } from '@/features/appointments/AppointmentDetailPage'
+import { AppointmentsPage } from '@/features/appointments/AppointmentsPage'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RegisterPage } from '@/features/auth/RegisterPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
+import { BookingPage } from '@/features/booking/BookingPage'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
 import { CustomersPage } from '@/features/customers/CustomersPage'
 import { DashboardHomePage } from '@/features/dashboard/DashboardHomePage'
@@ -25,11 +28,15 @@ export function App() {
       <Route path="register" element={<RegisterPage />} />
       {/* Public customer-facing ordering webview -- no staff auth, no dashboard Layout. */}
       <Route path="order/:merchantId" element={<OrderingPage />} />
+      {/* Public customer-facing appointment booking webview -- no staff auth, no dashboard Layout. */}
+      <Route path="book/:merchantId" element={<BookingPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route path="dashboard" element={<DashboardHomePage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="orders/:orderId" element={<OrderDetailPage />} />
+          <Route path="appointments" element={<AppointmentsPage />} />
+          <Route path="appointments/:appointmentId" element={<AppointmentDetailPage />} />
           <Route path="catalog" element={<CatalogPage />} />
           <Route path="faq" element={<FAQPage />} />
           <Route path="customers" element={<CustomersPage />} />

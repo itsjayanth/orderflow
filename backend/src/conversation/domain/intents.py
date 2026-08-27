@@ -4,6 +4,7 @@ from enum import StrEnum
 class Intent(StrEnum):
     PLACE_ORDER = "place_order"
     TRACK_ORDER = "track_order"
+    BOOK_APPOINTMENT = "book_appointment"
     TALK_TO_RESTAURANT = "talk_to_restaurant"
     GREETING = "greeting"
     # Button-driven, like the other menu intents above -- classify() maps
@@ -29,6 +30,13 @@ class Intent(StrEnum):
 _TEXT_KEYWORDS: dict[Intent, tuple[str, ...]] = {
     Intent.TRACK_ORDER: ("track", "status", "where is my order"),
     Intent.TALK_TO_RESTAURANT: ("talk", "human", "help", "staff", "call"),
+    Intent.BOOK_APPOINTMENT: (
+        "book appointment",
+        "appointment",
+        "booking",
+        "book a slot",
+        "book a table",
+    ),
     Intent.PLACE_ORDER: ("order", "menu", "hungry"),
 }
 

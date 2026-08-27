@@ -28,12 +28,26 @@ from shared.config import get_settings
 from shared.encryption import decrypt
 from shared.tenant import TenantContext
 
-_INTENT_MENU_BUTTONS = [
-    (Intent.PLACE_ORDER.value, "Place order"),
-    (Intent.TRACK_ORDER.value, "Track order"),
-    (Intent.TALK_TO_RESTAURANT.value, "Talk to restaurant"),
-    (Intent.FAQ_MENU.value, "FAQs"),
-]
+
+async def _menu_options(
+    session: AsyncSession, tenant: TenantContext, appointment_booking_enabled: bool
+) -> list[tuple[str, str]]:
+    """WhatsApp's interactive "button" message type is capped at 3 buttons
+    by Meta -- appointment booking (opt-in) or having at least one active
+    FAQ (also effectively opt-in -- a merchant who's never added one sees
+    nothing new), when present, is what pushes the menu past 3 options,
+    which is why the final "show the menu" branch below switches to
+    send_list once len(options) > 3. Both stay additive: a merchant using
+    neither sees the exact 3-button menu from before either feature
+    existed."""
+    options = [(Intent.PLACE_ORDER.value, "Place order"), (Intent.TRACK_ORDER.value, "Track order")]
+    if appointment_booking_enabled:
+        options.append((Intent.BOOK_APPOINTMENT.value, "Book appointment"))
+    options.append((Intent.TALK_TO_RESTAURANT.value, "Talk to restaurant"))
+    if await FAQItemRepository(session).list(tenant, include_inactive=False):
+        options.append((Intent.FAQ_MENU.value, "FAQs"))
+    return options
+
 
 # WhatsApp interactive list messages cap out at 10 rows -- both the "browse
 # every FAQ" menu and the "did you mean" disambiguation list stay under it.
@@ -122,7 +136,15 @@ async def handle_inbound_message(
             return HandledMessage(intent=Intent.FAQ, reply_sent=faq_reply_sent)
 
     reply_sent = await _reply_for_intent(
-        session, sender, waba, tenant, message, intent, customer.customer_id, merchant.business_name
+        session,
+        sender,
+        waba,
+        tenant,
+        message,
+        intent,
+        customer.customer_id,
+        merchant.business_name,
+        merchant.appointment_booking_enabled,
     )
 
     return HandledMessage(intent=intent, reply_sent=reply_sent)
@@ -137,6 +159,7 @@ async def _reply_for_intent(
     intent: Intent,
     customer_id: uuid.UUID,
     business_name: str,
+    appointment_booking_enabled: bool,
 ) -> bool:
     access_token = _access_token(waba)
 
@@ -185,6 +208,15 @@ async def _reply_for_intent(
             body=_track_order_reply(recent_orders),
         )
 
+    if intent == Intent.BOOK_APPOINTMENT and appointment_booking_enabled:
+        booking_link = f"{get_settings().frontend_base_url}/book/{tenant.merchant_id}"
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body=f"Book your appointment here: {booking_link}",
+        )
+
     if intent == Intent.TALK_TO_RESTAURANT:
         return await sender.send_text(
             phone_number_id=message.phone_number_id,
@@ -193,12 +225,27 @@ async def _reply_for_intent(
             body="A team member from the restaurant will reach out to you shortly.",
         )
 
+    # Reaches here for Intent.GREETING, plus Intent.BOOK_APPOINTMENT when
+    # the merchant hasn't enabled the feature -- a customer typing "book
+    # appointment" for a merchant that never turned it on just sees the
+    # normal menu, same as any other unrecognized/unavailable request.
+    options = await _menu_options(session, tenant, appointment_booking_enabled)
+    body = f"Hi! Welcome to {business_name}. What would you like to do?"
+    if len(options) > 3:
+        return await sender.send_list(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body=body,
+            button_label="Menu",
+            options=options,
+        )
     return await sender.send_buttons(
         phone_number_id=message.phone_number_id,
         access_token=access_token,
         to=message.from_phone,
-        body=f"Hi! Welcome to {business_name}. What would you like to do?",
-        buttons=_INTENT_MENU_BUTTONS,
+        body=body,
+        buttons=options,
     )
 
 
@@ -249,14 +296,14 @@ async def _send_faq_menu(
             to=message.from_phone,
             body="No FAQs have been added yet.",
         )
-    rows = [(str(item.faq_item_id), item.question_text) for item in items[:_FAQ_MENU_MAX_ROWS]]
+    options = [(str(item.faq_item_id), item.question_text) for item in items[:_FAQ_MENU_MAX_ROWS]]
     return await sender.send_list(
         phone_number_id=message.phone_number_id,
         access_token=access_token,
         to=message.from_phone,
         body="Here are some frequently asked questions:",
-        button_text="View FAQs",
-        rows=rows,
+        button_label="View FAQs",
+        options=options,
     )
 
 
@@ -284,7 +331,7 @@ async def _try_faq_text_match(
             body=matches[0].answer_text,
         )
 
-    rows = [
+    options = [
         (str(item.faq_item_id), item.question_text)
         for item in matches[:_FAQ_DISAMBIGUATION_MAX_ROWS]
     ]
@@ -293,8 +340,8 @@ async def _try_faq_text_match(
         access_token=access_token,
         to=message.from_phone,
         body="Did you mean one of these?",
-        button_text="Choose one",
-        rows=rows,
+        button_label="Choose one",
+        options=options,
     )
 
 
