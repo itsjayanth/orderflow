@@ -1,8 +1,10 @@
 import {
   Bell,
+  CalendarCheck,
   Check,
   ClipboardList,
   CreditCard,
+  HelpCircle,
   LayoutDashboard,
   MessageCircle,
   Package,
@@ -37,6 +39,38 @@ const TRUST_POINTS: { icon: ComponentType<{ className?: string }>; label: string
   { icon: SmartphoneNfc, label: 'No app for customers to install' },
   { icon: Store, label: 'Works alongside how you already run your business' },
   { icon: ShieldCheck, label: 'Payments verified before orders confirm' },
+]
+
+const PLATFORM_PILLARS: {
+  icon: ComponentType<{ className?: string }>
+  title: string
+  optional?: boolean
+  description: string
+  examples: string
+}[] = [
+  {
+    icon: ShoppingCart,
+    title: 'Sell your catalog',
+    description:
+      'Customers browse what you sell, build a cart, and pay — all inside the chat. Every paid order lands in your dashboard instantly, so nothing gets lost to a missed call or a forgotten DM.',
+    examples: 'Restaurants · Retail & apparel · Pharmacies · Auto parts',
+  },
+  {
+    icon: CalendarCheck,
+    title: 'Take bookings',
+    optional: true,
+    description:
+      'Customers request a date and time right in WhatsApp; you confirm or reschedule with one tap from the dashboard, and they get notified automatically. No more double-bookings from a phone call and a notebook disagreeing.',
+    examples: 'Salons · Clinics · Repair shops · Consultants',
+  },
+  {
+    icon: HelpCircle,
+    title: 'Answer instantly',
+    optional: true,
+    description:
+      'Set up the answers to what you get asked every day — hours, location, pricing, policies — once. Orderflow handles those automatically, any time of day, so your team only steps in for what actually needs them.',
+    examples: 'Every business — hours, location, pricing, policies',
+  },
 ]
 
 const ORDER_STEPS: {
@@ -83,9 +117,9 @@ const DASHBOARD_FEATURES: {
 }[] = [
   {
     icon: LayoutDashboard,
-    title: 'Live order queue',
+    title: 'Live order & booking queue',
     description:
-      'New orders appear within seconds of payment, sorted by status — New, Processing, Ready, Completed.',
+      'New orders and appointment requests appear within seconds, sorted by status — New, Processing, Ready, Completed.',
   },
   {
     icon: Bell,
@@ -166,6 +200,16 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
       'A secure Razorpay/UPI payment link is sent in the same WhatsApp chat. The order only moves into your queue once that payment is confirmed — no staff member has to manually check or guess.',
   },
   {
+    question: 'Can customers book an appointment instead of placing an order?',
+    answer:
+      'Yes, if you turn it on. Appointment booking is a separate, optional flow — customers request a date and time in WhatsApp, and you confirm, reschedule, or cancel with one tap from the dashboard, with the customer notified automatically either way. Leave it off if you only sell products.',
+  },
+  {
+    question: 'Can it answer common customer questions for me?',
+    answer:
+      'Yes. Add the questions you get asked most — hours, location, pricing, policies — once, and Orderflow answers them automatically in WhatsApp, any time of day. Anything it doesn’t recognize still reaches your team as normal.',
+  },
+  {
     question: 'Will customers know their order status?',
     answer:
       'Yes. As your staff move an order forward on the dashboard, Orderflow automatically messages the customer on WhatsApp — at minimum when it’s ready — so nobody has to send that update by hand.',
@@ -189,6 +233,36 @@ function TrustPill({
       <Icon className="text-primary size-3.5 shrink-0 sm:size-4" />
       {label}
     </span>
+  )
+}
+
+function PillarCard({
+  pillar,
+  index,
+}: {
+  pillar: (typeof PLATFORM_PILLARS)[number]
+  index: number
+}) {
+  return (
+    <Reveal as="li" delayMs={index * 100} className="h-full list-none">
+      <Card className="flex h-full flex-col gap-4 p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+        <div className="flex items-center justify-between gap-3">
+          <span className="bg-primary/10 text-primary flex size-11 shrink-0 items-center justify-center rounded-full">
+            <pillar.icon className="size-5" />
+          </span>
+          {pillar.optional && (
+            <span className="border-border/70 text-muted-foreground rounded-full border px-2.5 py-1 text-[11px] font-medium">
+              Optional — turn on anytime
+            </span>
+          )}
+        </div>
+        <div className="space-y-2">
+          <h3 className="font-serif text-xl font-semibold">{pillar.title}</h3>
+          <p className="text-muted-foreground text-sm leading-relaxed">{pillar.description}</p>
+        </div>
+        <p className="text-muted-foreground/80 mt-auto text-xs">{pillar.examples}</p>
+      </Card>
+    </Reveal>
   )
 }
 
@@ -275,15 +349,15 @@ export function HomePage() {
             <Reveal className="space-y-6 text-center lg:text-left">
               <span className="border-brand-gold/40 bg-brand-gold/15 text-brand-gold-foreground mx-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium lg:mx-0">
                 <Sparkles className="size-3.5" />
-                WhatsApp-native ordering
+                WhatsApp-native commerce
               </span>
               <h1 className="font-serif text-4xl leading-tight font-semibold tracking-tight text-balance sm:text-5xl">
-                Take orders where your customers already are — WhatsApp.
+                Run your business where your customers already are — WhatsApp.
               </h1>
               <p className="text-muted-foreground mx-auto max-w-xl text-lg text-balance lg:mx-0">
-                Orderflow turns WhatsApp into a full ordering channel for your business: guided
-                catalog browsing, cart, secure payment links, and live status updates — with every
-                order landing in one dashboard your staff already knows how to use.
+                Orderflow turns WhatsApp into your storefront, booking desk, and help desk: catalog
+                browsing, secure payments, appointment requests, and instant answers — with
+                everything landing in one dashboard your staff already knows how to use.
               </p>
               <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
                 <Button asChild size="lg" className="w-full sm:w-auto">
@@ -304,6 +378,25 @@ export function HomePage() {
               <ChatMockup />
             </Reveal>
           </div>
+        </section>
+
+        {/* Platform pillars */}
+        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <Reveal className="mx-auto max-w-2xl space-y-3 text-center">
+            <h2 className="font-serif text-3xl font-semibold tracking-tight">
+              One WhatsApp number. Everything your business needs.
+            </h2>
+            <p className="text-muted-foreground text-lg">
+              Turn on what fits how you run things — sell products or services, take bookings, and
+              stop repeating yourself. Nothing here requires a second app or a new number.
+            </p>
+          </Reveal>
+
+          <ul className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
+            {PLATFORM_PILLARS.map((pillar, index) => (
+              <PillarCard key={pillar.title} pillar={pillar} index={index} />
+            ))}
+          </ul>
         </section>
 
         {/* Why Orderflow */}
@@ -367,11 +460,11 @@ export function HomePage() {
             <Reveal className="order-2 space-y-8 lg:order-1">
               <div className="space-y-3 text-center lg:text-left">
                 <h2 className="font-serif text-3xl font-semibold tracking-tight">
-                  One dashboard for every order, from payment to pickup
+                  One dashboard for everything that happens on WhatsApp
                 </h2>
                 <p className="text-muted-foreground text-lg">
-                  The moment a customer pays, the order appears on your screen — no refreshing a
-                  chat thread, no orders slipping through.
+                  The moment a customer pays or requests a booking, it appears on your screen — no
+                  refreshing a chat thread, nothing slipping through.
                 </p>
               </div>
 
@@ -440,11 +533,11 @@ export function HomePage() {
                 aria-hidden="true"
               />
               <h2 className="font-serif text-3xl font-semibold tracking-tight sm:text-4xl">
-                Ready to move your ordering onto WhatsApp?
+                Ready to run your business on WhatsApp?
               </h2>
               <p className="text-primary-foreground/85 mx-auto mt-3 max-w-xl text-lg text-balance">
-                Set up your business in minutes — connect WhatsApp, add your catalog, and start
-                taking orders today.
+                Set up your business in minutes — connect WhatsApp, add what you sell or the
+                appointments you take, and start hearing from customers today.
               </p>
               <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Button asChild size="lg" variant="secondary" className="w-full sm:w-auto">
@@ -477,7 +570,8 @@ export function HomePage() {
                 <p className="text-primary font-serif text-lg tracking-tight">Orderflow</p>
               </span>
               <p className="text-muted-foreground mt-1 text-sm">
-                WhatsApp ordering for independent businesses.
+                WhatsApp commerce for independent businesses — ordering, appointments, and instant
+                answers.
               </p>
             </div>
             <div className="text-muted-foreground flex items-center gap-6 text-sm">

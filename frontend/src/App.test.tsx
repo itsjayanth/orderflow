@@ -61,7 +61,7 @@ describe('App', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Take orders where your customers already are — WhatsApp.',
+        name: 'Run your business where your customers already are — WhatsApp.',
       }),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Log in' })[0]).toHaveAttribute('href', '/login')
