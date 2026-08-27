@@ -24,3 +24,11 @@ class NotificationChannel(Protocol):
     async def notify_order_completed(
         self, *, merchant_id: uuid.UUID, order_id: uuid.UUID
     ) -> bool: ...
+
+    async def notify_appointment_confirmed(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool: ...
+
+    async def notify_appointment_cancelled(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool: ...

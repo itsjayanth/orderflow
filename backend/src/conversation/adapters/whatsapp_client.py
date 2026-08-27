@@ -39,6 +39,17 @@ class WhatsAppSender(Protocol):
         cta: str,
     ) -> bool: ...
 
+    async def send_list(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        button_label: str,
+        options: list[tuple[str, str]],  # (id, title)
+    ) -> bool: ...
+
 
 class GraphApiWhatsAppSender:
     """Real WhatsApp Cloud API client. Every call is best-effort: a failed
@@ -161,6 +172,47 @@ class GraphApiWhatsAppSender:
                             # the button is sent with "data_exchange" here.
                             "flow_action": "data_exchange",
                         },
+                    },
+                },
+            },
+        )
+
+    async def send_list(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        button_label: str,
+        options: list[tuple[str, str]],
+    ) -> bool:
+        """WhatsApp Cloud API's interactive "button" message type is capped
+        at 3 buttons by Meta -- once appointment booking is enabled, the
+        greeting menu has 4 options, so it switches to this "list" message
+        type instead (send_buttons still covers every merchant whose menu
+        stays at 3 options)."""
+        return await self._post(
+            phone_number_id,
+            access_token,
+            {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "interactive",
+                "interactive": {
+                    "type": "list",
+                    "body": {"text": body},
+                    "action": {
+                        "button": button_label,
+                        "sections": [
+                            {
+                                "title": "Options",
+                                "rows": [
+                                    {"id": option_id, "title": title}
+                                    for option_id, title in options
+                                ],
+                            }
+                        ],
                     },
                 },
             },

@@ -1,0 +1,127 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { apiFetch } from '@/shared/api/client'
+import type { AppointmentOut } from '@/shared/api/types'
+
+import { AppointmentDetailPage } from './AppointmentDetailPage'
+
+vi.mock('@/shared/api/client', async () => {
+  const actual = await vi.importActual<typeof import('@/shared/api/client')>('@/shared/api/client')
+  return {
+    ...actual,
+    apiFetch: vi.fn(),
+  }
+})
+
+const mockedApiFetch = vi.mocked(apiFetch)
+
+const sampleAppointment: AppointmentOut = {
+  appointment_id: '11111111-1111-1111-1111-111111111111',
+  appointment_number: 42,
+  customer_id: '22222222-2222-2222-2222-222222222222',
+  customer_number: 3,
+  customer_whatsapp_number: '919876543210',
+  customer_name: null,
+  name: 'Asha Rao',
+  email: 'asha@example.com',
+  appointment_date: '2026-09-01',
+  appointment_time: '14:30:00',
+  notes: null,
+  status: 'requested',
+  requested_at: '2026-08-26T12:00:00Z',
+  confirmed_at: null,
+  completed_at: null,
+  cancelled_at: null,
+}
+
+function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/appointments/${sampleAppointment.appointment_id}`]}>
+        <Routes>
+          <Route path="/appointments/:appointmentId" element={<AppointmentDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+describe('AppointmentDetailPage', () => {
+  beforeEach(() => {
+    mockedApiFetch.mockReset()
+  })
+
+  it('renders appointment fields and only legal next-status actions', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleAppointment)
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Appointment #0042' })).toBeInTheDocument()
+    expect(screen.getByText('Asha Rao')).toBeInTheDocument()
+    expect(screen.getByText('asha@example.com')).toBeInTheDocument()
+    // "requested" -> only "confirmed" and "cancelled" are legal.
+    expect(screen.getByRole('button', { name: 'Mark Confirmed' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark Cancelled' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark Completed' })).not.toBeInTheDocument()
+  })
+
+  it('edits and saves a note', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleAppointment)
+    mockedApiFetch.mockResolvedValueOnce({ ...sampleAppointment, notes: 'Prefers a window seat' })
+
+    renderPage()
+    await screen.findByText('Asha Rao')
+
+    fireEvent.click(screen.getByText(/Add a note/))
+    fireEvent.change(screen.getByLabelText('Appointment notes'), {
+      target: { value: 'Prefers a window seat' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        `/api/v1/appointments/${sampleAppointment.appointment_id}`,
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ notes: 'Prefers a window seat' }),
+        }),
+      ),
+    )
+  })
+
+  it('advances an appointment to its next status', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleAppointment)
+    mockedApiFetch.mockResolvedValueOnce({ ...sampleAppointment, status: 'confirmed' })
+
+    renderPage()
+    await screen.findByText('Asha Rao')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Confirmed' }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        `/api/v1/appointments/${sampleAppointment.appointment_id}/status`,
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ to_status: 'confirmed' }),
+        }),
+      ),
+    )
+  })
+
+  it('shows no further actions once an appointment is completed', async () => {
+    mockedApiFetch.mockResolvedValueOnce({ ...sampleAppointment, status: 'completed' })
+
+    renderPage()
+    await screen.findByText('Asha Rao')
+
+    expect(screen.getByText(/no further actions/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Mark/ })).not.toBeInTheDocument()
+  })
+})

@@ -31,6 +31,7 @@ const meResponse: MeResponse = {
     merchant_id: '11111111-1111-1111-1111-111111111111',
     business_name: 'Test Kitchen',
     onboarding_status: 'live',
+    appointment_booking_enabled: false,
   },
 }
 
