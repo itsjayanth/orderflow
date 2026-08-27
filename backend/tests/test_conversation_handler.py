@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from appointments.adapters.repository import AppointmentRepository
 from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
@@ -816,3 +817,166 @@ async def test_tapping_faq_list_row_returns_stored_answer(db_session: AsyncSessi
     assert sender.text_calls == [
         {"to": message.from_phone, "body": "We're at 12 MG Road, Bengaluru."}
     ]
+
+
+async def test_book_appointment_sends_flow_when_flow_configured(db_session: AsyncSession) -> None:
+    merchant, tenant = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
+        tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(button_id="book_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.BOOK_APPOINTMENT
+    assert result.reply_sent is True
+    assert len(sender.flow_calls) == 1
+    assert sender.flow_calls[0]["flow_id"] == "APPT_FLOW_1"
+    assert sender.text_calls == []
+
+
+async def test_book_appointment_falls_back_to_link_when_flow_send_fails(
+    db_session: AsyncSession,
+) -> None:
+    merchant, tenant = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
+        tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await db_session.commit()
+    sender = FakeSender(flow_send_succeeds=False)
+    message = _inbound(button_id="book_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.flow_calls) == 1
+    assert len(sender.text_calls) == 1
+    assert f"/book/{merchant.merchant_id}" in sender.text_calls[0]["body"]
+
+
+async def test_appointment_flow_completion_creates_appointment_not_order(
+    db_session: AsyncSession,
+) -> None:
+    merchant, tenant = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "appointment_date": "2026-09-10",
+            "appointment_time": "14:30",
+            "customer_name": "Asha",
+            "customer_email": "asha@example.com",
+            "notes": "Window seat please",
+        },
+    )
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FLOW_APPOINTMENT_COMPLETED
+    assert result.reply_sent is True
+    assert "Appointment #" in sender.text_calls[0]["body"]
+
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    appointments = await AppointmentRepository(db_session).list(
+        tenant, customer_id=customer.customer_id
+    )
+    assert len(appointments) == 1
+    assert appointments[0].name == "Asha"
+    assert appointments[0].email == "asha@example.com"
+    assert appointments[0].notes == "Window seat please"
+
+    orders = await OrderRepository(db_session).list_for_customer(tenant, customer.customer_id)
+    assert orders == []
+
+
+async def test_appointment_flow_completion_past_date_sends_error_and_creates_no_appointment(
+    db_session: AsyncSession,
+) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "appointment_date": "2020-01-01",
+            "appointment_time": "09:00",
+            "customer_name": "Asha",
+            "customer_email": "asha@example.com",
+        },
+    )
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FLOW_APPOINTMENT_COMPLETED
+    assert "already passed" in sender.text_calls[0]["body"]
+
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    appointments = await AppointmentRepository(db_session).list(
+        tenant, customer_id=customer.customer_id
+    )
+    assert appointments == []
+
+
+async def test_appointment_flow_completion_malformed_payload_sends_error(
+    db_session: AsyncSession,
+) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={"appointment_date": "not-a-date", "appointment_time": "09:00"},
+    )
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FLOW_APPOINTMENT_COMPLETED
+    assert "didn't go through" in sender.text_calls[0]["body"]
+
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    appointments = await AppointmentRepository(db_session).list(
+        tenant, customer_id=customer.customer_id
+    )
+    assert appointments == []
+
+
+async def test_order_flow_completion_with_selected_items_still_creates_order_not_appointment(
+    db_session: AsyncSession,
+) -> None:
+    from notifications import wiring
+
+    _, tenant = await _seed_connected_merchant(db_session)
+    item = await ItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "selected_items": [str(item.item_id)],
+            "order_type": "pickup",
+            "payment_method": "cod",
+        },
+    )
+
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(RecordingNotificationChannel())
+    try:
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert result.intent == Intent.FLOW_ORDER_COMPLETED
+
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    orders = await OrderRepository(db_session).list_for_customer(tenant, customer.customer_id)
+    assert len(orders) == 1
+
+    appointments = await AppointmentRepository(db_session).list(
+        tenant, customer_id=customer.customer_id
+    )
+    assert appointments == []

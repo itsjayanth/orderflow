@@ -78,3 +78,18 @@ class WhatsAppBusinessAccountRepository:
         account.flow_private_key_encrypted = private_key_encrypted
         await self._session.flush()
         return account
+
+    async def set_appointment_flow_credentials(
+        self, tenant: TenantContext, *, flow_id: str, private_key_encrypted: str
+    ) -> WhatsAppBusinessAccount:
+        """Called once by scripts/setup_whatsapp_appointment_flow.py after
+        creating and publishing the appointment Flow and uploading its
+        (shared, business-level) public key to Meta."""
+        account = await self.get(tenant)
+        if account is None:
+            raise ValueError(f"No WhatsAppBusinessAccount for merchant {tenant.merchant_id}")
+
+        account.whatsapp_appointment_flow_id = flow_id
+        account.flow_private_key_encrypted = private_key_encrypted
+        await self._session.flush()
+        return account

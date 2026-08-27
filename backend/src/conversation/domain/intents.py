@@ -21,6 +21,11 @@ class Intent(StrEnum):
     # WhatsApp Flow submission (InboundMessage.flow_response is set) --
     # never returned by classify(), which only sees text/button messages.
     FLOW_ORDER_COMPLETED = "flow_order_completed"
+    # Reported on HandledMessage when an inbound message is a completed
+    # WhatsApp appointment-booking Flow submission (InboundMessage.flow_response
+    # is set, and carries an appointment_date key) -- never returned by
+    # classify(), same reason as FLOW_ORDER_COMPLETED above.
+    FLOW_APPOINTMENT_COMPLETED = "flow_appointment_completed"
 
 
 # Order matters: checked top to bottom, first match wins. TRACK_ORDER and

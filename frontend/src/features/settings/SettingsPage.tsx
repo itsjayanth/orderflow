@@ -16,6 +16,7 @@ import type { NotificationTemplateOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
+import { AppointmentFlowSetupCard } from './AppointmentFlowSetupCard'
 import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
 import { useAppointmentSettings, useUpdateAppointmentSettings } from './useAppointmentSettings'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
@@ -131,6 +132,7 @@ function PaymentSettingsSection() {
 
 function WhatsAppSettingsSection() {
   const { data, isLoading } = useWhatsAppSettings()
+  const { data: appointmentSettings } = useAppointmentSettings()
   const update = useUpdateWhatsAppSettings()
   const [justSaved, setJustSaved] = useState(false)
   const {
@@ -251,6 +253,9 @@ function WhatsAppSettingsSection() {
 
       <TestWhatsAppMessageCard disabled={!data?.access_token_set} />
       <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />
+      {appointmentSettings?.appointment_booking_enabled && (
+        <AppointmentFlowSetupCard disabled={!data?.access_token_set} />
+      )}
     </Card>
   )
 }

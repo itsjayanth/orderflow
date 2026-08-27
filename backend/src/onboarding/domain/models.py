@@ -41,6 +41,13 @@ class WhatsAppBusinessAccount(Base):
     whatsapp_flow_id: Mapped[str | None] = mapped_column(String(255), default=None)
     flow_private_key_encrypted: Mapped[str | None] = mapped_column(String(4096), default=None)
 
+    # A second, independent Flow object for native in-chat appointment
+    # booking (see flows/assets/appointment_flow.json) -- shares the same
+    # business-level RSA key pair as whatsapp_flow_id above (Meta's
+    # whatsapp_business_encryption key is per phone_number_id, not per
+    # Flow), so there's no separate private-key column here.
+    whatsapp_appointment_flow_id: Mapped[str | None] = mapped_column(String(255), default=None)
+
     updated_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC),
         onupdate=lambda: datetime.datetime.now(datetime.UTC),

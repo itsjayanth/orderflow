@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from appointment_flow.domain.booking import PastDateError, perform_booking
 from catalog.adapters.repository import ItemRepository
 from conversation.adapters.repository import MessageDedupeRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
@@ -11,6 +12,10 @@ from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from faq.adapters.repository import FAQItemRepository
 from faq.domain.models import FAQItem
+from flows.domain.appointment_booking import (
+    InvalidAppointmentSubmissionError,
+    parse_appointment_flow_completion,
+)
 from flows.domain.order_builder import (
     NoItemsSelectedError,
     build_new_delivery_address,
@@ -101,6 +106,20 @@ async def handle_inbound_message(
     await session.commit()
 
     if message.flow_response is not None:
+        # The two Flows' `complete` payloads never share key names by
+        # design (see flows/assets/order_flow.json vs
+        # flows/assets/appointment_flow.json's Footer payloads) --
+        # appointment_date only ever appears on a completed appointment
+        # booking, so it's a safe, cheap way to tell which Flow this
+        # submission came from without carrying an explicit flow-type
+        # marker through the payload.
+        if "appointment_date" in message.flow_response:
+            appointment_reply_sent = await _handle_appointment_flow_completion(
+                session, sender, waba, tenant, message
+            )
+            return HandledMessage(
+                intent=Intent.FLOW_APPOINTMENT_COMPLETED, reply_sent=appointment_reply_sent
+            )
         reply_sent = await _handle_flow_completion(session, sender, waba, tenant, message)
         return HandledMessage(intent=Intent.FLOW_ORDER_COMPLETED, reply_sent=reply_sent)
 
@@ -209,6 +228,26 @@ async def _reply_for_intent(
         )
 
     if intent == Intent.BOOK_APPOINTMENT and appointment_booking_enabled:
+        if waba.whatsapp_appointment_flow_id:
+            # Native in-chat appointment booking (see flows/) -- same
+            # dual-path pattern as PLACE_ORDER above: falls back to the
+            # webview link below for any merchant who hasn't had the
+            # appointment Flow set up yet, or if the send itself fails, so
+            # BOOK_APPOINTMENT never silently does nothing.
+            sent = await sender.send_flow(
+                phone_number_id=message.phone_number_id,
+                access_token=access_token,
+                to=message.from_phone,
+                flow_id=waba.whatsapp_appointment_flow_id,
+                flow_token=message.from_phone,
+                body="Book your appointment without leaving WhatsApp.",
+                cta="Book now",
+            )
+            if sent:
+                return True
+            # Flow send failed -- fall through to the link, same rationale
+            # as PLACE_ORDER above.
+
         booking_link = f"{get_settings().frontend_base_url}/book/{tenant.merchant_id}"
         return await sender.send_text(
             phone_number_id=message.phone_number_id,
@@ -435,6 +474,74 @@ async def _handle_flow_completion(
     body = (
         f"Order #{result.order.order_number} received!\n\n{cart.summary_text}"
         f"\n\nComplete payment: {result.payment_link_url}"
+    )
+    return await sender.send_text(
+        phone_number_id=message.phone_number_id,
+        access_token=access_token,
+        to=message.from_phone,
+        body=body,
+    )
+
+
+async def _handle_appointment_flow_completion(
+    session: AsyncSession,
+    sender: WhatsAppSender,
+    waba: WhatsAppBusinessAccount,
+    tenant: TenantContext,
+    message: InboundMessage,
+) -> bool:
+    """The customer tapped "Request appointment" on the appointment Flow's
+    single terminal BOOKING screen -- delivered here the same way a
+    completed order Flow is (interactive.nfm_reply), never to
+    flows/api/router.py's appointment-data-exchange endpoint. Reuses the
+    exact same perform_booking the public booking webview calls, so a
+    Flow-submitted booking and a web-submitted one become indistinguishable
+    the moment they're an Appointment row -- no separate booking-creation
+    path to keep in sync."""
+    access_token = _access_token(waba)
+    assert message.flow_response is not None  # narrows for mypy; caller already checked
+
+    try:
+        submission = parse_appointment_flow_completion(message.flow_response)
+    except InvalidAppointmentSubmissionError:
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body='That booking didn\'t go through -- send "book appointment" to try again.',
+        )
+
+    try:
+        result = await perform_booking(
+            session,
+            tenant,
+            customer_whatsapp_number=message.from_phone,
+            customer_display_name=submission.customer_name or message.from_name,
+            name=submission.customer_name or message.from_name or "",
+            email=submission.customer_email or "",
+            appointment_date=submission.appointment_date,
+            appointment_time=submission.appointment_time,
+            notes=submission.notes,
+            whatsapp_conversation_ref=message.whatsapp_message_id,
+        )
+    except PastDateError:
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body='That date has already passed -- send "book appointment" to pick a new one.',
+        )
+
+    # No confirmation event is published here -- matches perform_booking's
+    # existing, deliberate "silent on requested" design (only the
+    # confirmed/cancelled transitions, set later from the dashboard,
+    # notify the customer over WhatsApp per the product spec).
+    appointment = result.appointment
+    body = (
+        f"Appointment #{appointment.appointment_number:04d} requested for "
+        f"{appointment.appointment_date.strftime('%a, %d %b')} at "
+        f"{appointment.appointment_time.strftime('%I:%M %p').lstrip('0')}!\n\n"
+        "We'll message you here once it's confirmed."
     )
     return await sender.send_text(
         phone_number_id=message.phone_number_id,

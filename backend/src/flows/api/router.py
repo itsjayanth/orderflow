@@ -10,6 +10,7 @@ from catalog.domain.models import Item
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from customers.domain.models import Customer
 from flows.api.schemas import FlowDataExchangeRequest
+from flows.domain.appointment_booking import build_booking_screen_data
 from flows.domain.encryption import FlowDecryptionError, decrypt_request, encrypt_response
 from flows.domain.images import fetch_and_compress_image
 from flows.domain.order_builder import (
@@ -78,6 +79,76 @@ async def data_exchange(
     )
     encrypted = encrypt_response(response=response_data, aes_key=aes_key, iv=iv)
     return Response(content=encrypted, media_type="text/plain", status_code=status.HTTP_200_OK)
+
+
+@router.post("/{merchant_id}/appointment-data-exchange")
+async def appointment_data_exchange(
+    merchant_id: uuid.UUID, body: FlowDataExchangeRequest, session: DbSession
+) -> Response:
+    """Same decrypt -> dispatch -> encrypt shape as data_exchange() above,
+    for the separate, single-screen appointment-booking Flow (see
+    flows/assets/appointment_flow.json). A distinct route (rather than
+    branching data_exchange() itself on some payload field) because the
+    two Flows' endpoint_uris are configured independently against Meta
+    (see scripts/setup_whatsapp_appointment_flow.py) and have no
+    navigation state in common to share -- keeping them as two small,
+    independently-readable functions beats one route with a "which flow
+    is this" branch threaded through it. They do share the same
+    business-level RSA key pair (waba.flow_private_key_encrypted), so the
+    404/421 handling below is identical."""
+    tenant = TenantContext(merchant_id=merchant_id)
+    waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
+    if waba is None or waba.flow_private_key_encrypted is None:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+
+    try:
+        private_key_pem = decrypt(waba.flow_private_key_encrypted)
+        payload, aes_key, iv = decrypt_request(
+            encrypted_flow_data_b64=body.encrypted_flow_data,
+            encrypted_aes_key_b64=body.encrypted_aes_key,
+            initial_vector_b64=body.initial_vector,
+            private_key_pem=private_key_pem,
+        )
+    except FlowDecryptionError:
+        logger.warning(
+            "Appointment flow data-exchange decryption failed for merchant %s", merchant_id
+        )
+        return Response(status_code=status.HTTP_421_MISDIRECTED_REQUEST)
+
+    logger.info(
+        "Appointment flow data-exchange request for merchant %s: action=%r screen=%r",
+        merchant_id,
+        payload.get("action"),
+        payload.get("screen"),
+    )
+    response_data = await _handle_appointment_action(session, tenant, payload)
+    logger.info(
+        "Appointment flow data-exchange response for merchant %s: screen=%r",
+        merchant_id,
+        response_data.get("screen"),
+    )
+    encrypted = encrypt_response(response=response_data, aes_key=aes_key, iv=iv)
+    return Response(content=encrypted, media_type="text/plain", status_code=status.HTTP_200_OK)
+
+
+async def _handle_appointment_action(
+    session: DbSession, tenant: TenantContext, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """The appointment Flow is single-screen and terminal (see
+    flows/assets/appointment_flow.json's routing_model) -- there's no
+    screen-to-screen navigation to dispatch on, unlike _handle_action
+    above. `ping` gets the standard health-check reply; INIT (and any
+    other/unrecognized action, as a fail-safe -- same rationale as
+    _handle_action's fallback) always (re)renders the one BOOKING screen
+    with a fresh set of date/time options."""
+    action = payload.get("action")
+
+    if action == "ping":
+        return {"data": {"status": "active"}}
+
+    merchant = await MerchantRepository(session).get(tenant.merchant_id)
+    business_name = merchant.business_name if merchant else "Book"
+    return {"screen": "BOOKING", "data": build_booking_screen_data(business_name=business_name)}
 
 
 async def _handle_action(

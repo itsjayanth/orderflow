@@ -1,0 +1,137 @@
+{
+  "version": "6.0",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "BOOKING": []
+  },
+  "screens": [
+    {
+      "id": "BOOKING",
+      "title": "Book an appointment",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "business_name": {
+          "type": "string",
+          "__example__": "Varkey's"
+        },
+        "date_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "2026-08-28",
+              "title": "Fri, 28 Aug"
+            },
+            {
+              "id": "2026-08-29",
+              "title": "Sat, 29 Aug"
+            }
+          ]
+        },
+        "time_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "09:00",
+              "title": "9:00 AM"
+            },
+            {
+              "id": "09:30",
+              "title": "9:30 AM"
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "${data.business_name}"
+          },
+          {
+            "type": "TextBody",
+            "text": "Pick a date and time that works for you."
+          },
+          {
+            "type": "Form",
+            "name": "booking_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "appointment_date",
+                "label": "Date",
+                "data-source": "${data.date_options}",
+                "required": true
+              },
+              {
+                "type": "Dropdown",
+                "name": "appointment_time",
+                "label": "Time",
+                "data-source": "${data.time_options}",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "customer_name",
+                "label": "Your name",
+                "input-type": "text",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "customer_email",
+                "label": "Email address",
+                "input-type": "email",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "notes",
+                "label": "Anything we should know? (optional)",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "Footer",
+                "label": "Request appointment",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "appointment_date": "${form.appointment_date}",
+                    "appointment_time": "${form.appointment_time}",
+                    "customer_name": "${form.customer_name}",
+                    "customer_email": "${form.customer_email}",
+                    "notes": "${form.notes}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
