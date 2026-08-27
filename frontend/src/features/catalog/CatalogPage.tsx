@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Search, UtensilsCrossed } from 'lucide-react'
+import { Package, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -36,7 +36,7 @@ type CategorySection = { category: string; items: Item[] }
 
 // One card per category, items kept in each category's first-appearance
 // order -- the same grouping convention the customer-facing ordering
-// webview uses for its menu (see OrderingPage.tsx's groupByCategory), so
+// webview uses for its catalog (see OrderingPage.tsx's groupByCategory), so
 // merchant and customer views read consistently.
 function groupByCategory(items: Item[]): CategorySection[] {
   const sections: CategorySection[] = []
@@ -143,8 +143,8 @@ function CatalogItemRow({
 }
 
 // Mirrors CatalogItemRow's real layout (image tile, two text lines, a
-// toggle-shaped control on the right) so the loading state reads as "menu
-// items are loading" rather than a couple of unrelated gray bars.
+// toggle-shaped control on the right) so the loading state reads as "items
+// are loading" rather than a couple of unrelated gray bars.
 function CatalogItemRowSkeleton() {
   return (
     <div className="flex items-center gap-4 px-5 py-4">
@@ -205,7 +205,7 @@ export function CatalogPage() {
     <div className="space-y-6">
       <PageHeader
         title="Catalog"
-        description="Manage your menu items and control what customers can order."
+        description="Manage your items and control what customers can order."
       />
 
       <Input
@@ -214,7 +214,7 @@ export function CatalogPage() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="max-w-sm"
-        aria-label="Search menu items"
+        aria-label="Search items"
       />
 
       {isLoading && (
@@ -225,7 +225,7 @@ export function CatalogPage() {
       )}
 
       {!isLoading && items?.length === 0 && (
-        <EmptyState icon={UtensilsCrossed} title="No menu items yet. Add one below." />
+        <EmptyState icon={Package} title="No items yet. Add one below." />
       )}
 
       {!isLoading && items && items.length > 0 && sections.length === 0 && (

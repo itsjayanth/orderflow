@@ -1,7 +1,7 @@
 /**
  * The Orderflow brand mark: a rounded chat-bubble (the WhatsApp conversation
  * the order happens in) holding a fork whose tines flow into a single
- * ribbon-like curve (the "flow" from order to kitchen to customer), capped
+ * ribbon-like curve (the "flow" from order to fulfillment to customer), capped
  * with a small accent dot. Deliberately not a literal WhatsApp glyph.
  *
  * Colors are wired to the `--primary` / `--brand-gold` CSS custom properties

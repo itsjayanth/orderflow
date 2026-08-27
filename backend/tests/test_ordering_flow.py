@@ -32,7 +32,9 @@ async def _tenant_for(client: AsyncClient, tokens: dict) -> TenantContext:
     return TenantContext(merchant_id=uuid.UUID(me.json()["merchant"]["merchant_id"]))
 
 
-async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_public_catalog_requires_no_auth(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
     await ItemRepository(db_session).create(
@@ -44,7 +46,7 @@ async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: Asy
     )
     await db_session.commit()
 
-    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/menu")
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
 
     assert response.status_code == 200
     body = response.json()
@@ -64,13 +66,13 @@ async def test_public_item_without_image_has_null_image_url(
     )
     await db_session.commit()
 
-    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/menu")
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
 
     assert response.status_code == 200
     assert response.json()["items"][0]["image_url"] is None
 
 
-async def test_public_menu_excludes_unavailable_items(
+async def test_public_catalog_excludes_unavailable_items(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
@@ -85,15 +87,15 @@ async def test_public_menu_excludes_unavailable_items(
     await item_repo.update(tenant, unavailable.item_id, is_available=False)
     await db_session.commit()
 
-    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/menu")
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
 
     names = {item["name"] for item in response.json()["items"]}
     assert names == {"Butter Chicken"}
     assert available.item_id  # sanity: fixture actually created
 
 
-async def test_public_menu_unknown_merchant_returns_404(client: AsyncClient) -> None:
-    response = await client.get(f"/api/v1/ordering-flow/{uuid.uuid4()}/menu")
+async def test_public_catalog_unknown_merchant_returns_404(client: AsyncClient) -> None:
+    response = await client.get(f"/api/v1/ordering-flow/{uuid.uuid4()}/catalog")
 
     assert response.status_code == 404
 
@@ -447,7 +449,7 @@ async def test_public_checkout_isolated_between_merchants(
     )
     await db_session.commit()
 
-    # Ordering from A's public menu page but referencing B's item id 404s.
+    # Ordering from A's public catalog page but referencing B's item id 404s.
     response = await client.post(
         f"/api/v1/ordering-flow/{tenant_a.merchant_id}/checkout",
         json={

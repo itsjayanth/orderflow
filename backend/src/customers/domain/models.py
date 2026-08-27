@@ -32,7 +32,7 @@ class Customer(Base):
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
     # Human-facing sequential reference (per merchant, starts at 1, never
     # reused/reset) -- same role order_number/item_number play for orders
-    # and menu items. Shown in the dashboard, orders, and customers UI, and
+    # and items. Shown in the dashboard, orders, and customers UI, and
     # usable as a search filter, instead of the raw customer_id UUID.
     customer_number: Mapped[int] = mapped_column()
     whatsapp_number: Mapped[str] = mapped_column(String(32))

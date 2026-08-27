@@ -96,7 +96,7 @@ export function BookingPage() {
     return (
       <div className="flex min-h-svh items-center justify-center p-8">
         <p className="text-muted-foreground max-w-sm text-center text-sm">
-          This restaurant isn't accepting appointment bookings right now.
+          This business isn't accepting appointment bookings right now.
         </p>
       </div>
     )

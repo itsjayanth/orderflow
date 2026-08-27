@@ -42,7 +42,7 @@ import { useOrder } from './useOrder'
 import { useOrders } from './useOrders'
 import { useUpdateOrderStatus } from './useUpdateOrderStatus'
 
-// The full lifecycle, including "cancelled" -- a restaurant owner monitoring
+// The full lifecycle, including "cancelled" -- a business owner monitoring
 // failed/undelivered orders needs it as a first-class tab too, and it's
 // what the dashboard's "Failed" card links to.
 const TABS: (FulfillmentStatus | 'all')[] = [

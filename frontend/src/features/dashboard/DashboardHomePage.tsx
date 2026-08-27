@@ -136,9 +136,9 @@ export function DashboardHomePage() {
               <Sparkles className="size-5" />
             </div>
             <div>
-              <p className="font-medium">Finish setting up your restaurant</p>
+              <p className="font-medium">Finish setting up your business</p>
               <p className="text-muted-foreground text-sm">
-                Connect WhatsApp, add your business details, and list a menu item to start taking
+                Connect WhatsApp, add your business details, and list an item to start taking
                 orders.
               </p>
             </div>

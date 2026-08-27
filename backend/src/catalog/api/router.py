@@ -38,7 +38,7 @@ async def update_item(
         tenant, item_id, **body.model_dump(exclude_unset=True)
     )
     if item is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Menu item not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Item not found")
     # Covers the case where the gate is only met by un-hiding an existing
     # item (is_available: true) rather than creating a new one.
     await try_advance_for_catalog_ready(session, tenant)

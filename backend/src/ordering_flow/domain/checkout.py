@@ -23,7 +23,7 @@ from shared.tenant import TenantContext
 
 class ItemNotFoundError(Exception):
     def __init__(self, item_id: uuid.UUID) -> None:
-        super().__init__(f"Menu item {item_id} not found")
+        super().__init__(f"Item {item_id} not found")
         self.item_id = item_id
 
 
@@ -88,7 +88,7 @@ async def perform_checkout(
     )
     # The number to ring for *this* order -- falls back to the WhatsApp
     # identity number itself when the customer didn't ask for a different
-    # one, so downstream (dashboard, kitchen) always has exactly one number
+    # one, so downstream (dashboard, staff) always has exactly one number
     # to call rather than needing to know about the "same as WhatsApp" case.
     resolved_contact_phone = contact_phone or customer_whatsapp_number
 

@@ -15,7 +15,7 @@ class PublicItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PublicMenuOut(BaseModel):
+class PublicCatalogOut(BaseModel):
     business_name: str
     items: list[PublicItemOut]
     # Null until the merchant has connected WhatsApp (onboarding) -- lets

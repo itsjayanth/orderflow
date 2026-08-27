@@ -159,7 +159,7 @@ function capitalize(value: string): string {
 // Shared by OrderDetailPage (full page) and OrdersPage's inline row
 // expansion -- the one place that renders "everything about this order"
 // as a single profile table: who it's for, its current status, where
-// it's going, staff notes, every action a kitchen/dashboard user can
+// it's going, staff notes, every action a staff/dashboard user can
 // take, and the line items themselves, all as rows of one <table> rather
 // than scattered across separate blocks. Mirrors CustomerDetailCard's
 // role/shape for the Customers tab. Kept action-heavy on purpose (per

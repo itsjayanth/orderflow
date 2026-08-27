@@ -383,7 +383,7 @@ function AddItemStep() {
       </p>
       {items && items.length > 0 && (
         <p className="text-sm">
-          {items.length} item{items.length === 1 ? '' : 's'} already on your menu.
+          {items.length} item{items.length === 1 ? '' : 's'} already in your catalog.
         </p>
       )}
       <form
@@ -519,8 +519,8 @@ function LiveStep() {
       </span>
       <p className="font-serif text-lg font-medium">You're live!</p>
       <p className="text-muted-foreground text-sm">
-        Customers can now message your WhatsApp number to browse the menu and place orders. Incoming
-        orders will show up on the Orders page.
+        Customers can now message your WhatsApp number to browse the catalog and place orders.
+        Incoming orders will show up on the Orders page.
       </p>
     </div>
   )

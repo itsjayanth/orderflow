@@ -29,7 +29,7 @@ const meResponse: MeResponse = {
   },
   merchant: {
     merchant_id: '11111111-1111-1111-1111-111111111111',
-    business_name: 'Test Kitchen',
+    business_name: 'Test Business',
     onboarding_status: 'live',
     appointment_booking_enabled: false,
   },
@@ -119,7 +119,7 @@ describe('DashboardHomePage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('Welcome back, Test Kitchen')).toBeInTheDocument()
+    expect(await screen.findByText('Welcome back, Test Business')).toBeInTheDocument()
     expect(screen.getByText('Total orders')).toBeInTheDocument()
     // "INR 349.00" appears both in the revenue hero card (formatted from
     // the summary) and in the recent-orders row (raw order.total) -- assert
@@ -133,7 +133,7 @@ describe('DashboardHomePage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('Finish setting up your restaurant')).toBeInTheDocument()
+    expect(await screen.findByText('Finish setting up your business')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Continue setup' })).toHaveAttribute(
       'href',
       '/onboarding',
@@ -145,8 +145,8 @@ describe('DashboardHomePage', () => {
 
     renderPage()
 
-    await screen.findByText('Welcome back, Test Kitchen')
-    expect(screen.queryByText('Finish setting up your restaurant')).not.toBeInTheDocument()
+    await screen.findByText('Welcome back, Test Business')
+    expect(screen.queryByText('Finish setting up your business')).not.toBeInTheDocument()
   })
 
   it('shows an empty state when there are no orders yet', async () => {
@@ -166,7 +166,7 @@ describe('DashboardHomePage', () => {
 
     renderPage()
 
-    await screen.findByText('Welcome back, Test Kitchen')
+    await screen.findByText('Welcome back, Test Business')
     mockedApiFetch.mockClear()
 
     fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }))

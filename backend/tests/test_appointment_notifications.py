@@ -66,7 +66,7 @@ class RecordingChannel:
 
 async def _seed_appointment(db_session: AsyncSession, *, connect_whatsapp: bool = True):
     merchant = await MerchantRepository(db_session).create(
-        business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
 
@@ -247,7 +247,7 @@ async def test_templates_list_includes_appointment_kinds(
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": "owner@example.com",
             "password": "correct-horse-battery-staple",

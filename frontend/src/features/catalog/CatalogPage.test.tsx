@@ -61,7 +61,7 @@ describe('CatalogPage', () => {
     mockedApiFetch.mockReset()
   })
 
-  it('renders menu items from the list query, including item numbers', async () => {
+  it('renders items from the list query, including item numbers', async () => {
     mockedApiFetch.mockResolvedValueOnce(sampleItems)
 
     renderPage()
@@ -90,7 +90,7 @@ describe('CatalogPage', () => {
     await screen.findByText('Butter Chicken')
     expect(screen.getByText('Mango Lassi')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Search menu items'), {
+    fireEvent.change(screen.getByLabelText('Search items'), {
       target: { value: 'lassi' },
     })
     expect(screen.queryByText('Butter Chicken')).not.toBeInTheDocument()
@@ -99,7 +99,7 @@ describe('CatalogPage', () => {
     // entirely rather than rendered as an empty section.
     expect(screen.queryByRole('heading', { name: 'Mains' })).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Search menu items'), {
+    fireEvent.change(screen.getByLabelText('Search items'), {
       target: { value: '#0001' },
     })
     expect(screen.getByText('Butter Chicken')).toBeInTheDocument()

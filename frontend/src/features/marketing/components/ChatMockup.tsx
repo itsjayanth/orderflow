@@ -29,7 +29,7 @@ function ChatBubble({
   )
 }
 
-function MenuChip({ name, price }: { name: string; price: string }) {
+function ItemChip({ name, price }: { name: string; price: string }) {
   return (
     <div className="bg-card border-border/70 ml-1 flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-sm">
       <span className="font-medium">{name}</span>
@@ -74,10 +74,10 @@ export function ChatMockup() {
 
         <div className="bg-muted/60 flex flex-col gap-2.5 px-3 py-4">
           <ChatBubble from="them">
-            Namaste! 👋 Here's today's menu — tap an item to add it to your order.
+            Namaste! 👋 Here's what's available — tap an item to add it to your order.
           </ChatBubble>
-          <MenuChip name="Classic Combo" price="₹220" />
-          <MenuChip name="Deluxe Pack" price="₹120" />
+          <ItemChip name="Classic Combo" price="₹220" />
+          <ItemChip name="Deluxe Pack" price="₹120" />
           <ChatBubble from="me">Added Classic Combo ×1 to cart</ChatBubble>
           <ChatBubble from="them">
             <span className="font-medium">Order summary</span>

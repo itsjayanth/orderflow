@@ -208,7 +208,7 @@ export interface PublicItemOut {
   image_url: string | null
 }
 
-export interface PublicMenuOut {
+export interface PublicCatalogOut {
   business_name: string
   items: PublicItemOut[]
   merchant_whatsapp_number: string | null

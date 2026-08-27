@@ -38,7 +38,7 @@ class Merchant(Base):
 
     # Per-merchant toggle for the Appointment Booking feature
     # (appointments/, appointment_flow/) -- default OFF so existing
-    # restaurant merchant behavior is byte-for-byte unchanged until a
+    # existing merchant behavior is byte-for-byte unchanged until a
     # merchant opts in from the dashboard Settings page.
     appointment_booking_enabled: Mapped[bool] = mapped_column(default=False)
 

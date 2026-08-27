@@ -127,7 +127,7 @@ async def test_catalog_ready_and_live_cascade_once_gate_is_met(db_session: Async
     merchant.business_address_line1 = "1 MG Road"
     await advance_after_profile_completed(db_session, tenant)
 
-    # Gate not met yet -- no menu items.
+    # Gate not met yet -- no items.
     merchant = await try_advance_for_catalog_ready(db_session, tenant)
     assert merchant.onboarding_status == "profile_completed"
 

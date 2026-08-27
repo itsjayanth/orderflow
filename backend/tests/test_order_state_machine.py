@@ -149,7 +149,7 @@ def test_illegal_fulfillment_transition_raises(from_status: str | None, to_statu
 
 def test_fulfillment_transition_before_gate_raises() -> None:
     """An order whose payment hasn't reached paid/cod_pending yet has no
-    fulfillment_status -- staff can't advance kitchen state on an order
+    fulfillment_status -- staff can't advance fulfillment state on an order
     that isn't paid for or committed to COD."""
     order = _order(payment_status="awaiting_payment", fulfillment_status=None)
 

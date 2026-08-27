@@ -4,7 +4,7 @@ import { apiFetch } from '@/shared/api/client'
 import type { BusinessProfileOut, OnboardingStatusOut } from '@/shared/api/types'
 
 // Exported so mutations elsewhere (connecting WhatsApp in Settings, creating
-// a menu item in Catalog) can invalidate this query too -- both can advance
+// an item in Catalog) can invalidate this query too -- both can advance
 // onboarding_status server-side as a side effect.
 export const onboardingStatusQueryKey = ['onboarding', 'status']
 const PROFILE_QUERY_KEY = ['onboarding', 'profile']

@@ -65,7 +65,7 @@ describe('App', () => {
       }),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Log in' })[0]).toHaveAttribute('href', '/login')
-    expect(screen.getAllByRole('link', { name: 'Register your restaurant' })[0]).toHaveAttribute(
+    expect(screen.getAllByRole('link', { name: 'Register your business' })[0]).toHaveAttribute(
       'href',
       '/register',
     )

@@ -92,7 +92,7 @@ export function LoginPage() {
         <p className="text-muted-foreground text-center text-sm">
           No account yet?{' '}
           <Link to="/register" className="text-primary font-medium underline underline-offset-4">
-            Register your restaurant
+            Register your business
           </Link>
         </p>
       </div>
