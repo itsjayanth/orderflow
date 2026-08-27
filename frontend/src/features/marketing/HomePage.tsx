@@ -5,6 +5,7 @@ import {
   CreditCard,
   LayoutDashboard,
   MessageCircle,
+  Package,
   Percent,
   ShieldCheck,
   ShoppingCart,
@@ -12,7 +13,6 @@ import {
   SmartphoneNfc,
   Sparkles,
   Store,
-  UtensilsCrossed,
   X,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
@@ -35,7 +35,7 @@ import { DashboardPreview } from './components/DashboardPreview'
 
 const TRUST_POINTS: { icon: ComponentType<{ className?: string }>; label: string }[] = [
   { icon: SmartphoneNfc, label: 'No app for customers to install' },
-  { icon: Store, label: 'Works alongside your kitchen setup' },
+  { icon: Store, label: 'Works alongside how you already run your business' },
   { icon: ShieldCheck, label: 'Payments verified before orders confirm' },
 ]
 
@@ -48,7 +48,7 @@ const ORDER_STEPS: {
     icon: MessageCircle,
     title: 'Browse',
     description:
-      'Customers open a chat and browse your live menu as an interactive catalog — categories, photos, and prices, always up to date.',
+      'Customers open a chat and browse your live catalog as an interactive list — categories, photos, and prices, always up to date.',
   },
   {
     icon: ShoppingCart,
@@ -72,7 +72,7 @@ const ORDER_STEPS: {
     icon: Bell,
     title: 'Track',
     description:
-      'Once payment clears, the customer gets automatic updates — confirmed, preparing, ready for pickup.',
+      'Once payment clears, the customer gets automatic updates — confirmed, processing, ready for pickup.',
   },
 ]
 
@@ -85,7 +85,7 @@ const DASHBOARD_FEATURES: {
     icon: LayoutDashboard,
     title: 'Live order queue',
     description:
-      'New orders appear within seconds of payment, sorted by status — New, Preparing, Ready, Completed.',
+      'New orders appear within seconds of payment, sorted by status — New, Processing, Ready, Completed.',
   },
   {
     icon: Bell,
@@ -94,8 +94,8 @@ const DASHBOARD_FEATURES: {
       'Move an order forward and Orderflow messages the customer on WhatsApp automatically — no separate notification step.',
   },
   {
-    icon: UtensilsCrossed,
-    title: 'Menu & catalog control',
+    icon: Package,
+    title: 'Catalog control',
     description:
       'Add items, update prices, and mark things out of stock. Changes reflect in the WhatsApp catalog immediately.',
   },
@@ -133,7 +133,7 @@ const COMPARE_COLUMNS: {
     points: [
       'A cut taken out of every single order',
       'The customer relationship belongs to the platform',
-      'Your menu sits next to every competitor’s',
+      'Your catalog sits next to every competitor’s',
     ],
   },
   {
@@ -143,7 +143,7 @@ const COMPARE_COLUMNS: {
     highlight: true,
     points: [
       'Structured ordering on WhatsApp, which customers already have open',
-      'Payment confirmed automatically before it reaches your kitchen',
+      'Payment confirmed automatically before it reaches your team',
       'Every order and every customer relationship stays yours',
     ],
   },
@@ -153,17 +153,17 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
   {
     question: 'Do my customers need to install anything?',
     answer:
-      'No. The entire ordering experience — browsing the menu, building a cart, paying, and getting status updates — happens inside WhatsApp, which almost every customer already has open.',
+      'No. The entire ordering experience — browsing the catalog, building a cart, paying, and getting status updates — happens inside WhatsApp, which almost every customer already has open.',
   },
   {
-    question: 'Does this replace my POS or kitchen setup?',
+    question: 'Does this replace my existing systems?',
     answer:
-      'No. Paid orders land in one clear dashboard your staff act on manually today — nothing about your kitchen workflow has to change to get started. POS integration (Petpooja) is on the roadmap for restaurants that want it later, not a requirement now.',
+      'No. Paid orders land in one clear dashboard your staff act on manually today — nothing about your existing workflow has to change to get started. POS integration (e.g. Petpooja for restaurants) is on the roadmap for merchants that want it later, not a requirement now.',
   },
   {
     question: 'How does payment actually work?',
     answer:
-      'A secure Razorpay/UPI payment link is sent in the same WhatsApp chat. The order only moves into your kitchen queue once that payment is confirmed — no staff member has to manually check or guess.',
+      'A secure Razorpay/UPI payment link is sent in the same WhatsApp chat. The order only moves into your queue once that payment is confirmed — no staff member has to manually check or guess.',
   },
   {
     question: 'Will customers know their order status?',
@@ -171,9 +171,9 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
       'Yes. As your staff move an order forward on the dashboard, Orderflow automatically messages the customer on WhatsApp — at minimum when it’s ready — so nobody has to send that update by hand.',
   },
   {
-    question: 'Is my restaurant’s data kept separate from others?',
+    question: 'Is my business’s data kept separate from others?',
     answer:
-      'Yes. Every restaurant’s orders, menu, and customers are isolated from every other restaurant on the platform, and sensitive credentials like your WhatsApp and payment keys are encrypted at rest.',
+      'Yes. Every business’s orders, catalog, and customers are isolated from every other business on the platform, and sensitive credentials like your WhatsApp and payment keys are encrypted at rest.',
   },
 ]
 
@@ -281,13 +281,13 @@ export function HomePage() {
                 Take orders where your customers already are — WhatsApp.
               </h1>
               <p className="text-muted-foreground mx-auto max-w-xl text-lg text-balance lg:mx-0">
-                Orderflow turns WhatsApp into a full ordering channel for your restaurant: guided
-                menu browsing, cart, secure payment links, and live status updates — with every
+                Orderflow turns WhatsApp into a full ordering channel for your business: guided
+                catalog browsing, cart, secure payment links, and live status updates — with every
                 order landing in one dashboard your staff already knows how to use.
               </p>
               <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
                 <Button asChild size="lg" className="w-full sm:w-auto">
-                  <Link to="/register">Register your restaurant</Link>
+                  <Link to="/register">Register your business</Link>
                 </Button>
                 <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
                   <Link to="/login">Log in</Link>
@@ -310,11 +310,11 @@ export function HomePage() {
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
           <Reveal className="mx-auto max-w-2xl space-y-3 text-center">
             <h2 className="font-serif text-3xl font-semibold tracking-tight">
-              Built for restaurants, not another marketplace
+              Built for independent businesses, not another marketplace
             </h2>
             <p className="text-muted-foreground text-lg">
-              Orderflow isn’t a food-delivery app competing for your customer’s attention — it’s
-              your own ordering channel, running on the app they already use every day.
+              Orderflow isn’t a delivery marketplace app competing for your customer’s attention —
+              it’s your own ordering channel, running on the app they already use every day.
             </p>
           </Reveal>
 
@@ -330,7 +330,7 @@ export function HomePage() {
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
             <Reveal className="mx-auto max-w-2xl space-y-3 text-center">
               <h2 className="font-serif text-3xl font-semibold tracking-tight">
-                From “hi” to hot food, without leaving the chat
+                From “hi” to order placed, without leaving the chat
               </h2>
               <p className="text-muted-foreground text-lg">
                 Customers already have WhatsApp open. Orderflow guides them through a structured
@@ -403,7 +403,7 @@ export function HomePage() {
           <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 sm:py-20">
             <Reveal className="space-y-3 text-center">
               <h2 className="font-serif text-3xl font-semibold tracking-tight">
-                Questions restaurant owners ask
+                Questions business owners ask
               </h2>
               <p className="text-muted-foreground text-lg">
                 The practical details before you hand this to your team.
@@ -443,12 +443,12 @@ export function HomePage() {
                 Ready to move your ordering onto WhatsApp?
               </h2>
               <p className="text-primary-foreground/85 mx-auto mt-3 max-w-xl text-lg text-balance">
-                Set up your restaurant in minutes — connect WhatsApp, add your menu, and start
+                Set up your business in minutes — connect WhatsApp, add your catalog, and start
                 taking orders today.
               </p>
               <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Button asChild size="lg" variant="secondary" className="w-full sm:w-auto">
-                  <Link to="/register">Register your restaurant</Link>
+                  <Link to="/register">Register your business</Link>
                 </Button>
                 <Button
                   asChild
@@ -477,7 +477,7 @@ export function HomePage() {
                 <p className="text-primary font-serif text-lg tracking-tight">Orderflow</p>
               </span>
               <p className="text-muted-foreground mt-1 text-sm">
-                WhatsApp ordering for independent restaurants.
+                WhatsApp ordering for independent businesses.
               </p>
             </div>
             <div className="text-muted-foreground flex items-center gap-6 text-sm">
@@ -490,7 +490,7 @@ export function HomePage() {
             </div>
           </div>
           <p className="text-muted-foreground mt-8 text-center text-xs sm:text-left">
-            © {new Date().getFullYear()} Orderflow. Built for restaurants in Bangalore.
+            © {new Date().getFullYear()} Orderflow. Built for independent businesses in Bangalore.
           </p>
         </div>
       </footer>

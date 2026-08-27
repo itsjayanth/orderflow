@@ -17,7 +17,7 @@ def test_unknown_button_id_falls_back_to_greeting() -> None:
 
 @pytest.mark.parametrize(
     "text",
-    ["I want to order", "menu please", "so hungry right now"],
+    ["I want to order", "menu please", "want to buy something"],
 )
 def test_place_order_keywords(text: str) -> None:
     assert classify(text=text, button_id=None) == Intent.PLACE_ORDER
@@ -35,7 +35,7 @@ def test_talk_to_restaurant_keywords(text: str) -> None:
 
 @pytest.mark.parametrize(
     "text",
-    ["book appointment", "I'd like to make an appointment", "booking please", "book a table"],
+    ["book appointment", "I'd like to make an appointment", "booking please", "book a slot"],
 )
 def test_book_appointment_keywords(text: str) -> None:
     assert classify(text=text, button_id=None) == Intent.BOOK_APPOINTMENT

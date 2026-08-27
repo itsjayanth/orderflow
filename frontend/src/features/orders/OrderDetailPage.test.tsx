@@ -42,7 +42,7 @@ const sampleOrder: OrderDetailOut = {
   items: [
     {
       order_item_id: '33333333-3333-3333-3333-333333333333',
-      menu_item_id: '44444444-4444-4444-4444-444444444444',
+      item_id: '44444444-4444-4444-4444-444444444444',
       name_snapshot: 'Butter Chicken',
       price_snapshot: '349.00',
       quantity: 1,
@@ -79,8 +79,8 @@ describe('OrderDetailPage', () => {
     expect(await screen.findByText('Butter Chicken')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Order #0042' })).toBeInTheDocument()
     expect(screen.getByText('Asha', { exact: false })).toBeInTheDocument()
-    // "new" -> only "preparing" and "cancelled" are legal.
-    expect(screen.getByRole('button', { name: 'Mark Preparing' })).toBeInTheDocument()
+    // "new" -> only "processing" and "cancelled" are legal.
+    expect(screen.getByRole('button', { name: 'Mark Processing' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mark Cancelled' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Mark Ready' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Mark Completed' })).not.toBeInTheDocument()
@@ -216,10 +216,10 @@ describe('OrderDetailPage', () => {
     await screen.findByText('Butter Chicken')
     expect(screen.getByText('New')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Preparing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Processing' }))
 
     // Optimistic update applies before the mutation settles.
-    await waitFor(() => expect(screen.getByText('Preparing')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Processing')).toBeInTheDocument())
 
     rejectMutation(new ApiError(409, 'illegal transition'))
 

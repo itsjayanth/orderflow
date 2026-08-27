@@ -52,7 +52,7 @@ class Order(Base):
     # that mutates them, always through that module's transition functions.
     payment_status: Mapped[str] = mapped_column(String(32))
     # Null until payment_status reaches "paid" or "cod_pending" -- the order
-    # isn't in the kitchen workflow yet (ARCHITECTURE.md Section 7b's gate).
+    # isn't in the fulfillment workflow yet (ARCHITECTURE.md Section 7b's gate).
     fulfillment_status: Mapped[str | None] = mapped_column(String(32), default=None)
 
     subtotal: Mapped[Decimal] = mapped_column(Numeric(10, 2))
@@ -62,7 +62,7 @@ class Order(Base):
     whatsapp_conversation_ref: Mapped[str | None] = mapped_column(String(255), default=None)
     # Always resolved by perform_checkout at order-creation time (falls
     # back to the customer's own whatsapp_number when they didn't ask for a
-    # different one) -- so the dashboard/kitchen always has one number to
+    # different one) -- so the dashboard/staff always has one number to
     # call for this specific order, independent of whatever the customer's
     # *current* default_contact_phone preference is by the time anyone
     # looks at it. Nullable only for rows created before this column
@@ -104,7 +104,7 @@ class OrderItem(Base):
 
     order_item_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.order_id"), index=True)
-    menu_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("menu_items.menu_item_id"))
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.item_id"))
 
     name_snapshot: Mapped[str] = mapped_column(String(255))
     price_snapshot: Mapped[Decimal] = mapped_column(Numeric(10, 2))

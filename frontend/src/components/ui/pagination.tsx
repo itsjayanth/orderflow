@@ -3,7 +3,7 @@ import type * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-// Kept deliberately simple for this app's scale (small-restaurant order/
+// Kept deliberately simple for this app's scale (small-business order/
 // customer volumes) -- previous/next + a page-info slot ("Page 2 of 5" /
 // "21-40 of 87"), not a full numbered-page-link list. Call-sites decide
 // exact integration; this is just the primitive.

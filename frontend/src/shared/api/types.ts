@@ -53,8 +53,8 @@ export interface CustomerWithAddressesOut extends CustomerOut {
   addresses: AddressOut[]
 }
 
-export interface MenuItem {
-  menu_item_id: string
+export interface Item {
+  item_id: string
   item_number: number
   category: string
   name: string
@@ -65,11 +65,11 @@ export interface MenuItem {
   updated_at: string
 }
 
-export type FulfillmentStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
+export type FulfillmentStatus = 'new' | 'processing' | 'ready' | 'completed' | 'cancelled'
 
 export interface OrderItemOut {
   order_item_id: string
-  menu_item_id: string
+  item_id: string
   name_snapshot: string
   price_snapshot: string
   quantity: number
@@ -112,7 +112,7 @@ export interface OrderSummaryOut {
   amount_collected: string
   cod_orders: number
   new_orders: number
-  preparing_orders: number
+  processing_orders: number
   ready_orders: number
   completed_orders: number
   cancelled_orders: number
@@ -152,16 +152,16 @@ export interface OnboardingStatusOut {
   onboarding_status: OnboardingStatus
   whatsapp_connected: boolean
   profile_completed: boolean
-  has_available_menu_item: boolean
+  has_available_item: boolean
 }
 
-export interface KitchenProfileOut {
+export interface BusinessProfileOut {
   address_line1: string | null
   address_line2: string | null
   city: string | null
   pincode: string | null
-  cuisine_type: string | null
-  fssai_license_no: string | null
+  business_category: string | null
+  license_no: string | null
 }
 
 export interface FAQItemOut {
@@ -176,7 +176,7 @@ export interface FAQItemOut {
 
 export type NotificationKind =
   | 'order_confirmed'
-  | 'order_preparing'
+  | 'order_processing'
   | 'order_ready'
   | 'order_completed'
   | 'appointment_confirmed'
@@ -200,17 +200,17 @@ export interface TestCheckoutResponse {
   payment_link_url: string | null
 }
 
-export interface PublicMenuItemOut {
-  menu_item_id: string
+export interface PublicItemOut {
+  item_id: string
   category: string
   name: string
   price: string
   image_url: string | null
 }
 
-export interface PublicMenuOut {
+export interface PublicCatalogOut {
   business_name: string
-  items: PublicMenuItemOut[]
+  items: PublicItemOut[]
   merchant_whatsapp_number: string | null
 }
 

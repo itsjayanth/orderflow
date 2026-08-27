@@ -46,7 +46,7 @@ export function RegisterPage() {
 
         <Card className="shadow-lg">
           <CardHeader className="items-center text-center">
-            <h1 className="font-serif text-xl font-semibold">Register your restaurant</h1>
+            <h1 className="font-serif text-xl font-semibold">Register your business</h1>
             <p className="text-muted-foreground text-sm">Creates your merchant account</p>
           </CardHeader>
           <CardContent>

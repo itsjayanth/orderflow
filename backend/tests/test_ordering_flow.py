@@ -4,7 +4,7 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from shared.tenant import TenantContext
 
 
@@ -12,7 +12,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Public Kitchen",
+            "business_name": "Public Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -32,10 +32,12 @@ async def _tenant_for(client: AsyncClient, tokens: dict) -> TenantContext:
     return TenantContext(merchant_id=uuid.UUID(me.json()["merchant"]["merchant_id"]))
 
 
-async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_public_catalog_requires_no_auth(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant,
         category="Mains",
         name="Butter Chicken",
@@ -44,56 +46,56 @@ async def test_public_menu_requires_no_auth(client: AsyncClient, db_session: Asy
     )
     await db_session.commit()
 
-    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/menu")
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["business_name"] == "Public Kitchen"
+    assert body["business_name"] == "Public Business"
     assert len(body["items"]) == 1
     assert body["items"][0]["name"] == "Butter Chicken"
     assert body["items"][0]["image_url"] == "https://example.com/butter-chicken.jpg"
 
 
-async def test_public_menu_item_without_image_has_null_image_url(
+async def test_public_item_without_image_has_null_image_url(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Mains", name="Dal Makhani", price=Decimal("249.00")
     )
     await db_session.commit()
 
-    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/menu")
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
 
     assert response.status_code == 200
     assert response.json()["items"][0]["image_url"] is None
 
 
-async def test_public_menu_excludes_unavailable_items(
+async def test_public_catalog_excludes_unavailable_items(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_repo = MenuItemRepository(db_session)
-    available = await menu_repo.create(
+    item_repo = ItemRepository(db_session)
+    available = await item_repo.create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
-    unavailable = await menu_repo.create(
+    unavailable = await item_repo.create(
         tenant, category="Mains", name="Sold Out Dish", price=Decimal("199.00")
     )
-    await menu_repo.update(tenant, unavailable.menu_item_id, is_available=False)
+    await item_repo.update(tenant, unavailable.item_id, is_available=False)
     await db_session.commit()
 
-    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/menu")
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
 
     names = {item["name"] for item in response.json()["items"]}
     assert names == {"Butter Chicken"}
-    assert available.menu_item_id  # sanity: fixture actually created
+    assert available.item_id  # sanity: fixture actually created
 
 
-async def test_public_menu_unknown_merchant_returns_404(client: AsyncClient) -> None:
-    response = await client.get(f"/api/v1/ordering-flow/{uuid.uuid4()}/menu")
+async def test_public_catalog_unknown_merchant_returns_404(client: AsyncClient) -> None:
+    response = await client.get(f"/api/v1/ordering-flow/{uuid.uuid4()}/catalog")
 
     assert response.status_code == 404
 
@@ -103,7 +105,7 @@ async def test_public_checkout_online_creates_order_with_link(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -113,7 +115,7 @@ async def test_public_checkout_online_creates_order_with_link(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "online",
         },
     )
@@ -134,7 +136,7 @@ async def test_public_checkout_cod_gates_straight_to_new(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -144,7 +146,7 @@ async def test_public_checkout_cod_gates_straight_to_new(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "cod",
         },
     )
@@ -155,7 +157,7 @@ async def test_public_checkout_cod_gates_straight_to_new(
     assert body["fulfillment_status"] == "new"
 
 
-async def test_public_checkout_unknown_menu_item_returns_404(
+async def test_public_checkout_unknown_item_returns_404(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
@@ -167,7 +169,7 @@ async def test_public_checkout_unknown_menu_item_returns_404(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}],
+            "items": [{"item_id": str(uuid.uuid4()), "quantity": 1}],
         },
     )
 
@@ -192,7 +194,7 @@ async def test_public_checkout_missing_name_returns_422(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -201,7 +203,7 @@ async def test_public_checkout_missing_name_returns_422(
         f"/api/v1/ordering-flow/{tenant.merchant_id}/checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
         },
     )
 
@@ -213,7 +215,7 @@ async def test_public_checkout_blank_name_returns_422(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -223,7 +225,7 @@ async def test_public_checkout_blank_name_returns_422(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "   ",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
         },
     )
 
@@ -235,7 +237,7 @@ async def test_public_checkout_delivery_requires_address(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -245,7 +247,7 @@ async def test_public_checkout_delivery_requires_address(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "order_type": "delivery",
         },
     )
@@ -258,7 +260,7 @@ async def test_public_checkout_delivery_creates_address_and_sets_order_type(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -268,7 +270,7 @@ async def test_public_checkout_delivery_creates_address_and_sets_order_type(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "cod",
             "order_type": "delivery",
             "delivery_address": {
@@ -335,7 +337,7 @@ async def test_customer_lookup_returns_name_and_default_address_for_returning_cu
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -345,7 +347,7 @@ async def test_customer_lookup_returns_name_and_default_address_for_returning_cu
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "cod",
             "order_type": "delivery",
             "delivery_address": {
@@ -375,7 +377,7 @@ async def test_customer_lookup_returns_null_address_when_customer_has_none(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -385,7 +387,7 @@ async def test_customer_lookup_returns_null_address_when_customer_has_none(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
             "payment_method": "cod",
         },
     )
@@ -407,7 +409,7 @@ async def test_customer_lookup_isolated_between_merchants(
 ) -> None:
     tokens_a = await _register(client, owner_contact="owner-a@example.com")
     tenant_a = await _tenant_for(client, tokens_a)
-    menu_item_a = await MenuItemRepository(db_session).create(
+    item_a = await ItemRepository(db_session).create(
         tenant_a, category="Mains", name="Only At A", price=Decimal("100.00")
     )
     await db_session.commit()
@@ -417,7 +419,7 @@ async def test_customer_lookup_isolated_between_merchants(
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item_a.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item_a.item_id), "quantity": 1}],
             "payment_method": "cod",
         },
     )
@@ -442,18 +444,18 @@ async def test_public_checkout_isolated_between_merchants(
     tenant_a = await _tenant_for(client, tokens_a)
     tokens_b = await _register(client, owner_contact="owner-b@example.com")
     tenant_b = await _tenant_for(client, tokens_b)
-    menu_item_b = await MenuItemRepository(db_session).create(
+    item_b = await ItemRepository(db_session).create(
         tenant_b, category="Mains", name="Only At B", price=Decimal("100.00")
     )
     await db_session.commit()
 
-    # Ordering from A's public menu page but referencing B's item id 404s.
+    # Ordering from A's public catalog page but referencing B's item id 404s.
     response = await client.post(
         f"/api/v1/ordering-flow/{tenant_a.merchant_id}/checkout",
         json={
             "customer_whatsapp_number": "+919876543210",
             "customer_display_name": "Asha",
-            "items": [{"menu_item_id": str(menu_item_b.menu_item_id), "quantity": 1}],
+            "items": [{"item_id": str(item_b.item_id), "quantity": 1}],
         },
     )
 

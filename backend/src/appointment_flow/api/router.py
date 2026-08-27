@@ -19,10 +19,10 @@ router = APIRouter(prefix="/api/v1/appointment-flow", tags=["appointment_flow"])
 async def _get_bookable_merchant_or_404(session: DbSession, merchant_id: uuid.UUID) -> Merchant:
     merchant = await MerchantRepository(session).get(merchant_id)
     if merchant is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Restaurant not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
     if not merchant.appointment_booking_enabled:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND, "Appointment booking is not available for this restaurant"
+            status.HTTP_404_NOT_FOUND, "Appointment booking is not available for this business"
         )
     return merchant
 

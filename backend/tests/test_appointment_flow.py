@@ -15,7 +15,7 @@ async def _make_tenant(
     db_session: AsyncSession, *, appointment_booking_enabled: bool = True
 ) -> TenantContext:
     merchant = await MerchantRepository(db_session).create(
-        business_name="Public Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Public Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     merchant.appointment_booking_enabled = appointment_booking_enabled
     await db_session.commit()
@@ -26,7 +26,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Public Kitchen",
+            "business_name": "Public Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -133,7 +133,7 @@ async def test_appointment_flow_info_requires_no_auth(
     response = await client.get(f"/api/v1/appointment-flow/{tenant.merchant_id}/info")
 
     assert response.status_code == 200
-    assert response.json()["business_name"] == "Public Kitchen"
+    assert response.json()["business_name"] == "Public Business"
 
 
 async def test_appointment_flow_info_404_when_toggle_off(

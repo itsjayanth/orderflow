@@ -26,19 +26,19 @@ class Merchant(Base):
     onboarding_status: Mapped[str] = mapped_column(String(32), default="registered")
     status: Mapped[str] = mapped_column(String(16), default="active")
 
-    # Kitchen details (ARCHITECTURE.md Section 1's `kitchen_details`), all
-    # nullable until the onboarding wizard's "kitchen details" step is
-    # completed. FSSAI license is explicitly optional per the brief.
-    kitchen_address_line1: Mapped[str | None] = mapped_column(String(255), default=None)
-    kitchen_address_line2: Mapped[str | None] = mapped_column(String(255), default=None)
-    kitchen_city: Mapped[str | None] = mapped_column(String(120), default=None)
-    kitchen_pincode: Mapped[str | None] = mapped_column(String(16), default=None)
-    cuisine_type: Mapped[str | None] = mapped_column(String(120), default=None)
-    fssai_license_no: Mapped[str | None] = mapped_column(String(64), default=None)
+    # Business details (ARCHITECTURE.md Section 1's "business details"), all
+    # nullable until the onboarding wizard's "business details" step is
+    # completed. License number is explicitly optional per the brief.
+    business_address_line1: Mapped[str | None] = mapped_column(String(255), default=None)
+    business_address_line2: Mapped[str | None] = mapped_column(String(255), default=None)
+    business_city: Mapped[str | None] = mapped_column(String(120), default=None)
+    business_pincode: Mapped[str | None] = mapped_column(String(16), default=None)
+    business_category: Mapped[str | None] = mapped_column(String(120), default=None)
+    license_no: Mapped[str | None] = mapped_column(String(64), default=None)
 
     # Per-merchant toggle for the Appointment Booking feature
     # (appointments/, appointment_flow/) -- default OFF so existing
-    # restaurant merchant behavior is byte-for-byte unchanged until a
+    # existing merchant behavior is byte-for-byte unchanged until a
     # merchant opts in from the dashboard Settings page.
     appointment_booking_enabled: Mapped[bool] = mapped_column(default=False)
 

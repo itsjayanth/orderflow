@@ -34,13 +34,13 @@ _USER_AGENT = "Orderflow-WhatsAppFlow/1.0 (+https://orderflow-sandbox.vercel.app
 
 
 async def fetch_and_compress_image(url: str) -> str | None:
-    """Fetches a menu item's photo (image_url) and re-encodes it as a small
+    """Fetches an item's photo (image_url) and re-encodes it as a small
     JPEG, base64-encoded, ready to embed directly as a WhatsApp Flow
     CheckboxGroup option's `image` field. Best-effort: returns None on any
     failure (unreachable URL, corrupt/unsupported image, whatever) rather
     than raising -- a missing photo shouldn't block an item from being
     orderable. Callers cache the result (catalog/domain/models.py's
-    MenuItem.flow_image_base64) rather than calling this on every Flow
+    Item.flow_image_base64) rather than calling this on every Flow
     screen load, since it's a real network fetch plus CPU-bound resize."""
     try:
         async with httpx.AsyncClient(

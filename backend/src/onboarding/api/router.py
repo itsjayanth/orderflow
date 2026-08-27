@@ -13,8 +13,8 @@ from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.api.schemas import (
-    KitchenProfileOut,
-    KitchenProfileUpdate,
+    BusinessProfileOut,
+    BusinessProfileUpdate,
     OnboardingStatusOut,
     WhatsAppFlowSetupRequest,
     WhatsAppFlowSetupResult,
@@ -53,14 +53,14 @@ def _whatsapp_to_out(account: WhatsAppBusinessAccount | None) -> WhatsAppSetting
     )
 
 
-def _profile_to_out(merchant: Merchant) -> KitchenProfileOut:
-    return KitchenProfileOut(
-        address_line1=merchant.kitchen_address_line1,
-        address_line2=merchant.kitchen_address_line2,
-        city=merchant.kitchen_city,
-        pincode=merchant.kitchen_pincode,
-        cuisine_type=merchant.cuisine_type,
-        fssai_license_no=merchant.fssai_license_no,
+def _profile_to_out(merchant: Merchant) -> BusinessProfileOut:
+    return BusinessProfileOut(
+        address_line1=merchant.business_address_line1,
+        address_line2=merchant.business_address_line2,
+        city=merchant.business_city,
+        pincode=merchant.business_pincode,
+        business_category=merchant.business_category,
+        license_no=merchant.license_no,
     )
 
 
@@ -168,28 +168,28 @@ async def sync_whatsapp_flow_endpoint(
     return validation
 
 
-@router.get("/profile", response_model=KitchenProfileOut)
-async def get_kitchen_profile(tenant: CurrentTenant, session: DbSession) -> KitchenProfileOut:
+@router.get("/profile", response_model=BusinessProfileOut)
+async def get_business_profile(tenant: CurrentTenant, session: DbSession) -> BusinessProfileOut:
     merchant = await MerchantRepository(session).get(tenant.merchant_id)
     if merchant is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
     return _profile_to_out(merchant)
 
 
-@router.put("/profile", response_model=KitchenProfileOut)
-async def update_kitchen_profile(
-    body: KitchenProfileUpdate, tenant: CurrentTenant, session: DbSession
-) -> KitchenProfileOut:
+@router.put("/profile", response_model=BusinessProfileOut)
+async def update_business_profile(
+    body: BusinessProfileUpdate, tenant: CurrentTenant, session: DbSession
+) -> BusinessProfileOut:
     merchant = await MerchantRepository(session).get(tenant.merchant_id)
     if merchant is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
 
-    merchant.kitchen_address_line1 = body.address_line1
-    merchant.kitchen_address_line2 = body.address_line2
-    merchant.kitchen_city = body.city
-    merchant.kitchen_pincode = body.pincode
-    merchant.cuisine_type = body.cuisine_type
-    merchant.fssai_license_no = body.fssai_license_no
+    merchant.business_address_line1 = body.address_line1
+    merchant.business_address_line2 = body.address_line2
+    merchant.business_city = body.city
+    merchant.business_pincode = body.pincode
+    merchant.business_category = body.business_category
+    merchant.license_no = body.license_no
 
     await advance_after_profile_completed(session, tenant)
     await session.commit()
@@ -204,5 +204,5 @@ async def get_onboarding_status(tenant: CurrentTenant, session: DbSession) -> On
         onboarding_status=checklist.onboarding_status,
         whatsapp_connected=checklist.whatsapp_connected,
         profile_completed=checklist.profile_completed,
-        has_available_menu_item=checklist.has_available_menu_item,
+        has_available_item=checklist.has_available_item,
     )

@@ -8,14 +8,14 @@ from shared.db import Base
 
 # The four notification kinds sent over an order's lifecycle
 # (orders/domain/events.py's OrderPaid/OrderConfirmedCOD both map to
-# "order_confirmed"; "order_preparing" fires on the new -> preparing
+# "order_confirmed"; "order_processing" fires on the new -> processing
 # fulfillment transition), plus the two sent over an appointment's
 # lifecycle (appointments/domain/events.py's AppointmentConfirmed/
 # AppointmentCancelled -- "requested" and "completed" are silent by
 # product spec).
 NOTIFICATION_KINDS = (
     "order_confirmed",
-    "order_preparing",
+    "order_processing",
     "order_ready",
     "order_completed",
     "appointment_confirmed",
@@ -33,7 +33,7 @@ NOTIFICATION_KINDS = (
 DEFAULT_MESSAGES: dict[str, str] = {
     "order_confirmed": "✅ *Order #{{order_number}} confirmed!*\n\n{{items}}\n\n"
     "Total: {{currency}} {{total}}\n\n_We'll let you know when it's ready._",
-    "order_preparing": "🍳 *Order #{{order_number}} is being prepared!*\n\n{{items}}\n\n"
+    "order_processing": "🔄 *Order #{{order_number}} is being processed!*\n\n{{items}}\n\n"
     "_We'll notify you the moment it's ready._",
     "order_ready": "🎉 *Order #{{order_number}} is ready!*\n\nIt's on its way — you should be "
     "expecting it soon! 🛵",

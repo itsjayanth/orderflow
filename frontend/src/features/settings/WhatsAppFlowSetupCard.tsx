@@ -39,7 +39,7 @@ export function WhatsAppFlowSetupCard({ disabled = false }: { disabled?: boolean
       <div>
         <h3 className="text-sm font-medium">Enable native WhatsApp ordering</h3>
         <p className="text-muted-foreground text-xs">
-          Let customers browse your menu and order without ever leaving WhatsApp.
+          Let customers browse your catalog and order without ever leaving WhatsApp.
         </p>
       </div>
 

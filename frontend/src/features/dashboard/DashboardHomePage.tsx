@@ -39,7 +39,7 @@ const STAT_LABEL_CLASS = 'text-muted-foreground text-xs font-semibold tracking-w
 // surface is meant to stay inside the dashboard feature.
 const LIFECYCLE_ICONS: Record<FulfillmentStatus, LucideIcon> = {
   new: Clock,
-  preparing: Flame,
+  processing: Flame,
   ready: CheckCircle,
   completed: PackageCheck,
   cancelled: XCircle,
@@ -96,10 +96,10 @@ export function DashboardHomePage() {
       hint: 'Just placed, not yet started',
     },
     {
-      label: 'Preparing',
-      status: 'preparing',
-      count: summary?.preparing_orders ?? 0,
-      hint: 'In the kitchen right now',
+      label: 'Processing',
+      status: 'processing',
+      count: summary?.processing_orders ?? 0,
+      hint: 'In progress right now',
     },
     {
       label: 'Ready',
@@ -136,9 +136,9 @@ export function DashboardHomePage() {
               <Sparkles className="size-5" />
             </div>
             <div>
-              <p className="font-medium">Finish setting up your restaurant</p>
+              <p className="font-medium">Finish setting up your business</p>
               <p className="text-muted-foreground text-sm">
-                Connect WhatsApp, add your kitchen details, and list a menu item to start taking
+                Connect WhatsApp, add your business details, and list an item to start taking
                 orders.
               </p>
             </div>

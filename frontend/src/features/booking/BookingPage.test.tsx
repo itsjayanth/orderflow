@@ -21,7 +21,7 @@ const mockedApiFetch = vi.mocked(apiFetch)
 const merchantId = '11111111-1111-1111-1111-111111111111'
 
 const sampleInfo: AppointmentFlowInfoOut = {
-  business_name: 'Test Kitchen',
+  business_name: 'Test Business',
 }
 
 function renderPage() {
@@ -49,7 +49,7 @@ describe('BookingPage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('Test Kitchen')).toBeInTheDocument()
+    expect(await screen.findByText('Test Business')).toBeInTheDocument()
     expect(screen.getByLabelText('Your WhatsApp number')).toBeInTheDocument()
     expect(screen.getByLabelText('Your name')).toBeInTheDocument()
     expect(screen.getByLabelText('Email')).toBeInTheDocument()
@@ -63,7 +63,7 @@ describe('BookingPage', () => {
     renderPage()
 
     expect(
-      await screen.findByText("This restaurant isn't accepting appointment bookings right now."),
+      await screen.findByText("This business isn't accepting appointment bookings right now."),
     ).toBeInTheDocument()
   })
 
@@ -79,7 +79,7 @@ describe('BookingPage', () => {
     mockedApiFetch.mockResolvedValueOnce(bookingResponse)
 
     renderPage()
-    await screen.findByText('Test Kitchen')
+    await screen.findByText('Test Business')
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },
@@ -118,7 +118,7 @@ describe('BookingPage', () => {
     mockedApiFetch.mockResolvedValueOnce(sampleInfo)
 
     renderPage()
-    await screen.findByText('Test Kitchen')
+    await screen.findByText('Test Business')
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },
@@ -139,7 +139,7 @@ describe('BookingPage', () => {
     mockedApiFetch.mockResolvedValueOnce(sampleInfo)
 
     renderPage()
-    await screen.findByText('Test Kitchen')
+    await screen.findByText('Test Business')
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
       target: { value: '9876543210' },

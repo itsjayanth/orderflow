@@ -37,7 +37,7 @@ function statusResponse(overrides: Partial<OnboardingStatusOut> = {}): Onboardin
     onboarding_status: 'registered',
     whatsapp_connected: false,
     profile_completed: false,
-    has_available_menu_item: false,
+    has_available_item: false,
     ...overrides,
   }
 }
@@ -90,13 +90,39 @@ describe('OnboardingPage', () => {
     )
   })
 
+  it('shows a business category selector on the Business details step', async () => {
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path === '/api/v1/onboarding/status') {
+        return Promise.resolve(
+          statusResponse({ onboarding_status: 'whatsapp_verified', whatsapp_connected: true }),
+        )
+      }
+      if (path === '/api/v1/onboarding/profile') {
+        return Promise.resolve({
+          address_line1: null,
+          address_line2: null,
+          city: null,
+          pincode: null,
+          business_category: null,
+          license_no: null,
+        })
+      }
+      return Promise.reject(new Error(`Unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Business details')).toBeInTheDocument()
+    expect(screen.getByText('Select a category…')).toBeInTheDocument()
+  })
+
   it('shows the live confirmation once onboarding_status is live, skipping the optional FAQ step', async () => {
     mockedApiFetch.mockResolvedValueOnce(
       statusResponse({
         onboarding_status: 'live',
         whatsapp_connected: true,
         profile_completed: true,
-        has_available_menu_item: true,
+        has_available_item: true,
       }),
     )
 
@@ -115,7 +141,7 @@ describe('OnboardingPage', () => {
             onboarding_status: 'catalog_ready',
             whatsapp_connected: true,
             profile_completed: true,
-            has_available_menu_item: true,
+            has_available_item: true,
           }),
         )
       }
@@ -139,7 +165,7 @@ describe('OnboardingPage', () => {
             onboarding_status: 'catalog_ready',
             whatsapp_connected: true,
             profile_completed: true,
-            has_available_menu_item: true,
+            has_available_item: true,
           }),
         )
       }

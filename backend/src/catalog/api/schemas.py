@@ -5,8 +5,8 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 
-class MenuItemOut(BaseModel):
-    menu_item_id: uuid.UUID
+class ItemOut(BaseModel):
+    item_id: uuid.UUID
     item_number: int
     category: str
     name: str
@@ -19,14 +19,14 @@ class MenuItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class MenuItemCreate(BaseModel):
+class ItemCreate(BaseModel):
     category: str = Field(min_length=1)
     name: str = Field(min_length=1)
     price: Decimal = Field(gt=0)
     image_url: str | None = Field(default=None, max_length=2048)
 
 
-class MenuItemUpdate(BaseModel):
+class ItemUpdate(BaseModel):
     category: str | None = Field(default=None, min_length=1)
     name: str | None = Field(default=None, min_length=1)
     price: Decimal | None = Field(default=None, gt=0)

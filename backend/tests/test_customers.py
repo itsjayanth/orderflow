@@ -11,7 +11,7 @@ from shared.tenant import TenantContext
 
 
 async def _make_tenant(
-    db_session: AsyncSession, business_name: str = "Test Kitchen"
+    db_session: AsyncSession, business_name: str = "Test Business"
 ) -> TenantContext:
     """Repository-level tests need a real Merchant row since merchant_id is a FK."""
     merchant = await MerchantRepository(db_session).create(
@@ -24,7 +24,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -80,8 +80,8 @@ async def test_customer_numbers_increment_sequentially_per_merchant(
 
 
 async def test_customer_numbers_isolated_per_merchant(db_session: AsyncSession) -> None:
-    tenant_a = await _make_tenant(db_session, business_name="Kitchen A")
-    tenant_b = await _make_tenant(db_session, business_name="Kitchen B")
+    tenant_a = await _make_tenant(db_session, business_name="Business A")
+    tenant_b = await _make_tenant(db_session, business_name="Business B")
     repo = CustomerRepository(db_session)
 
     customer_a1 = await repo.find_or_create(tenant_a, "+919876543210")
@@ -96,8 +96,8 @@ async def test_customer_numbers_isolated_per_merchant(db_session: AsyncSession) 
 async def test_find_or_create_different_merchants_get_different_customers(
     db_session: AsyncSession,
 ) -> None:
-    tenant_a = await _make_tenant(db_session, "Kitchen A")
-    tenant_b = await _make_tenant(db_session, "Kitchen B")
+    tenant_a = await _make_tenant(db_session, "Business A")
+    tenant_b = await _make_tenant(db_session, "Business B")
     repo = CustomerRepository(db_session)
 
     customer_a = await repo.find_or_create(tenant_a, "+919876543210")

@@ -19,12 +19,12 @@ import {
 import { Sheet } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/shared/api/client'
-import type { OrderingFlowCustomerLookupOut, PublicMenuItemOut } from '@/shared/api/types'
+import type { OrderingFlowCustomerLookupOut, PublicItemOut } from '@/shared/api/types'
 import { ItemImage } from '@/shared/components/ItemImage'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 
 import { useOrderingCheckout } from './useOrderingCheckout'
-import { usePublicMenu } from './usePublicMenu'
+import { usePublicCatalog } from './usePublicCatalog'
 
 // Meta's WhatsApp webhook always reports the sender as country code +
 // local number with no "+", spaces, or leading zero (e.g. "919876543210")
@@ -97,10 +97,10 @@ type CheckoutForm = z.infer<typeof checkoutSchema>
 
 type Cart = Record<string, number>
 
-type MenuSection = { category: string; items: PublicMenuItemOut[] }
+type CatalogSection = { category: string; items: PublicItemOut[] }
 
-function groupByCategory(items: PublicMenuItemOut[]): MenuSection[] {
-  const sections: MenuSection[] = []
+function groupByCategory(items: PublicItemOut[]): CatalogSection[] {
+  const sections: CatalogSection[] = []
   const indexByCategory = new Map<string, number>()
   for (const item of items) {
     const category = item.category.trim() || 'Other'
@@ -166,10 +166,10 @@ function categoryAnchor(category: string): string {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
-  return `menu-category-${slug || 'other'}`
+  return `catalog-category-${slug || 'other'}`
 }
 
-// Mirrors the menu's own category-header treatment (serif label + hairline
+// Mirrors the catalog's own category-header treatment (serif label + hairline
 // rule) so the form reads as a continuation of the same considered layout
 // instead of a plain stack of inputs bolted on underneath it.
 function FormSectionHeading({ title }: { title: string }) {
@@ -186,7 +186,7 @@ function CartRow({
   quantity,
   onChange,
 }: {
-  item: PublicMenuItemOut
+  item: PublicItemOut
   quantity: number
   onChange: (quantity: number) => void
 }) {
@@ -224,13 +224,13 @@ function CartRow({
 
 export function OrderingPage() {
   const { merchantId } = useParams<{ merchantId: string }>()
-  const { data: menu, isLoading, isError } = usePublicMenu(merchantId ?? '')
+  const { data: catalog, isLoading, isError } = usePublicCatalog(merchantId ?? '')
   const checkout = useOrderingCheckout(merchantId ?? '')
   const [cart, setCart] = useState<Cart>(() => (merchantId ? loadStoredCart(merchantId) : {}))
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false)
   const formSectionRef = useRef<HTMLDivElement>(null)
-  const menuSectionRef = useRef<HTMLDivElement>(null)
+  const catalogSectionRef = useRef<HTMLDivElement>(null)
   const keyboardInset = useKeyboardInset()
 
   // Persists across a reload -- backgrounding the WhatsApp in-app browser,
@@ -324,30 +324,30 @@ export function OrderingPage() {
     }
   }
 
-  // The cart sheet and the "back to menu" link both need a way back up to
-  // the menu -- without this, adding a second item once you've scrolled
+  // The cart sheet and the "back to catalog" link both need a way back up to
+  // the catalog -- without this, adding a second item once you've scrolled
   // into the checkout form means scrolling all the way back up by hand.
-  const scrollToMenu = () => {
+  const scrollToCatalog = () => {
     setIsCartOpen(false)
-    menuSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
+    catalogSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
   const scrollToCheckout = () => {
     setIsCartOpen(false)
     formSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  const menuSections = useMemo(() => groupByCategory(menu?.items ?? []), [menu])
+  const catalogSections = useMemo(() => groupByCategory(catalog?.items ?? []), [catalog])
 
   const cartLines = useMemo(
     () =>
       Object.entries(cart)
         .filter(([, quantity]) => quantity > 0)
-        .map(([menuItemId, quantity]) => {
-          const item = menu?.items.find((i) => i.menu_item_id === menuItemId)
+        .map(([itemId, quantity]) => {
+          const item = catalog?.items.find((i) => i.item_id === itemId)
           return item ? { item, quantity } : null
         })
-        .filter((line): line is { item: PublicMenuItemOut; quantity: number } => line !== null),
-    [cart, menu],
+        .filter((line): line is { item: PublicItemOut; quantity: number } => line !== null),
+    [cart, catalog],
   )
 
   const cartItemCount = cartLines.reduce((sum, line) => sum + line.quantity, 0)
@@ -356,7 +356,7 @@ export function OrderingPage() {
   if (isLoading) {
     // Shaped like the real layout below (title, category pills, item
     // rows) rather than a bare spinner, so the page doesn't visibly jump
-    // once the menu arrives.
+    // once the catalog arrives.
     return (
       <div className="from-background to-secondary/30 min-h-svh bg-gradient-to-b">
         <div className="mx-auto max-w-md space-y-6 px-4 py-8">
@@ -385,10 +385,10 @@ export function OrderingPage() {
     )
   }
 
-  if (isError || !menu) {
+  if (isError || !catalog) {
     return (
       <div className="flex min-h-svh items-center justify-center p-8">
-        <p className="text-muted-foreground text-sm">Restaurant not found.</p>
+        <p className="text-muted-foreground text-sm">Business not found.</p>
       </div>
     )
   }
@@ -400,7 +400,7 @@ export function OrderingPage() {
       payment_method: values.payment_method,
       order_type: values.order_type,
       items: cartLines.map((line) => ({
-        menu_item_id: line.item.menu_item_id,
+        item_id: line.item.item_id,
         quantity: line.quantity,
       })),
       contact_phone:
@@ -424,7 +424,7 @@ export function OrderingPage() {
     // app -- that's a platform restriction on both iOS and Android, not
     // something fixable here -- so this is a one-tap link, not an
     // automatic return.
-    const whatsappNumber = menu.merchant_whatsapp_number?.replace(/\D/g, '')
+    const whatsappNumber = catalog.merchant_whatsapp_number?.replace(/\D/g, '')
 
     const orderTypeLabel = getValues('order_type') === 'delivery' ? 'Delivery' : 'Pickup'
     const paymentOutstanding = Boolean(checkout.data.payment_link_url)
@@ -489,12 +489,12 @@ export function OrderingPage() {
       <div className={cn('mx-auto max-w-md space-y-6 px-4 py-8', cartLines.length > 0 && 'pb-28')}>
         <div className="space-y-1 text-center">
           <p className="text-muted-foreground text-xs tracking-wide uppercase">Order from</p>
-          <h1 className="font-serif text-2xl font-semibold">{menu.business_name}</h1>
+          <h1 className="font-serif text-2xl font-semibold">{catalog.business_name}</h1>
         </div>
 
-        {menuSections.length > 1 && (
+        {catalogSections.length > 1 && (
           <nav className="bg-background/95 supports-[backdrop-filter]:backdrop-blur sticky top-0 z-10 -mx-4 flex gap-2 overflow-x-auto border-b px-4 py-2.5 sm:mx-0 sm:rounded-xl sm:border">
-            {menuSections.map((section) => (
+            {catalogSections.map((section) => (
               <a
                 key={section.category}
                 href={`#${categoryAnchor(section.category)}`}
@@ -506,14 +506,14 @@ export function OrderingPage() {
           </nav>
         )}
 
-        {menuSections.length === 0 && (
+        {catalogSections.length === 0 && (
           <Card className="p-6 text-center">
             <p className="text-muted-foreground text-sm">No items available right now.</p>
           </Card>
         )}
 
-        <div ref={menuSectionRef} className="space-y-8 scroll-mt-16">
-          {menuSections.map((section) => (
+        <div ref={catalogSectionRef} className="space-y-8 scroll-mt-16">
+          {catalogSections.map((section) => (
             <section
               key={section.category}
               id={categoryAnchor(section.category)}
@@ -529,11 +529,11 @@ export function OrderingPage() {
               <Card className="divide-border overflow-hidden py-0">
                 {section.items.map((item) => (
                   <CartRow
-                    key={item.menu_item_id}
+                    key={item.item_id}
                     item={item}
-                    quantity={cart[item.menu_item_id] ?? 0}
+                    quantity={cart[item.item_id] ?? 0}
                     onChange={(quantity) =>
-                      setCart((prev) => ({ ...prev, [item.menu_item_id]: quantity }))
+                      setCart((prev) => ({ ...prev, [item.item_id]: quantity }))
                     }
                   />
                 ))}
@@ -555,11 +555,11 @@ export function OrderingPage() {
                   </p>
                   <button
                     type="button"
-                    onClick={scrollToMenu}
+                    onClick={scrollToCatalog}
                     className="text-primary inline-flex shrink-0 items-center gap-1 text-sm font-medium transition-colors duration-150 hover:underline"
                   >
                     <ArrowLeft className="size-3.5" />
-                    Back to menu
+                    Back to catalog
                   </button>
                 </div>
 
@@ -802,7 +802,7 @@ export function OrderingPage() {
           style={{ bottom: keyboardInset }}
         >
           {/* Always present once there's something in the cart -- through
-              the menu, the form, and everything in between -- and always
+              the catalog, the form, and everything in between -- and always
               opens the cart rather than only ever pushing further into
               checkout, so there's a way back no matter how far down the
               page you've scrolled. `bottom` tracks the on-screen keyboard
@@ -836,7 +836,7 @@ export function OrderingPage() {
         title="Your cart"
         footer={
           <>
-            <Button type="button" variant="outline" className="w-full" onClick={scrollToMenu}>
+            <Button type="button" variant="outline" className="w-full" onClick={scrollToCatalog}>
               + Add more items
             </Button>
             <Button type="button" className="w-full" onClick={scrollToCheckout}>
@@ -851,11 +851,11 @@ export function OrderingPage() {
           <div className="-mx-1">
             {cartLines.map(({ item, quantity }) => (
               <CartRow
-                key={item.menu_item_id}
+                key={item.item_id}
                 item={item}
                 quantity={quantity}
                 onChange={(nextQuantity) =>
-                  setCart((prev) => ({ ...prev, [item.menu_item_id]: nextQuantity }))
+                  setCart((prev) => ({ ...prev, [item.item_id]: nextQuantity }))
                 }
               />
             ))}

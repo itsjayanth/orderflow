@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from conversation.adapters.repository import MessageDedupeRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.intents import Intent, classify
@@ -11,7 +11,7 @@ from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from faq.adapters.repository import FAQItemRepository
 from faq.domain.models import FAQItem
-from flows.domain.menu_order import (
+from flows.domain.order_builder import (
     NoItemsSelectedError,
     build_new_delivery_address,
     parse_flow_completion,
@@ -43,7 +43,7 @@ async def _menu_options(
     options = [(Intent.PLACE_ORDER.value, "Place order"), (Intent.TRACK_ORDER.value, "Track order")]
     if appointment_booking_enabled:
         options.append((Intent.BOOK_APPOINTMENT.value, "Book appointment"))
-    options.append((Intent.TALK_TO_RESTAURANT.value, "Talk to restaurant"))
+    options.append((Intent.TALK_TO_RESTAURANT.value, "Talk to us"))
     if await FAQItemRepository(session).list(tenant, include_inactive=False):
         options.append((Intent.FAQ_MENU.value, "FAQs"))
     return options
@@ -222,7 +222,7 @@ async def _reply_for_intent(
             phone_number_id=message.phone_number_id,
             access_token=access_token,
             to=message.from_phone,
-            body="A team member from the restaurant will reach out to you shortly.",
+            body="A team member will reach out to you shortly.",
         )
 
     # Reaches here for Intent.GREETING, plus Intent.BOOK_APPOINTMENT when
@@ -364,10 +364,10 @@ async def _handle_flow_completion(
     assert message.flow_response is not None  # narrows for mypy; caller already checked
 
     submission = parse_flow_completion(message.flow_response)
-    menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+    items = await ItemRepository(session).list(tenant, include_unavailable=False)
 
     try:
-        cart = resolve_cart(selected_item_ids=submission.selected_item_ids, menu_items=menu_items)
+        cart = resolve_cart(selected_item_ids=submission.selected_item_ids, items=items)
     except NoItemsSelectedError:
         return await sender.send_text(
             phone_number_id=message.phone_number_id,

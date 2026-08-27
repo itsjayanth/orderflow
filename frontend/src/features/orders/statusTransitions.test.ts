@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { legalNextStatuses } from './statusTransitions'
 
 describe('legalNextStatuses', () => {
-  it('offers preparing and cancelled from new', () => {
-    expect(legalNextStatuses('new').sort()).toEqual(['cancelled', 'preparing'])
+  it('offers processing and cancelled from new', () => {
+    expect(legalNextStatuses('new').sort()).toEqual(['cancelled', 'processing'])
   })
 
-  it('offers ready and cancelled from preparing', () => {
-    expect(legalNextStatuses('preparing').sort()).toEqual(['cancelled', 'ready'])
+  it('offers ready and cancelled from processing', () => {
+    expect(legalNextStatuses('processing').sort()).toEqual(['cancelled', 'ready'])
   })
 
   it('offers completed and cancelled from ready', () => {

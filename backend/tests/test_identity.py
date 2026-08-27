@@ -7,7 +7,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -28,7 +28,7 @@ async def test_register_then_me(client: AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["staff_user"]["email_or_phone"] == "owner@example.com"
-    assert body["merchant"]["business_name"] == "Test Kitchen"
+    assert body["merchant"]["business_name"] == "Test Business"
 
 
 async def test_register_duplicate_contact_rejected(client: AsyncClient) -> None:
@@ -37,7 +37,7 @@ async def test_register_duplicate_contact_rejected(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Another Kitchen",
+            "business_name": "Another Business",
             "owner_name": "John Owner",
             "owner_contact": "owner@example.com",
             "password": "another-password",
@@ -103,7 +103,7 @@ async def test_refresh_cookie_is_lax_and_insecure_in_development(client: AsyncCl
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": "cookie-dev@example.com",
             "password": "correct-horse-battery-staple",
@@ -125,7 +125,7 @@ async def test_refresh_cookie_is_samesite_none_and_secure_in_production(
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": "cookie-prod@example.com",
             "password": "correct-horse-battery-staple",

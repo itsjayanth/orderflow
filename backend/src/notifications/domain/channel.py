@@ -13,7 +13,7 @@ class NotificationChannel(Protocol):
         self, *, merchant_id: uuid.UUID, order_id: uuid.UUID
     ) -> bool: ...
 
-    async def notify_order_preparing(
+    async def notify_order_processing(
         self, *, merchant_id: uuid.UUID, order_id: uuid.UUID
     ) -> bool: ...
 

@@ -3,9 +3,9 @@ from decimal import Decimal
 
 import pytest
 
-from catalog.domain.models import MenuItem
+from catalog.domain.models import Item
 from customers.domain.models import Address
-from flows.domain.menu_order import (
+from flows.domain.order_builder import (
     NoItemsSelectedError,
     build_category_screen_data,
     build_details_screen_data,
@@ -19,9 +19,9 @@ from flows.domain.menu_order import (
 
 def _item(
     *, name: str, price: str, category: str = "Mains", is_available: bool = True
-) -> MenuItem:
-    return MenuItem(
-        menu_item_id=uuid.uuid4(),
+) -> Item:
+    return Item(
+        item_id=uuid.uuid4(),
         merchant_id=uuid.uuid4(),
         item_number=1,
         category=category,
@@ -38,7 +38,7 @@ def test_build_category_screen_data_returns_distinct_categories_in_first_seen_or
         _item(name="Roti", price="30.00", category="Breads"),
     ]
 
-    data = build_category_screen_data(business_name="Varkey's", menu_items=items)
+    data = build_category_screen_data(business_name="Varkey's", items=items)
 
     assert data["business_name"] == "Varkey's"
     assert data["categories"] == [
@@ -50,7 +50,7 @@ def test_build_category_screen_data_returns_distinct_categories_in_first_seen_or
 def test_build_category_screen_data_excludes_unavailable_items_categories() -> None:
     only_unavailable = _item(name="Sold Out", price="99.00", category="Soups", is_available=False)
 
-    data = build_category_screen_data(business_name="Varkey's", menu_items=[only_unavailable])
+    data = build_category_screen_data(business_name="Varkey's", items=[only_unavailable])
 
     assert data["categories"] == []
 
@@ -59,20 +59,20 @@ def test_build_items_screen_data_filters_to_one_category() -> None:
     mains_item = _item(name="Butter Chicken", price="349.00", category="Mains")
     bread_item = _item(name="Naan", price="40.00", category="Breads")
 
-    data = build_items_screen_data(category="Mains", menu_items=[mains_item, bread_item])
+    data = build_items_screen_data(category="Mains", items=[mains_item, bread_item])
 
     assert data["category_name"] == "Mains"
-    assert len(data["menu_options"]) == 1
-    assert "Butter Chicken" in data["menu_options"][0]["title"]
+    assert len(data["item_options"]) == 1
+    assert "Butter Chicken" in data["item_options"][0]["title"]
 
 
 def test_build_items_screen_data_excludes_unavailable_items() -> None:
     available = _item(name="Butter Chicken", price="349.00", category="Mains")
     unavailable = _item(name="Sold Out", price="99.00", category="Mains", is_available=False)
 
-    data = build_items_screen_data(category="Mains", menu_items=[available, unavailable])
+    data = build_items_screen_data(category="Mains", items=[available, unavailable])
 
-    assert len(data["menu_options"]) == 1
+    assert len(data["item_options"]) == 1
 
 
 def test_resolve_cart_computes_total_and_summary() -> None:
@@ -80,8 +80,8 @@ def test_resolve_cart_computes_total_and_summary() -> None:
     item2 = _item(name="Naan", price="40.00")
 
     resolution = resolve_cart(
-        selected_item_ids=[str(item1.menu_item_id), str(item2.menu_item_id)],
-        menu_items=[item1, item2],
+        selected_item_ids=[str(item1.item_id), str(item2.item_id)],
+        items=[item1, item2],
     )
 
     assert len(resolution.checkout_items) == 2
@@ -94,19 +94,19 @@ def test_resolve_cart_ignores_stale_or_unavailable_ids() -> None:
     unavailable = _item(name="Sold Out", price="99.00", is_available=False)
 
     resolution = resolve_cart(
-        selected_item_ids=[str(item.menu_item_id), stale_id, str(unavailable.menu_item_id)],
-        menu_items=[item, unavailable],
+        selected_item_ids=[str(item.item_id), stale_id, str(unavailable.item_id)],
+        items=[item, unavailable],
     )
 
     assert len(resolution.checkout_items) == 1
-    assert resolution.checkout_items[0].menu_item_id == item.menu_item_id
+    assert resolution.checkout_items[0].item_id == item.item_id
 
 
 def test_resolve_cart_raises_when_nothing_selected() -> None:
     item = _item(name="Butter Chicken", price="349.00")
 
     with pytest.raises(NoItemsSelectedError):
-        resolve_cart(selected_item_ids=[], menu_items=[item])
+        resolve_cart(selected_item_ids=[], items=[item])
 
 
 def test_build_details_screen_data_blank_when_no_saved_address() -> None:
@@ -278,6 +278,36 @@ def test_build_new_delivery_address_none_when_incomplete() -> None:
     submission = parse_flow_completion({"order_type": "delivery", "address_line1": "12 MG Road"})
 
     assert build_new_delivery_address(submission) is None
+
+
+def test_build_category_and_items_screen_data_shape_identical_for_clothing_vertical() -> None:
+    """Regression check: the Flow screen builders don't branch on category
+    content -- a non-food vertical (clothing store, categories like
+    "Shirts"/"Shoes") produces JSON with the exact same structure/keys as
+    a restaurant's items."""
+    items = [
+        _item(name="Blue Denim Shirt", price="899.00", category="Shirts"),
+        _item(name="Running Sneakers", price="2499.00", category="Shoes"),
+        _item(name="Sold Out Boots", price="3499.00", category="Shoes", is_available=False),
+    ]
+
+    category_data = build_category_screen_data(business_name="Threads & Co", items=items)
+
+    assert set(category_data.keys()) == {"business_name", "categories"}
+    assert category_data["business_name"] == "Threads & Co"
+    assert category_data["categories"] == [
+        {"id": "Shirts", "title": "Shirts"},
+        {"id": "Shoes", "title": "Shoes"},
+    ]
+    for category in category_data["categories"]:
+        assert set(category.keys()) == {"id", "title"}
+
+    items_data = build_items_screen_data(category="Shoes", items=items)
+
+    assert set(items_data.keys()) == {"category_name", "item_options"}
+    assert items_data["category_name"] == "Shoes"
+    assert len(items_data["item_options"]) == 1
+    assert "Running Sneakers" in items_data["item_options"][0]["title"]
 
 
 def test_build_new_delivery_address_when_complete() -> None:

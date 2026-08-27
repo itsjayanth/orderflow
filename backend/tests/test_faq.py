@@ -9,7 +9,7 @@ from shared.tenant import TenantContext
 
 
 async def _make_tenant(
-    db_session: AsyncSession, business_name: str = "Test Kitchen"
+    db_session: AsyncSession, business_name: str = "Test Business"
 ) -> TenantContext:
     """Repository-level tests need a real Merchant row since merchant_id is a FK."""
     merchant = await MerchantRepository(db_session).create(
@@ -22,7 +22,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -131,8 +131,8 @@ async def test_match_empty_text_returns_nothing(db_session: AsyncSession) -> Non
 
 
 async def test_match_is_tenant_isolated(db_session: AsyncSession) -> None:
-    tenant_a = await _make_tenant(db_session, business_name="Kitchen A")
-    tenant_b = await _make_tenant(db_session, business_name="Kitchen B")
+    tenant_a = await _make_tenant(db_session, business_name="Business A")
+    tenant_b = await _make_tenant(db_session, business_name="Business B")
     repo = FAQItemRepository(db_session)
     await repo.create(
         tenant_a,
@@ -148,8 +148,8 @@ async def test_match_is_tenant_isolated(db_session: AsyncSession) -> None:
 
 
 async def test_list_is_tenant_isolated(db_session: AsyncSession) -> None:
-    tenant_a = await _make_tenant(db_session, business_name="Kitchen A")
-    tenant_b = await _make_tenant(db_session, business_name="Kitchen B")
+    tenant_a = await _make_tenant(db_session, business_name="Business A")
+    tenant_b = await _make_tenant(db_session, business_name="Business B")
     repo = FAQItemRepository(db_session)
     await repo.create(
         tenant_a,

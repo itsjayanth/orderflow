@@ -55,7 +55,7 @@ Kitchen printer / KDS auto-ticketing.
 Loyalty, broadcast campaigns, win-back marketing messages.
 Multi-outlet management, multi-user roles/permissions.
 AI chatbot personality / free-text natural language ordering (use structured menu/catalog + guided flow instead).
-Any non-restaurant vertical.
+A specific non-restaurant vertical — not a current pilot target, but the underlying platform is vertical-agnostic by design, not restaurant-locked.
 Native mobile app for merchant — a responsive web app is enough for MVP.
 
 

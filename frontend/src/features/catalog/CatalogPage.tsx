@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Search, UtensilsCrossed } from 'lucide-react'
+import { Package, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -11,17 +11,17 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { ApiError } from '@/shared/api/client'
-import type { MenuItem } from '@/shared/api/types'
+import type { Item } from '@/shared/api/types'
 import { EmptyState } from '@/shared/components/EmptyState'
 import { ItemImage } from '@/shared/components/ItemImage'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { formatItemNumber } from '@/shared/lib/itemNumber'
 
-import { useCreateMenuItem } from './useCreateMenuItem'
-import { useMenuItems } from './useMenuItems'
-import { useUpdateMenuItem } from './useUpdateMenuItem'
+import { useCreateItem } from './useCreateItem'
+import { useItems } from './useItems'
+import { useUpdateItem } from './useUpdateItem'
 
-function matchesSearch(item: MenuItem, query: string): boolean {
+function matchesSearch(item: Item, query: string): boolean {
   const q = query.trim().toLowerCase().replace(/^#/, '')
   if (!q) return true
   return (
@@ -32,13 +32,13 @@ function matchesSearch(item: MenuItem, query: string): boolean {
   )
 }
 
-type CategorySection = { category: string; items: MenuItem[] }
+type CategorySection = { category: string; items: Item[] }
 
 // One card per category, items kept in each category's first-appearance
 // order -- the same grouping convention the customer-facing ordering
-// webview uses for its menu (see OrderingPage.tsx's groupByCategory), so
+// webview uses for its catalog (see OrderingPage.tsx's groupByCategory), so
 // merchant and customer views read consistently.
-function groupByCategory(items: MenuItem[]): CategorySection[] {
+function groupByCategory(items: Item[]): CategorySection[] {
   const sections: CategorySection[] = []
   const indexByCategory = new Map<string, number>()
   for (const item of items) {
@@ -75,7 +75,7 @@ function CatalogItemRow({
   onToggleAvailability,
   onSaveImageUrl,
 }: {
-  item: MenuItem
+  item: Item
   onToggleAvailability: (checked: boolean) => void
   onSaveImageUrl: (imageUrl: string) => void
 }) {
@@ -143,8 +143,8 @@ function CatalogItemRow({
 }
 
 // Mirrors CatalogItemRow's real layout (image tile, two text lines, a
-// toggle-shaped control on the right) so the loading state reads as "menu
-// items are loading" rather than a couple of unrelated gray bars.
+// toggle-shaped control on the right) so the loading state reads as "items
+// are loading" rather than a couple of unrelated gray bars.
 function CatalogItemRowSkeleton() {
   return (
     <div className="flex items-center gap-4 px-5 py-4">
@@ -175,9 +175,9 @@ function CatalogSectionSkeleton() {
 }
 
 export function CatalogPage() {
-  const { data: items, isLoading } = useMenuItems()
-  const createMenuItem = useCreateMenuItem()
-  const updateMenuItem = useUpdateMenuItem()
+  const { data: items, isLoading } = useItems()
+  const createItem = useCreateItem()
+  const updateItem = useUpdateItem()
   const [search, setSearch] = useState('')
 
   const {
@@ -188,7 +188,7 @@ export function CatalogPage() {
   } = useForm<AddItemForm>({ resolver: zodResolver(addItemSchema) })
 
   const onSubmit = (data: AddItemForm) => {
-    createMenuItem.mutate(
+    createItem.mutate(
       { ...data, image_url: data.image_url || undefined },
       { onSuccess: () => reset() },
     )
@@ -205,7 +205,7 @@ export function CatalogPage() {
     <div className="space-y-6">
       <PageHeader
         title="Catalog"
-        description="Manage your menu items and control what customers can order."
+        description="Manage your items and control what customers can order."
       />
 
       <Input
@@ -214,7 +214,7 @@ export function CatalogPage() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="max-w-sm"
-        aria-label="Search menu items"
+        aria-label="Search items"
       />
 
       {isLoading && (
@@ -225,7 +225,7 @@ export function CatalogPage() {
       )}
 
       {!isLoading && items?.length === 0 && (
-        <EmptyState icon={UtensilsCrossed} title="No menu items yet. Add one below." />
+        <EmptyState icon={Package} title="No items yet. Add one below." />
       )}
 
       {!isLoading && items && items.length > 0 && sections.length === 0 && (
@@ -244,17 +244,17 @@ export function CatalogPage() {
             <div className="divide-border/60 divide-y">
               {section.items.map((item) => (
                 <CatalogItemRow
-                  key={item.menu_item_id}
+                  key={item.item_id}
                   item={item}
                   onToggleAvailability={(checked) =>
-                    updateMenuItem.mutate({
-                      menu_item_id: item.menu_item_id,
+                    updateItem.mutate({
+                      item_id: item.item_id,
                       is_available: checked,
                     })
                   }
                   onSaveImageUrl={(imageUrl) =>
-                    updateMenuItem.mutate({
-                      menu_item_id: item.menu_item_id,
+                    updateItem.mutate({
+                      item_id: item.item_id,
                       image_url: imageUrl,
                     })
                   }
@@ -273,7 +273,7 @@ export function CatalogPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="category">Category</Label>
-              <Input id="category" placeholder="Mains" {...register('category')} />
+              <Input id="category" placeholder="e.g. Category" {...register('category')} />
               {errors.category && (
                 <p className="text-destructive text-sm">{errors.category.message}</p>
               )}
@@ -281,7 +281,7 @@ export function CatalogPage() {
 
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input id="name" placeholder="Butter Chicken" {...register('name')} />
+              <Input id="name" placeholder="e.g. Product name" {...register('name')} />
               {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
             </div>
 
@@ -303,16 +303,16 @@ export function CatalogPage() {
               )}
             </div>
 
-            {createMenuItem.isError && (
+            {createItem.isError && (
               <p className="text-destructive text-sm">
-                {createMenuItem.error instanceof ApiError
+                {createItem.error instanceof ApiError
                   ? 'Something went wrong. Please try again.'
                   : 'Something went wrong.'}
               </p>
             )}
 
-            <Button type="submit" disabled={createMenuItem.isPending}>
-              {createMenuItem.isPending ? 'Adding…' : 'Add item'}
+            <Button type="submit" disabled={createItem.isPending}>
+              {createItem.isPending ? 'Adding…' : 'Add item'}
             </Button>
           </form>
         </CardContent>

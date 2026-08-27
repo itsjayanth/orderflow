@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from flows.domain.encryption import generate_key_pair
 from identity.adapters.repository import MerchantRepository
@@ -79,10 +79,10 @@ async def test_ping_returns_active_status(client: AsyncClient, db_session: Async
 
 async def test_init_returns_category_screen(client: AsyncClient, db_session: AsyncSession) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Breads", name="Naan", price=Decimal("40.00")
     )
     await db_session.commit()
@@ -106,10 +106,10 @@ async def test_data_exchange_from_category_returns_filtered_items(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Breads", name="Naan", price=Decimal("40.00")
     )
     await db_session.commit()
@@ -131,15 +131,15 @@ async def test_data_exchange_from_category_returns_filtered_items(
     decrypted = _decrypt_response(response.text, aes_key, iv)
     assert decrypted["screen"] == "ITEMS"
     assert decrypted["data"]["category_name"] == "Mains"
-    assert len(decrypted["data"]["menu_options"]) == 1
-    assert "Butter Chicken" in decrypted["data"]["menu_options"][0]["title"]
+    assert len(decrypted["data"]["item_options"]) == 1
+    assert "Butter Chicken" in decrypted["data"]["item_options"][0]["title"]
 
 
 async def test_data_exchange_from_items_returns_cart_summary_and_blank_address(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()
@@ -149,7 +149,7 @@ async def test_data_exchange_from_items_returns_cart_summary_and_blank_address(
             "version": "3.0",
             "action": "data_exchange",
             "screen": "ITEMS",
-            "data": {"selected_items": [str(menu_item.menu_item_id)]},
+            "data": {"selected_items": [str(item.item_id)]},
             "flow_token": "919876543210",
         },
     )
@@ -173,7 +173,7 @@ async def test_data_exchange_from_items_prefills_saved_address_for_returning_cus
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     customer = await CustomerRepository(db_session).find_or_create(
@@ -195,7 +195,7 @@ async def test_data_exchange_from_items_prefills_saved_address_for_returning_cus
             "version": "3.0",
             "action": "data_exchange",
             "screen": "ITEMS",
-            "data": {"selected_items": [str(menu_item.menu_item_id)]},
+            "data": {"selected_items": [str(item.item_id)]},
             "flow_token": "919876543210",
         },
     )
@@ -222,7 +222,7 @@ async def test_data_exchange_from_items_prefills_contact_choice_when_customer_ha
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
@@ -236,7 +236,7 @@ async def test_data_exchange_from_items_prefills_contact_choice_when_customer_ha
             "version": "3.0",
             "action": "data_exchange",
             "screen": "ITEMS",
-            "data": {"selected_items": [str(menu_item.menu_item_id)]},
+            "data": {"selected_items": [str(item.item_id)]},
             "flow_token": "919876543210",
         },
     )
@@ -255,7 +255,7 @@ async def test_data_exchange_with_no_items_falls_back_to_category(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tenant, public_pem = await _seed_merchant_with_flow_key(db_session)
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     await db_session.commit()

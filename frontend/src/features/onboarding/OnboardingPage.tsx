@@ -1,23 +1,30 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Check, Info } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCreateMenuItem } from '@/features/catalog/useCreateMenuItem'
-import { useMenuItems } from '@/features/catalog/useMenuItems'
+import { useCreateItem } from '@/features/catalog/useCreateItem'
+import { useItems } from '@/features/catalog/useItems'
 import { useCreateFAQItem } from '@/features/faq/useCreateFAQItem'
 import { useFAQItems } from '@/features/faq/useFAQItems'
 import {
-  useKitchenProfile,
+  useBusinessProfile,
   useOnboardingStatus,
-  useUpdateKitchenProfile,
+  useUpdateBusinessProfile,
 } from '@/features/onboarding/useOnboarding'
 import { TestWhatsAppMessageCard } from '@/features/settings/TestWhatsAppMessageCard'
 import {
@@ -33,8 +40,8 @@ import { useOnboardingWizardStore } from './onboardingWizardStore'
 
 const STEP_LABELS = [
   'Connect WhatsApp',
-  'Kitchen details',
-  'Add a menu item',
+  'Business details',
+  'Add an item',
   'FAQs (optional)',
   'Go live',
 ] as const
@@ -245,22 +252,31 @@ function ConnectWhatsAppStep() {
   )
 }
 
+const BUSINESS_CATEGORY_OPTIONS = [
+  'Restaurant',
+  'Retail / Clothing',
+  'Auto Parts',
+  'Pharmacy',
+  'Other',
+] as const
+
 const profileSchema = z.object({
   address_line1: z.string().min(1, 'Required'),
   address_line2: z.string().optional(),
   city: z.string().min(1, 'Required'),
   pincode: z.string().min(1, 'Required'),
-  cuisine_type: z.string().min(1, 'Required'),
-  fssai_license_no: z.string().optional(),
+  business_category: z.string().min(1, 'Required'),
+  license_no: z.string().optional(),
 })
 type ProfileForm = z.infer<typeof profileSchema>
 
-function KitchenDetailsStep() {
-  const { data } = useKitchenProfile()
-  const update = useUpdateKitchenProfile()
+function BusinessDetailsStep() {
+  const { data } = useBusinessProfile()
+  const update = useUpdateBusinessProfile()
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -270,8 +286,8 @@ function KitchenDetailsStep() {
           address_line2: data.address_line2 ?? '',
           city: data.city ?? '',
           pincode: data.pincode ?? '',
-          cuisine_type: data.cuisine_type ?? '',
-          fssai_license_no: data.fssai_license_no ?? '',
+          business_category: data.business_category ?? '',
+          license_no: data.license_no ?? '',
         }
       : undefined,
   })
@@ -302,19 +318,32 @@ function KitchenDetailsStep() {
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="cuisine_type">Cuisine type</Label>
-        <Input
-          id="cuisine_type"
-          placeholder="North Indian, South Indian, ..."
-          {...register('cuisine_type')}
+        <Label htmlFor="business_category">Business category</Label>
+        <Controller
+          name="business_category"
+          control={control}
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger id="business_category" onBlur={field.onBlur}>
+                <SelectValue placeholder="Select a category…" />
+              </SelectTrigger>
+              <SelectContent>
+                {BUSINESS_CATEGORY_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         />
-        {errors.cuisine_type && (
-          <p className="text-destructive text-sm">{errors.cuisine_type.message}</p>
+        {errors.business_category && (
+          <p className="text-destructive text-sm">{errors.business_category.message}</p>
         )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="fssai_license_no">FSSAI license number (optional)</Label>
-        <Input id="fssai_license_no" {...register('fssai_license_no')} />
+        <Label htmlFor="license_no">License number (optional)</Label>
+        <Input id="license_no" {...register('license_no')} />
       </div>
       {update.isError && (
         <p className="text-destructive text-sm">Failed to save. Please try again.</p>
@@ -326,7 +355,7 @@ function KitchenDetailsStep() {
   )
 }
 
-const menuItemSchema = z.object({
+const itemSchema = z.object({
   category: z.string().min(1, 'Required'),
   name: z.string().min(1, 'Required'),
   price: z
@@ -334,17 +363,17 @@ const menuItemSchema = z.object({
     .min(1, 'Required')
     .refine((value) => !Number.isNaN(Number(value)) && Number(value) > 0, 'Enter a valid price'),
 })
-type MenuItemForm = z.infer<typeof menuItemSchema>
+type ItemForm = z.infer<typeof itemSchema>
 
-function AddMenuItemStep() {
-  const { data: items } = useMenuItems()
-  const createMenuItem = useCreateMenuItem()
+function AddItemStep() {
+  const { data: items } = useItems()
+  const createItem = useCreateItem()
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<MenuItemForm>({ resolver: zodResolver(menuItemSchema) })
+  } = useForm<ItemForm>({ resolver: zodResolver(itemSchema) })
 
   return (
     <div className="max-w-md space-y-4">
@@ -354,23 +383,21 @@ function AddMenuItemStep() {
       </p>
       {items && items.length > 0 && (
         <p className="text-sm">
-          {items.length} item{items.length === 1 ? '' : 's'} already on your menu.
+          {items.length} item{items.length === 1 ? '' : 's'} already in your catalog.
         </p>
       )}
       <form
-        onSubmit={handleSubmit((values) =>
-          createMenuItem.mutate(values, { onSuccess: () => reset() }),
-        )}
+        onSubmit={handleSubmit((values) => createItem.mutate(values, { onSuccess: () => reset() }))}
         className="space-y-4"
       >
         <div className="space-y-2">
           <Label htmlFor="category">Category</Label>
-          <Input id="category" placeholder="Mains" {...register('category')} />
+          <Input id="category" placeholder="e.g. Category" {...register('category')} />
           {errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}
         </div>
         <div className="space-y-2">
           <Label htmlFor="name">Item name</Label>
-          <Input id="name" placeholder="Butter Chicken" {...register('name')} />
+          <Input id="name" placeholder="e.g. Product name" {...register('name')} />
           {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
         </div>
         <div className="space-y-2">
@@ -378,11 +405,11 @@ function AddMenuItemStep() {
           <Input id="price" placeholder="349.00" {...register('price')} />
           {errors.price && <p className="text-destructive text-sm">{errors.price.message}</p>}
         </div>
-        {createMenuItem.isError && (
+        {createItem.isError && (
           <p className="text-destructive text-sm">Failed to save. Please try again.</p>
         )}
-        <Button type="submit" disabled={createMenuItem.isPending}>
-          {createMenuItem.isPending ? 'Adding…' : 'Add item & go live'}
+        <Button type="submit" disabled={createItem.isPending}>
+          {createItem.isPending ? 'Adding…' : 'Add item & go live'}
         </Button>
       </form>
     </div>
@@ -492,8 +519,8 @@ function LiveStep() {
       </span>
       <p className="font-serif text-lg font-medium">You're live!</p>
       <p className="text-muted-foreground text-sm">
-        Customers can now message your WhatsApp number to browse the menu and place orders. Incoming
-        orders will show up on the Orders page.
+        Customers can now message your WhatsApp number to browse the catalog and place orders.
+        Incoming orders will show up on the Orders page.
       </p>
     </div>
   )
@@ -527,7 +554,7 @@ export function OnboardingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Onboarding"
-        description="Connect WhatsApp, add your kitchen details, and list at least one menu item to go live. FAQs are optional."
+        description="Connect WhatsApp, add your business details, and list at least one item to go live. FAQs are optional."
       />
 
       <Stepper current={currentStep} furthestReached={serverStep} onSelect={setStep} />
@@ -542,8 +569,8 @@ export function OnboardingPage() {
           </div>
         )}
         {currentStep === 0 && <ConnectWhatsAppStep />}
-        {currentStep === 1 && <KitchenDetailsStep />}
-        {currentStep === 2 && <AddMenuItemStep />}
+        {currentStep === 1 && <BusinessDetailsStep />}
+        {currentStep === 2 && <AddItemStep />}
         {currentStep === 3 && <AddFAQStep />}
         {currentStep === 4 && <LiveStep />}
       </Card>

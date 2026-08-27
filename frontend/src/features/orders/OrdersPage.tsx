@@ -42,19 +42,19 @@ import { useOrder } from './useOrder'
 import { useOrders } from './useOrders'
 import { useUpdateOrderStatus } from './useUpdateOrderStatus'
 
-// The full lifecycle, including "cancelled" -- a restaurant owner monitoring
+// The full lifecycle, including "cancelled" -- a business owner monitoring
 // failed/undelivered orders needs it as a first-class tab too, and it's
 // what the dashboard's "Failed" card links to.
 const TABS: (FulfillmentStatus | 'all')[] = [
   'all',
   'new',
-  'preparing',
+  'processing',
   'ready',
   'completed',
   'cancelled',
 ]
 
-const ALL_STATUSES: FulfillmentStatus[] = ['new', 'preparing', 'ready', 'completed', 'cancelled']
+const ALL_STATUSES: FulfillmentStatus[] = ['new', 'processing', 'ready', 'completed', 'cancelled']
 
 // The columns kept here are deliberately the "monitoring at a glance" set.
 // Status is directly actionable here too (the dropdown), so the common
@@ -81,7 +81,7 @@ type SortState = { column: 'placed_at' | null; direction: 'asc' | 'desc' }
 function isFulfillmentStatus(value: string | null): value is FulfillmentStatus {
   return (
     value === 'new' ||
-    value === 'preparing' ||
+    value === 'processing' ||
     value === 'ready' ||
     value === 'completed' ||
     value === 'cancelled'
@@ -107,7 +107,7 @@ function countByStatus(orders: OrderOut[] | undefined): Record<FulfillmentStatus
   const counts: Record<FulfillmentStatus | 'all', number> = {
     all: orders?.length ?? 0,
     new: 0,
-    preparing: 0,
+    processing: 0,
     ready: 0,
     completed: 0,
     cancelled: 0,

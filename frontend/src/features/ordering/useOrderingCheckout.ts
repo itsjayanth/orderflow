@@ -14,7 +14,7 @@ interface OrderingCheckoutDeliveryAddress {
 interface OrderingCheckoutInput {
   customer_whatsapp_number: string
   customer_display_name: string
-  items: { menu_item_id: string; quantity: number }[]
+  items: { item_id: string; quantity: number }[]
   payment_method: 'online' | 'cod'
   order_type: 'pickup' | 'delivery'
   delivery_address?: OrderingCheckoutDeliveryAddress

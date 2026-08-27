@@ -43,7 +43,7 @@ def _day_range_bounds(
 
 @dataclass(frozen=True, slots=True)
 class OrderItemInput:
-    menu_item_id: uuid.UUID
+    item_id: uuid.UUID
     name_snapshot: str
     price_snapshot: Decimal
     quantity: int
@@ -56,7 +56,7 @@ class OrderSummary:
     amount_collected: Decimal
     cod_orders: int
     new_orders: int
-    preparing_orders: int
+    processing_orders: int
     ready_orders: int
     completed_orders: int
     cancelled_orders: int
@@ -108,7 +108,7 @@ class OrderRepository:
         correctly."""
         order_items = [
             OrderItem(
-                menu_item_id=item.menu_item_id,
+                item_id=item.item_id,
                 name_snapshot=item.name_snapshot,
                 price_snapshot=item.price_snapshot,
                 quantity=item.quantity,
@@ -239,7 +239,7 @@ class OrderRepository:
         """Dashboard order-detail edit. Like CustomerRepository.update, only
         touches fields the caller actually passed (exclude_unset on the
         request schema) -- contact_phone/notes can't be explicitly cleared
-        to null through this path, same limitation MenuItemRepository.update
+        to null through this path, same limitation ItemRepository.update
         already accepts for image_url."""
         order = await self.get(tenant, order_id)
         if order is None:
@@ -295,7 +295,7 @@ class OrderRepository:
             _sum_when(collected),
             _count_when(Order.payment_method == "cod"),
             _count_when(Order.fulfillment_status == "new"),
-            _count_when(Order.fulfillment_status == "preparing"),
+            _count_when(Order.fulfillment_status == "processing"),
             _count_when(Order.fulfillment_status == "ready"),
             _count_when(Order.fulfillment_status == "completed"),
             _count_when(Order.fulfillment_status == "cancelled"),
@@ -314,7 +314,7 @@ class OrderRepository:
             amount_collected=row[2],
             cod_orders=row[3],
             new_orders=row[4],
-            preparing_orders=row[5],
+            processing_orders=row[5],
             ready_orders=row[6],
             completed_orders=row[7],
             cancelled_orders=row[8],

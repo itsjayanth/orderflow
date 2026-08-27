@@ -9,7 +9,7 @@ PAYMENT_STATUSES: frozenset[PaymentStatus] = frozenset(
     {"awaiting_payment", "paid", "payment_failed", "cancelled", "cod_pending", "cod_collected"}
 )
 FULFILLMENT_STATUSES: frozenset[FulfillmentStatus] = frozenset(
-    {"new", "preparing", "ready", "completed", "cancelled"}
+    {"new", "processing", "ready", "completed", "cancelled"}
 )
 
 # ARCHITECTURE.md Section 7a. `None` on the left is the pre-order-creation
@@ -27,15 +27,18 @@ PAYMENT_TRANSITIONS: frozenset[tuple[PaymentStatus | None, PaymentStatus]] = fro
     }
 )
 
-# ARCHITECTURE.md Section 7b. `new -> preparing -> ready -> completed`, plus
-# `* -> cancelled` from any non-terminal state.
+# ARCHITECTURE.md Section 7b. `new -> processing -> ready -> completed`, plus
+# `* -> cancelled` from any non-terminal state. Labels are intentionally
+# vertical-neutral verbs, not cooking-specific ("Preparing") -- a per-vertical
+# label override (e.g. a restaurant showing "Preparing", a retailer showing
+# "Packing") is a reasonable future extension point, not implemented here.
 FULFILLMENT_TRANSITIONS: frozenset[tuple[FulfillmentStatus, FulfillmentStatus]] = frozenset(
     {
-        ("new", "preparing"),
-        ("preparing", "ready"),
+        ("new", "processing"),
+        ("processing", "ready"),
         ("ready", "completed"),
         ("new", "cancelled"),
-        ("preparing", "cancelled"),
+        ("processing", "cancelled"),
         ("ready", "cancelled"),
     }
 )

@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from orders.adapters.repository import OrderItemInput, OrderNotFoundError, OrderRepository
@@ -18,7 +18,7 @@ from shared.tenant import TenantContext
 
 
 async def _make_tenant(
-    db_session: AsyncSession, business_name: str = "Test Kitchen"
+    db_session: AsyncSession, business_name: str = "Test Business"
 ) -> TenantContext:
     merchant = await MerchantRepository(db_session).create(
         business_name=business_name, owner_contact=f"{uuid.uuid4()}@example.com"
@@ -30,7 +30,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -66,7 +66,7 @@ async def _seed_order(
     customer = await CustomerRepository(db_session).find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
     )
-    menu_item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
     order = await OrderRepository(db_session).create(
@@ -79,9 +79,9 @@ async def _seed_order(
         delivery_address_id=delivery_address_id,
         items=[
             OrderItemInput(
-                menu_item_id=menu_item.menu_item_id,
-                name_snapshot=menu_item.name,
-                price_snapshot=menu_item.price,
+                item_id=item.item_id,
+                name_snapshot=item.name,
+                price_snapshot=item.price,
                 quantity=2,
             )
         ],
@@ -118,8 +118,8 @@ async def test_order_numbers_increment_sequentially_per_merchant(
 
 
 async def test_order_numbers_isolated_per_merchant(db_session: AsyncSession) -> None:
-    tenant_a = await _make_tenant(db_session, business_name="Kitchen A")
-    tenant_b = await _make_tenant(db_session, business_name="Kitchen B")
+    tenant_a = await _make_tenant(db_session, business_name="Business A")
+    tenant_b = await _make_tenant(db_session, business_name="Business B")
 
     order_a1 = await _seed_order(db_session, tenant_a)
     order_b1 = await _seed_order(db_session, tenant_b)
@@ -150,7 +150,7 @@ async def test_repository_transition_writes_status_event(db_session: AsyncSessio
     repo = OrderRepository(db_session)
 
     await repo.transition_fulfillment_status(
-        tenant, order.order_id, "preparing", changed_by="staff-1"
+        tenant, order.order_id, "processing", changed_by="staff-1"
     )
 
     result = await db_session.execute(
@@ -159,7 +159,7 @@ async def test_repository_transition_writes_status_event(db_session: AsyncSessio
     events = result.scalars().all()
     assert len(events) == 1
     assert events[0].from_status == "new"
-    assert events[0].to_status == "preparing"
+    assert events[0].to_status == "processing"
     assert events[0].changed_by == "staff-1"
 
 
@@ -169,7 +169,7 @@ async def test_repository_transition_nonexistent_order_raises(db_session: AsyncS
 
     with pytest.raises(OrderNotFoundError):
         await repo.transition_fulfillment_status(
-            tenant, uuid.uuid4(), "preparing", changed_by="staff-1"
+            tenant, uuid.uuid4(), "processing", changed_by="staff-1"
         )
 
 
@@ -227,16 +227,16 @@ async def test_list_orders_filtered_by_fulfillment_status(
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
     await _seed_order(db_session, tenant, fulfillment_status="new")
-    await _seed_order(db_session, tenant, fulfillment_status="preparing")
+    await _seed_order(db_session, tenant, fulfillment_status="processing")
 
     response = await client.get(
-        "/api/v1/orders", params={"fulfillment_status": "preparing"}, headers=_auth_headers(tokens)
+        "/api/v1/orders", params={"fulfillment_status": "processing"}, headers=_auth_headers(tokens)
     )
 
     assert response.status_code == 200
     body = response.json()
     assert len(body) == 1
-    assert body[0]["fulfillment_status"] == "preparing"
+    assert body[0]["fulfillment_status"] == "processing"
 
 
 async def test_get_order_detail_includes_items(
@@ -288,12 +288,12 @@ async def test_update_fulfillment_status_happy_path(
 
     response = await client.patch(
         f"/api/v1/orders/{order.order_id}/fulfillment-status",
-        json={"to_status": "preparing"},
+        json={"to_status": "processing"},
         headers=_auth_headers(tokens),
     )
 
     assert response.status_code == 200
-    assert response.json()["fulfillment_status"] == "preparing"
+    assert response.json()["fulfillment_status"] == "processing"
 
 
 async def test_update_fulfillment_status_sets_ready_at(
@@ -301,7 +301,7 @@ async def test_update_fulfillment_status_sets_ready_at(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    order = await _seed_order(db_session, tenant, fulfillment_status="preparing")
+    order = await _seed_order(db_session, tenant, fulfillment_status="processing")
 
     response = await client.patch(
         f"/api/v1/orders/{order.order_id}/fulfillment-status",
@@ -364,7 +364,7 @@ async def test_orders_isolated_between_merchants(
 
     update_response = await client.patch(
         f"/api/v1/orders/{order_a.order_id}/fulfillment-status",
-        json={"to_status": "preparing"},
+        json={"to_status": "processing"},
         headers=_auth_headers(tokens_b),
     )
     assert update_response.status_code == 404
@@ -419,7 +419,7 @@ async def test_update_order_notes_and_contact_phone_independently(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     """Sending only one field must not clobber the other (exclude_unset
-    semantics, same as CustomerRepository.update / MenuItemRepository.update)."""
+    semantics, same as CustomerRepository.update / ItemRepository.update)."""
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
     order = await _seed_order(db_session, tenant)
@@ -612,7 +612,7 @@ async def test_get_summary_aggregates_across_orders(
         db_session,
         tenant,
         payment_status="cod_pending",
-        fulfillment_status="preparing",
+        fulfillment_status="processing",
         payment_method="cod",
     )
     await _seed_order(
@@ -630,7 +630,7 @@ async def test_get_summary_aggregates_across_orders(
     assert body["amount_collected"] == "1396.00"
     assert body["cod_orders"] == 2
     assert body["new_orders"] == 1
-    assert body["preparing_orders"] == 1
+    assert body["processing_orders"] == 1
     assert body["ready_orders"] == 0
     assert body["completed_orders"] == 1
     assert body["cancelled_orders"] == 1
@@ -736,20 +736,20 @@ async def test_list_orders_combines_date_range_with_fulfillment_status(
     matching = await _seed_order(
         db_session,
         tenant,
-        fulfillment_status="preparing",
+        fulfillment_status="processing",
         placed_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
     )
     await _seed_order(
         db_session,
         tenant,
-        fulfillment_status="preparing",
+        fulfillment_status="processing",
         placed_at=datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC),
     )
 
     response = await client.get(
         "/api/v1/orders",
         params={
-            "fulfillment_status": "preparing",
+            "fulfillment_status": "processing",
             "from_date": "2026-01-01",
             "to_date": "2026-01-31",
         },

@@ -4,22 +4,22 @@ import type { FulfillmentStatus } from '@/shared/api/types'
 // exactly, so the UI never offers a move the server would reject. The server
 // is still the actual authority -- this only controls what's clickable.
 const FULFILLMENT_TRANSITIONS: ReadonlySet<`${FulfillmentStatus}->${FulfillmentStatus}`> = new Set([
-  'new->preparing',
-  'preparing->ready',
+  'new->processing',
+  'processing->ready',
   'ready->completed',
   'new->cancelled',
-  'preparing->cancelled',
+  'processing->cancelled',
   'ready->cancelled',
 ])
 
 export function legalNextStatuses(from: FulfillmentStatus): FulfillmentStatus[] {
-  const all: FulfillmentStatus[] = ['new', 'preparing', 'ready', 'completed', 'cancelled']
+  const all: FulfillmentStatus[] = ['new', 'processing', 'ready', 'completed', 'cancelled']
   return all.filter((to) => FULFILLMENT_TRANSITIONS.has(`${from}->${to}`))
 }
 
 export const STATUS_LABELS: Record<FulfillmentStatus, string> = {
   new: 'New',
-  preparing: 'Preparing',
+  processing: 'Processing',
   ready: 'Ready',
   completed: 'Completed',
   cancelled: 'Cancelled',

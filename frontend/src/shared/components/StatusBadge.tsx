@@ -9,7 +9,7 @@ import type { FulfillmentStatus } from '@/shared/api/types'
 // reuse the same mapping instead of keeping a parallel one.
 export const FULFILLMENT_STATUS_TONE: Record<FulfillmentStatus, Tone> = {
   new: 'gold',
-  preparing: 'blue',
+  processing: 'blue',
   ready: 'green',
   completed: 'gray',
   cancelled: 'red',

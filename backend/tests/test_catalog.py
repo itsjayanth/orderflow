@@ -5,7 +5,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -19,7 +19,7 @@ def _auth_headers(tokens: dict) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
-async def test_create_then_list_menu_item(client: AsyncClient) -> None:
+async def test_create_then_list_item(client: AsyncClient) -> None:
     tokens = await _register(client)
 
     create_response = await client.post(
@@ -45,11 +45,11 @@ async def test_create_then_list_menu_item(client: AsyncClient) -> None:
     assert list_response.status_code == 200
     items = list_response.json()
     assert len(items) == 1
-    assert items[0]["menu_item_id"] == created["menu_item_id"]
+    assert items[0]["item_id"] == created["item_id"]
     assert items[0]["image_url"] == "https://example.com/butter-chicken.jpg"
 
 
-async def test_create_menu_item_without_image_url_defaults_to_none(client: AsyncClient) -> None:
+async def test_create_item_without_image_url_defaults_to_none(client: AsyncClient) -> None:
     tokens = await _register(client)
 
     create_response = await client.post(
@@ -96,7 +96,7 @@ async def test_item_numbers_isolated_per_merchant(client: AsyncClient) -> None:
     assert response_b.json()["item_number"] == 1
 
 
-async def test_update_menu_item(client: AsyncClient) -> None:
+async def test_update_item(client: AsyncClient) -> None:
     tokens = await _register(client)
 
     create_response = await client.post(
@@ -104,10 +104,10 @@ async def test_update_menu_item(client: AsyncClient) -> None:
         json={"category": "Mains", "name": "Butter Chicken", "price": "349.00"},
         headers=_auth_headers(tokens),
     )
-    menu_item_id = create_response.json()["menu_item_id"]
+    item_id = create_response.json()["item_id"]
 
     update_response = await client.patch(
-        f"/api/v1/catalog/items/{menu_item_id}",
+        f"/api/v1/catalog/items/{item_id}",
         json={
             "is_available": False,
             "price": "399.00",
@@ -123,7 +123,7 @@ async def test_update_menu_item(client: AsyncClient) -> None:
     assert updated["image_url"] == "https://example.com/butter-chicken.jpg"
 
 
-async def test_update_nonexistent_menu_item_returns_404(client: AsyncClient) -> None:
+async def test_update_nonexistent_item_returns_404(client: AsyncClient) -> None:
     tokens = await _register(client)
 
     response = await client.patch(
@@ -134,7 +134,7 @@ async def test_update_nonexistent_menu_item_returns_404(client: AsyncClient) -> 
     assert response.status_code == 404
 
 
-async def test_menu_items_are_tenant_isolated(client: AsyncClient) -> None:
+async def test_items_are_tenant_isolated(client: AsyncClient) -> None:
     tokens_a = await _register(client, owner_contact="owner-a@example.com")
     tokens_b = await _register(client, owner_contact="owner-b@example.com")
 
@@ -143,7 +143,7 @@ async def test_menu_items_are_tenant_isolated(client: AsyncClient) -> None:
         json={"category": "Mains", "name": "Butter Chicken", "price": "349.00"},
         headers=_auth_headers(tokens_a),
     )
-    menu_item_id = create_response.json()["menu_item_id"]
+    item_id = create_response.json()["item_id"]
 
     # Merchant B can't see merchant A's item.
     list_response_b = await client.get("/api/v1/catalog/items", headers=_auth_headers(tokens_b))
@@ -151,7 +151,7 @@ async def test_menu_items_are_tenant_isolated(client: AsyncClient) -> None:
 
     # Merchant B can't update merchant A's item either.
     update_response_b = await client.patch(
-        f"/api/v1/catalog/items/{menu_item_id}",
+        f"/api/v1/catalog/items/{item_id}",
         json={"is_available": False},
         headers=_auth_headers(tokens_b),
     )
@@ -164,9 +164,41 @@ async def test_menu_items_are_tenant_isolated(client: AsyncClient) -> None:
     assert items_a[0]["is_available"] is True
 
 
-async def test_create_menu_item_requires_auth(client: AsyncClient) -> None:
+async def test_create_item_requires_auth(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/catalog/items",
         json={"category": "Mains", "name": "Butter Chicken", "price": "349.00"},
     )
     assert response.status_code == 401
+
+
+async def test_create_then_list_items_for_clothing_vertical(client: AsyncClient) -> None:
+    """Regression check: the catalog CRUD endpoints don't assume food
+    semantics anywhere -- a non-food vertical (clothing store) with
+    category/name/price data unrelated to menus/dishes goes through the
+    exact same create+list flow as a restaurant's items."""
+    tokens = await _register(client)
+
+    created_ids = []
+    for category, name, price in (
+        ("Shirts", "Blue Denim Shirt", "899.00"),
+        ("Shoes", "Running Sneakers", "2499.00"),
+    ):
+        response = await client.post(
+            "/api/v1/catalog/items",
+            json={"category": category, "name": name, "price": price},
+            headers=_auth_headers(tokens),
+        )
+        assert response.status_code == 201, response.text
+        created = response.json()
+        assert created["category"] == category
+        assert created["name"] == name
+        assert created["price"] == price
+        assert created["is_available"] is True
+        created_ids.append(created["item_id"])
+
+    list_response = await client.get("/api/v1/catalog/items", headers=_auth_headers(tokens))
+    assert list_response.status_code == 200
+    items = list_response.json()
+    assert {item["item_id"] for item in items} == set(created_ids)
+    assert {item["category"] for item in items} == {"Shirts", "Shoes"}

@@ -46,19 +46,19 @@ Implemented as described below, with one upgrade beyond the original plan: the r
 
 ---
 
-## Phase 2 — Catalog (MenuItem) ✅ done
+## Phase 2 — Catalog (Item, née MenuItem) ✅ done
 
 Simplest entity, no dependents — good place to prove the full-stack pattern before tackling the harder domains. Implemented as described below (soft-delete via `is_available` toggle rather than a separate delete endpoint, matching the plan).
 
 **Backend**
-- `catalog/domain/models.py`: `MenuItem` (per `ARCHITECTURE.md` §1).
+- `catalog/domain/models.py`: `Item` (named `MenuItem` at the time; renamed platform-wide in the later vertical-agnostic migration — per `ARCHITECTURE.md` §1).
 - `catalog/adapters/repository.py`: `MenuItemRepository` (list by merchant, filter `is_available`, create, update, soft-delete via `is_available=false` rather than hard delete — matches "availability toggle" in the brief).
 - `catalog/api/router.py`: `GET /api/v1/catalog/items`, `POST /api/v1/catalog/items`, `PATCH /api/v1/catalog/items/{id}`, all behind `get_tenant_context`.
-- Migration: `menu_items`.
+- Migration: `menu_items` (renamed to `items` in the later vertical-agnostic migration).
 - Tests: create/list/update round trip; a second merchant's token can't see or edit the first merchant's items (the concrete tenant-isolation test flagged in Phase 1).
 
 **Frontend**
-- `features/catalog/`: `useMenuItems.ts` (query), `useCreateMenuItem.ts` / `useUpdateMenuItem.ts` (mutations, invalidate the list query on success).
+- `features/catalog/`: `useMenuItems.ts` (query), `useCreateMenuItem.ts` / `useUpdateMenuItem.ts` (mutations, invalidate the list query on success) — renamed to `useItems.ts`/`useCreateItem.ts`/`useUpdateItem.ts` in the later vertical-agnostic migration.
 - `CatalogPage.tsx`: replace the placeholder with a table (item, category, price, availability toggle) + an "Add item" form (RHF + Zod, shadcn `Input`/`Select`/`Switch` — add those primitives to `components/ui/` following `button.tsx`'s pattern).
 - Test: rendering the table from a mocked query client; submitting the add-item form calls the mutation with the right payload.
 
@@ -68,7 +68,7 @@ Simplest entity, no dependents — good place to prove the full-stack pattern be
 
 ## Phase 3 — Customers & Addresses ✅ done
 
-Implemented as described below. Phases 2 and 3 were built in parallel (independent domains, no shared files once the API routers and UI pages already existed as placeholders) and merged together; the combined `menu_items`/`customers`/`addresses` migration was generated once after merging, rather than per-agent, to avoid a branching migration history.
+Implemented as described below. Phases 2 and 3 were built in parallel (independent domains, no shared files once the API routers and UI pages already existed as placeholders) and merged together; the combined `menu_items`/`customers`/`addresses` migration (`menu_items` later renamed to `items`) was generated once after merging, rather than per-agent, to avoid a branching migration history.
 
 **Backend**
 - `customers/domain/models.py`: `Customer`, `Address`.
@@ -100,10 +100,10 @@ The two state machines from `ARCHITECTURE.md` §7 are the highest-risk piece of 
 
 **Frontend**
 - `features/orders/`: `useOrders.ts` (list, with `refetchInterval` per `TECH_STACK.md`'s cache-and-revalidate pattern — this is the concrete implementation of "order visible within seconds"), `useOrder.ts` (detail), `useUpdateOrderStatus.ts` (mutation).
-- `OrdersPage.tsx`: replace placeholder with a list (status-grouped or filterable — New/Preparing/Ready/Completed), each row linking to a detail view showing items/customer/total and a status-advance button (disabled for illegal next-states, computed client-side from the same transition table shape — mirror `orders/domain/state_machine.py`'s table in `features/orders/statusTransitions.ts` so the UI can't offer an illegal move, with the server as the actual authority).
+- `OrdersPage.tsx`: replace placeholder with a list (status-grouped or filterable — New/Processing/Ready/Completed), each row linking to a detail view showing items/customer/total and a status-advance button (disabled for illegal next-states, computed client-side from the same transition table shape — mirror `orders/domain/state_machine.py`'s table in `features/orders/statusTransitions.ts` so the UI can't offer an illegal move, with the server as the actual authority).
 - Test: status button only shows legal next transitions for a given order state; optimistic update reconciles against server response (per `TECH_STACK.md`'s optimistic-UI note) — at minimum, test that a failed mutation rolls the UI back.
 
-**Definition of done**: seed a `paid`/`new` order directly in the DB, see it appear in the dashboard within one poll interval, advance it New → Preparing → Ready → Completed from the UI, illegal transitions are impossible to trigger from either layer.
+**Definition of done**: seed a `paid`/`new` order directly in the DB, see it appear in the dashboard within one poll interval, advance it New → Processing → Ready → Completed from the UI, illegal transitions are impossible to trigger from either layer.
 
 ---
 
@@ -178,8 +178,8 @@ Deferred this late deliberately: Phases 1–7 hand-seed the one or two things on
 - **No Meta embedded-signup/token-exchange client was built.** There's no registered Meta App to embed-signup against or exchange a code with — building an OAuth handshake blind, against nothing real, would be unverifiable code, same reasoning as Phase 6's WhatsApp Flow decision. `meta_connected` and `whatsapp_verified` both advance together the moment a merchant submits WhatsApp credentials via the existing `PUT /api/v1/onboarding/whatsapp` (Phase 5) — there's no independent action available to trigger one without the other blind, and pasting real Cloud API credentials later needs no code change, per Phase 5's own deviation note.
 - **`onboarding/domain/state_machine.py`** holds the six-state transition table (`ONBOARDING_TRANSITIONS`, built from `identity.domain.models.ONBOARDING_STATUSES` so the ordering has one source of truth) and `transition_onboarding_status`, which raises `IllegalOnboardingTransitionError` on any non-adjacent pair — same "explicit transition table, raise on illegal transition" pattern as Phase 4's `orders/domain/state_machine.py`.
 - **`onboarding/domain/onboarding_service.py`** orchestrates the actual advancement, since no single state's precondition is checkable from the state machine alone: `advance_after_whatsapp_connected` (idempotent — reconnecting credentials later doesn't move status backwards or re-fire), `advance_after_profile_completed`, and `try_advance_for_catalog_ready` (checks Catalog data — "Onboarding Service checks the gate" per `ARCHITECTURE.md` §5 — and cascades straight through to `live` in the same call, since `live` has no precondition beyond `catalog_ready`). Each function only calls the raising state-machine function when the merchant is exactly on the expected prior step, so out-of-order or repeat calls are safe no-ops rather than exceptions bubbling into an endpoint.
-- **The `catalog_ready` gate is invoked from both `catalog/api/router.py`'s create and update endpoints** (creating a new item, or un-hiding an existing one via `is_available: true`), not from a dedicated onboarding action — whichever happens to satisfy "at least one available `MenuItem`" first triggers the advance.
-- **`Merchant.onboarding_status` default changed from Phase 1's `"live"` placeholder to `"registered"`** (a Python-side `mapped_column` default, not a DB `server_default`, so no migration was needed for this specific change) — a real migration was added for the new `kitchen_*`/`cuisine_type`/`fssai_license_no` columns backing the "kitchen details" step. This is a behavior change with exactly one consumer: `conversation/domain/handler.py`'s new guard (fetches the `Merchant`, rejects inbound WhatsApp messages with `skipped_not_live=True` unless `onboarding_status == "live"`) — no dashboard/catalog/orders/payments endpoint reads `onboarding_status` at all, so nothing else in the app changed behavior. Existing conversation-handler tests that seed a merchant and expect inbound messages to be processed were updated to set `onboarding_status = "live"` directly (they test conversation handling, not onboarding progression — that's `test_onboarding_flow.py`).
+- **The `catalog_ready` gate is invoked from both `catalog/api/router.py`'s create and update endpoints** (creating a new item, or un-hiding an existing one via `is_available: true`), not from a dedicated onboarding action — whichever happens to satisfy "at least one available `Item`" first triggers the advance.
+- **`Merchant.onboarding_status` default changed from Phase 1's `"live"` placeholder to `"registered"`** (a Python-side `mapped_column` default, not a DB `server_default`, so no migration was needed for this specific change) — a real migration was added for the new `kitchen_*`/`cuisine_type`/`fssai_license_no` columns backing the "kitchen details" step (later renamed to `business_address_*`/`business_category`/`license_no` backing a "business details" step, in the vertical-agnostic migration). This is a behavior change with exactly one consumer: `conversation/domain/handler.py`'s new guard (fetches the `Merchant`, rejects inbound WhatsApp messages with `skipped_not_live=True` unless `onboarding_status == "live"`) — no dashboard/catalog/orders/payments endpoint reads `onboarding_status` at all, so nothing else in the app changed behavior. Existing conversation-handler tests that seed a merchant and expect inbound messages to be processed were updated to set `onboarding_status = "live"` directly (they test conversation handling, not onboarding progression — that's `test_onboarding_flow.py`).
 - Endpoints, as built: `PUT /api/v1/onboarding/whatsapp` (Phase 5, now also advances status), `GET`/`PUT /api/v1/onboarding/profile` (kitchen details), `GET /api/v1/onboarding/status` (checklist + `onboarding_status`, and re-runs the catalog-ready gate check as a fallback in case an item was added independently of the wizard).
 - Tests (`tests/test_onboarding_flow.py`): full state-machine transition table (every legal pair succeeds, every illegal pair — including every skip — raises); service-layer idempotency (reconnecting WhatsApp or re-saving a profile doesn't regress status); the catalog-ready→live cascade, including that it ignores unavailable items; the four onboarding endpoints end-to-end through a full register→live walk; the conversation handler guard, both rejecting a non-live merchant and accepting once live.
 
@@ -198,7 +198,7 @@ The first phase built against a genuinely live Meta app, WABA, and WhatsApp Busi
 **WhatsApp Flow ordering (`backend/src/flows/`), new module:**
 - `flows/domain/encryption.py`: RSA-OAEP-SHA256 (AES key) + AES-128-GCM (payload) per Meta's Flow Data Exchange protocol (`data_api_version` 3.0); response IV is the request IV with every byte XORed `0xFF`, per spec.
 - `flows/assets/order_flow.json`: a 4-screen Flow — CATEGORY → ITEMS → DETAILS → PAYMENT — replacing what was originally going to be a flatter menu screen. `flows/api/router.py`'s `POST /api/v1/whatsapp/flows/{merchant_id}/data-exchange` drives every screen transition server-side; `conversation/domain/handler.py`'s `PLACE_ORDER` intent now sends the Flow (`flow_action: "data_exchange"`, not `"navigate"` — see the gotchas below) and falls back to the Phase 6 webview link only if the Flow send itself fails (e.g. a merchant who hasn't run Flow setup yet).
-- Per-item photos: `flows/domain/images.py` fetches each `MenuItem.image_url`, compresses to a target ≤30KB JPEG (350px max dimension, quality steps 85→35, tuned for "small enough to load fast on 2G/3G, large enough to avoid visible blocking artifacts at CheckboxGroup thumbnail size"), base64-encodes it, and caches the result on `MenuItem.flow_image_base64` the first time a category is opened (concurrent per-category fetch, not serial). Needed an explicit `User-Agent` header — Wikimedia Commons (where the demo catalog's `image_url`s point) 403s on httpx's default UA per its published bot policy.
+- Per-item photos: `flows/domain/images.py` fetches each `Item.image_url` (`MenuItem.image_url` at the time), compresses to a target ≤30KB JPEG (350px max dimension, quality steps 85→35, tuned for "small enough to load fast on 2G/3G, large enough to avoid visible blocking artifacts at CheckboxGroup thumbnail size"), base64-encodes it, and caches the result on `Item.flow_image_base64` the first time a category is opened (concurrent per-category fetch, not serial). Needed an explicit `User-Agent` header — Wikimedia Commons (where the demo catalog's `image_url`s point) 403s on httpx's default UA per its published bot policy.
 - Category-first browsing (CATEGORY screen) instead of one flat item list, and a conditionally-mandatory delivery address using Meta's documented `If` component pattern (`required` itself can't hold a conditional expression) — both came from live-device testing feedback, not the original design.
 - Fixed a real duplicate-message bug: `perform_checkout`'s COD path already publishes `OrderConfirmedCOD` (Phase 7's notification bus renders the merchant's own template), and the Flow-completion handler was *also* sending its own confirmation text — removed the redundant explicit text for COD, kept a distinct "here's your payment link" message for online orders only, since the notification bus doesn't fire until payment actually clears.
 - Greeting personalized: `Intent.GREETING`'s reply now reads `f"Hi! Welcome to {merchant.business_name}."` instead of a generic welcome.
@@ -224,6 +224,8 @@ The first phase built against a genuinely live Meta app, WABA, and WhatsApp Busi
 ## Explicitly not in this plan
 
 Everything `ARCHITECTURE.md` §11 and `TECH_STACK.md`'s "explicitly deferred" section already call out: hosting/CI/CD/observability, Phase 2 POS sync, multi-outlet, multi-user roles, delivery logistics beyond address capture. Don't build ahead of these phases.
+
+Note on Phase 2 POS sync specifically: this is a **restaurant-vertical-specific optional integration** (Petpooja/UrbanPiper are food-service POS/KDS systems), not a universal Phase 2 assumption for every merchant on the platform — a non-restaurant tenant has no equivalent Phase 2 obligation, per the same reframing in `ARCHITECTURE.md` §8.
 
 ## Suggested execution order
 

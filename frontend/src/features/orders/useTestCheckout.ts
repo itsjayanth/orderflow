@@ -6,7 +6,7 @@ import type { TestCheckoutResponse } from '@/shared/api/types'
 interface TestCheckoutInput {
   customer_whatsapp_number: string
   customer_display_name?: string
-  items: { menu_item_id: string; quantity: number }[]
+  items: { item_id: string; quantity: number }[]
   payment_method: 'online' | 'cod'
 }
 

@@ -47,7 +47,7 @@ const sampleOrder: OrderOut = {
   items: [
     {
       order_item_id: '33333333-3333-3333-3333-333333333333',
-      menu_item_id: '44444444-4444-4444-4444-444444444444',
+      item_id: '44444444-4444-4444-4444-444444444444',
       name_snapshot: 'Butter Chicken',
       price_snapshot: '349.00',
       quantity: 1,
@@ -138,14 +138,14 @@ describe('OrdersPage', () => {
     expect(screen.queryByText('Butter Chicken')).not.toBeInTheDocument()
 
     openStatusMenu(screen.getByRole('button', { name: 'Change status for order #0007' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark Preparing' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark Processing' }))
 
     await waitFor(() =>
       expect(mockedApiFetch).toHaveBeenCalledWith(
         `/api/v1/orders/${sampleOrder.order_id}/fulfillment-status`,
         expect.objectContaining({
           method: 'PATCH',
-          body: JSON.stringify({ to_status: 'preparing' }),
+          body: JSON.stringify({ to_status: 'processing' }),
         }),
       ),
     )
@@ -155,10 +155,10 @@ describe('OrdersPage', () => {
     renderPage([sampleOrder])
     openStatusMenu(await screen.findByRole('button', { name: 'Change status for order #0007' }))
 
-    // "new" -> only "preparing" and "cancelled" are legal next statuses
+    // "new" -> only "processing" and "cancelled" are legal next statuses
     // (current status is shown in the label, not as a selectable item).
     const menuItemLabels = screen.getAllByRole('menuitem').map((item) => item.textContent)
-    expect(menuItemLabels).toEqual(['Mark Preparing', 'Mark Cancelled'])
+    expect(menuItemLabels).toEqual(['Mark Processing', 'Mark Cancelled'])
   })
 
   it('expands a row via the chevron button to show the full order detail card, and collapses on a second click', async () => {
@@ -172,7 +172,7 @@ describe('OrdersPage', () => {
     expect(await screen.findByText('Butter Chicken')).toBeInTheDocument()
     // The expanded card no longer shows its own "Mark {status}" buttons --
     // that action lives in the row-level status dropdown now.
-    expect(screen.queryByRole('button', { name: 'Mark Preparing' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark Processing' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse order #0007' }))
 
@@ -196,14 +196,14 @@ describe('OrdersPage', () => {
     await screen.findByText('Butter Chicken')
 
     openStatusMenu(screen.getByRole('button', { name: 'Change status for order #0007' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark Preparing' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark Processing' }))
 
     await waitFor(() =>
       expect(mockedApiFetch).toHaveBeenCalledWith(
         `/api/v1/orders/${sampleOrder.order_id}/fulfillment-status`,
         expect.objectContaining({
           method: 'PATCH',
-          body: JSON.stringify({ to_status: 'preparing' }),
+          body: JSON.stringify({ to_status: 'processing' }),
         }),
       ),
     )
@@ -235,11 +235,11 @@ describe('OrdersPage', () => {
   })
 
   it('combines the date-range filter with the existing status filter in the URL', async () => {
-    // sampleOrder is "new", so under the "preparing" tab the table renders
+    // sampleOrder is "new", so under the "processing" tab the table renders
     // its empty state -- wait on that instead of the order row.
-    renderPage([sampleOrder], ['/orders?status=preparing'])
+    renderPage([sampleOrder], ['/orders?status=processing'])
 
-    await screen.findByText('No preparing orders.')
+    await screen.findByText('No processing orders.')
     mockedApiFetch.mockClear()
 
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
@@ -256,7 +256,7 @@ describe('OrdersPage', () => {
 
     // The status tab (URL-driven, filtered client-side) is untouched by
     // picking a date preset -- both filters compose independently.
-    expect(screen.getByRole('tab', { name: /Preparing/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /Processing/ })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('selects orders via checkboxes and shows a bulk-action bar with the shared legal next status', async () => {
@@ -278,23 +278,23 @@ describe('OrdersPage', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select order #0012' }))
     expect(screen.getByText('2 selected')).toBeInTheDocument()
 
-    // Both orders are "new" -> shared legal next statuses are Preparing/Cancelled.
-    const markPreparing = screen.getByRole('button', { name: 'Mark Preparing' })
-    fireEvent.click(markPreparing)
+    // Both orders are "new" -> shared legal next statuses are Processing/Cancelled.
+    const markProcessing = screen.getByRole('button', { name: 'Mark Processing' })
+    fireEvent.click(markProcessing)
 
     await waitFor(() => {
       expect(mockedApiFetch).toHaveBeenCalledWith(
         `/api/v1/orders/${sampleOrder.order_id}/fulfillment-status`,
         expect.objectContaining({
           method: 'PATCH',
-          body: JSON.stringify({ to_status: 'preparing' }),
+          body: JSON.stringify({ to_status: 'processing' }),
         }),
       )
       expect(mockedApiFetch).toHaveBeenCalledWith(
         `/api/v1/orders/${otherOrder.order_id}/fulfillment-status`,
         expect.objectContaining({
           method: 'PATCH',
-          body: JSON.stringify({ to_status: 'preparing' }),
+          body: JSON.stringify({ to_status: 'processing' }),
         }),
       )
     })

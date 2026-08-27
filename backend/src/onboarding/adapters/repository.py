@@ -57,7 +57,7 @@ class WhatsAppBusinessAccountRepository:
         """Cross-tenant on purpose, same reason as get_by_phone_number_id --
         flows/api/router.py's data-exchange endpoint doesn't have a
         TenantContext yet when Meta's request lands, only the flow_id in
-        flow_token (see flows/domain/menu_order.py's FlowToken)."""
+        flow_token (see flows/domain/order_builder.py's FlowToken)."""
         result = await self._session.execute(
             select(WhatsAppBusinessAccount).where(
                 WhatsAppBusinessAccount.whatsapp_flow_id == flow_id

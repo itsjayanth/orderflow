@@ -307,7 +307,7 @@ type TemplateForm = z.infer<typeof templateSchema>
 
 const KIND_LABELS: Record<NotificationTemplateOut['notification_kind'], string> = {
   order_confirmed: 'Order confirmed',
-  order_preparing: 'Order preparing',
+  order_processing: 'Order processing',
   order_ready: 'Order ready',
   order_completed: 'Order completed',
   appointment_confirmed: 'Appointment confirmed',
@@ -316,7 +316,7 @@ const KIND_LABELS: Record<NotificationTemplateOut['notification_kind'], string> 
 
 const KIND_DESCRIPTIONS: Record<NotificationTemplateOut['notification_kind'], string> = {
   order_confirmed: "Sent right after checkout, once the customer's order is placed.",
-  order_preparing: 'Sent the moment staff mark the order Preparing.',
+  order_processing: 'Sent the moment staff mark the order Processing.',
   order_ready: 'Sent the moment staff mark the order Ready for pickup/delivery.',
   order_completed: 'Sent once staff mark the order Completed.',
   appointment_confirmed: 'Sent when staff confirm a requested appointment.',

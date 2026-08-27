@@ -5,14 +5,14 @@ from typing import Any
 
 from fastapi import APIRouter, Response, status
 
-from catalog.adapters.repository import MenuItemRepository
-from catalog.domain.models import MenuItem
+from catalog.adapters.repository import ItemRepository
+from catalog.domain.models import Item
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from customers.domain.models import Customer
 from flows.api.schemas import FlowDataExchangeRequest
 from flows.domain.encryption import FlowDecryptionError, decrypt_request, encrypt_response
 from flows.domain.images import fetch_and_compress_image
-from flows.domain.menu_order import (
+from flows.domain.order_builder import (
     NoItemsSelectedError,
     build_category_screen_data,
     build_details_screen_data,
@@ -93,22 +93,22 @@ async def _handle_action(
     if action == "data_exchange" and screen == "CATEGORY":
         category = data.get("category")
         if category:
-            menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+            items = await ItemRepository(session).list(tenant, include_unavailable=False)
             await _ensure_images_cached(
-                session, [item for item in menu_items if item.category == category]
+                session, [item for item in items if item.category == category]
             )
             return {
                 "screen": "ITEMS",
-                "data": build_items_screen_data(category=category, menu_items=menu_items),
+                "data": build_items_screen_data(category=category, items=items),
             }
         # No category selected (shouldn't happen -- RadioButtonsGroup is
         # required client-side) -- fall through to re-showing CATEGORY.
 
     if action == "data_exchange" and screen == "ITEMS":
         selected = list(data.get("selected_items") or [])
-        menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+        items = await ItemRepository(session).list(tenant, include_unavailable=False)
         try:
-            cart = resolve_cart(selected_item_ids=selected, menu_items=menu_items)
+            cart = resolve_cart(selected_item_ids=selected, items=items)
         except NoItemsSelectedError:
             pass
         else:
@@ -142,16 +142,16 @@ async def _handle_action(
 
 async def _category_screen_response(session: DbSession, tenant: TenantContext) -> dict[str, Any]:
     merchant = await MerchantRepository(session).get(tenant.merchant_id)
-    menu_items = await MenuItemRepository(session).list(tenant, include_unavailable=False)
+    items = await ItemRepository(session).list(tenant, include_unavailable=False)
     business_name = merchant.business_name if merchant else "Order"
     return {
         "screen": "CATEGORY",
-        "data": build_category_screen_data(business_name=business_name, menu_items=menu_items),
+        "data": build_category_screen_data(business_name=business_name, items=items),
     }
 
 
-async def _ensure_images_cached(session: DbSession, items: list[MenuItem]) -> None:
-    """Populates MenuItem.flow_image_base64 for any item in this category
+async def _ensure_images_cached(session: DbSession, items: list[Item]) -> None:
+    """Populates Item.flow_image_base64 for any item in this category
     that has an image_url but hasn't been fetched/compressed yet -- fetched
     concurrently so a cold cache (a brand-new category) doesn't serialize
     N network round trips on the customer's screen load. Once cached, later

@@ -5,8 +5,8 @@ from typing import Literal, Self
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-class PublicMenuItemOut(BaseModel):
-    menu_item_id: uuid.UUID
+class PublicItemOut(BaseModel):
+    item_id: uuid.UUID
     category: str
     name: str
     price: Decimal
@@ -15,9 +15,9 @@ class PublicMenuItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PublicMenuOut(BaseModel):
+class PublicCatalogOut(BaseModel):
     business_name: str
-    items: list[PublicMenuItemOut]
+    items: list[PublicItemOut]
     # Null until the merchant has connected WhatsApp (onboarding) -- lets
     # the webview link back to the chat (e.g. after checkout) since a
     # website can't programmatically return the customer to WhatsApp itself.
@@ -25,7 +25,7 @@ class PublicMenuOut(BaseModel):
 
 
 class OrderingFlowCheckoutItem(BaseModel):
-    menu_item_id: uuid.UUID
+    item_id: uuid.UUID
     quantity: int
 
 

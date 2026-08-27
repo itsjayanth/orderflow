@@ -6,7 +6,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from catalog.adapters.repository import MenuItemRepository
+from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
 from conversation.domain.webhook_parser import InboundMessage
@@ -32,7 +32,7 @@ from shared.tenant import TenantContext
 def _merchant(onboarding_status: str) -> Merchant:
     return Merchant(
         merchant_id=uuid.uuid4(),
-        business_name="Test Kitchen",
+        business_name="Test Business",
         owner_contact=f"{uuid.uuid4()}@example.com",
         onboarding_status=onboarding_status,
     )
@@ -77,7 +77,7 @@ def test_step_skipping_is_rejected() -> None:
 
 async def _make_tenant(db_session: AsyncSession) -> TenantContext:
     merchant = await MerchantRepository(db_session).create(
-        business_name="Test Kitchen", owner_contact=f"{uuid.uuid4()}@example.com"
+        business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     await db_session.commit()
     return TenantContext(merchant_id=merchant.merchant_id)
@@ -110,7 +110,7 @@ async def test_reconnecting_whatsapp_does_not_move_status_backwards(
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
-    merchant.kitchen_address_line1 = "1 MG Road"
+    merchant.business_address_line1 = "1 MG Road"
     merchant = await advance_after_profile_completed(db_session, tenant)
     assert merchant.onboarding_status == "profile_completed"
 
@@ -124,14 +124,14 @@ async def test_catalog_ready_and_live_cascade_once_gate_is_met(db_session: Async
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
-    merchant.kitchen_address_line1 = "1 MG Road"
+    merchant.business_address_line1 = "1 MG Road"
     await advance_after_profile_completed(db_session, tenant)
 
-    # Gate not met yet -- no menu items.
+    # Gate not met yet -- no items.
     merchant = await try_advance_for_catalog_ready(db_session, tenant)
     assert merchant.onboarding_status == "profile_completed"
 
-    await MenuItemRepository(db_session).create(
+    await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
 
@@ -144,13 +144,13 @@ async def test_catalog_ready_gate_ignores_unavailable_items(db_session: AsyncSes
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
-    merchant.kitchen_address_line1 = "1 MG Road"
+    merchant.business_address_line1 = "1 MG Road"
     await advance_after_profile_completed(db_session, tenant)
 
-    item = await MenuItemRepository(db_session).create(
+    item = await ItemRepository(db_session).create(
         tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
     )
-    await MenuItemRepository(db_session).update(tenant, item.menu_item_id, is_available=False)
+    await ItemRepository(db_session).update(tenant, item.item_id, is_available=False)
 
     merchant = await try_advance_for_catalog_ready(db_session, tenant)
 
@@ -164,7 +164,7 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
     response = await client.post(
         "/api/v1/auth/register",
         json={
-            "business_name": "Test Kitchen",
+            "business_name": "Test Business",
             "owner_name": "Jane Owner",
             "owner_contact": owner_contact,
             "password": "correct-horse-battery-staple",
@@ -188,7 +188,7 @@ async def test_onboarding_status_endpoint_reflects_progress(client: AsyncClient)
     assert body["onboarding_status"] == "registered"
     assert body["whatsapp_connected"] is False
     assert body["profile_completed"] is False
-    assert body["has_available_menu_item"] is False
+    assert body["has_available_item"] is False
 
 
 async def test_connect_whatsapp_endpoint_advances_status(client: AsyncClient) -> None:
@@ -218,7 +218,7 @@ async def test_save_profile_endpoint_advances_status(client: AsyncClient) -> Non
             "address_line1": "1 MG Road",
             "city": "Bangalore",
             "pincode": "560001",
-            "cuisine_type": "North Indian",
+            "business_category": "North Indian",
         },
         headers=_auth_headers(tokens),
     )
@@ -245,7 +245,7 @@ async def test_full_wizard_reaches_live(client: AsyncClient) -> None:
             "address_line1": "1 MG Road",
             "city": "Bangalore",
             "pincode": "560001",
-            "cuisine_type": "North Indian",
+            "business_category": "North Indian",
         },
         headers=headers,
     )
@@ -259,7 +259,7 @@ async def test_full_wizard_reaches_live(client: AsyncClient) -> None:
     response = await client.get("/api/v1/onboarding/status", headers=headers)
 
     assert response.json()["onboarding_status"] == "live"
-    assert response.json()["has_available_menu_item"] is True
+    assert response.json()["has_available_item"] is True
 
 
 # --- conversation handler guard ---------------------------------------------

@@ -7,12 +7,12 @@ from pydantic import BaseModel, Field
 
 from customers.api.schemas import AddressOut
 
-FulfillmentStatus = Literal["new", "preparing", "ready", "completed", "cancelled"]
+FulfillmentStatus = Literal["new", "processing", "ready", "completed", "cancelled"]
 
 
 class OrderItemOut(BaseModel):
     order_item_id: uuid.UUID
-    menu_item_id: uuid.UUID
+    item_id: uuid.UUID
     name_snapshot: str
     price_snapshot: Decimal
     quantity: int
@@ -71,7 +71,7 @@ class OrderSummaryOut(BaseModel):
     amount_collected: Decimal
     cod_orders: int
     new_orders: int
-    preparing_orders: int
+    processing_orders: int
     ready_orders: int
     completed_orders: int
     cancelled_orders: int

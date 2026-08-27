@@ -7,7 +7,7 @@ import { apiFetch } from '@/shared/api/client'
 import type {
   OrderingFlowCheckoutResponse,
   OrderingFlowCustomerLookupOut,
-  PublicMenuOut,
+  PublicCatalogOut,
 } from '@/shared/api/types'
 
 import { OrderingPage } from './OrderingPage'
@@ -33,11 +33,11 @@ function totalText(expected: string) {
 
 const merchantId = '11111111-1111-1111-1111-111111111111'
 
-const sampleMenu: PublicMenuOut = {
-  business_name: 'Test Kitchen',
+const sampleCatalog: PublicCatalogOut = {
+  business_name: 'Test Business',
   items: [
     {
-      menu_item_id: '22222222-2222-2222-2222-222222222222',
+      item_id: '22222222-2222-2222-2222-222222222222',
       category: 'Mains',
       name: 'Butter Chicken',
       price: '349.00',
@@ -47,18 +47,18 @@ const sampleMenu: PublicMenuOut = {
   merchant_whatsapp_number: '+91 90000 00000',
 }
 
-const multiCategoryMenu: PublicMenuOut = {
-  business_name: 'Test Kitchen',
+const multiCategoryCatalog: PublicCatalogOut = {
+  business_name: 'Test Business',
   items: [
     {
-      menu_item_id: '22222222-2222-2222-2222-222222222222',
+      item_id: '22222222-2222-2222-2222-222222222222',
       category: 'Mains',
       name: 'Butter Chicken',
       price: '349.00',
       image_url: null,
     },
     {
-      menu_item_id: '44444444-4444-4444-4444-444444444444',
+      item_id: '44444444-4444-4444-4444-444444444444',
       category: 'Desserts',
       name: 'Gulab Jamun',
       price: '99.00',
@@ -92,17 +92,17 @@ describe('OrderingPage', () => {
     sessionStorage.clear()
   })
 
-  it('renders the menu and business name', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+  it('renders the catalog and business name', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
 
     renderPage()
 
-    expect(await screen.findByText('Test Kitchen')).toBeInTheDocument()
+    expect(await screen.findByText('Test Business')).toBeInTheDocument()
     expect(screen.getByText('Butter Chicken')).toBeInTheDocument()
   })
 
   it('shows the item photo when image_url is set', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
 
     renderPage()
     await screen.findByText('Butter Chicken')
@@ -114,27 +114,27 @@ describe('OrderingPage', () => {
   })
 
   it('falls back to an initial-letter tile when image_url is not set', async () => {
-    mockedApiFetch.mockResolvedValueOnce(multiCategoryMenu)
+    mockedApiFetch.mockResolvedValueOnce(multiCategoryCatalog)
 
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    // Neither item in multiCategoryMenu has image_url set -- falls back to
+    // Neither item in multiCategoryCatalog has image_url set -- falls back to
     // an initial-letter tile rather than a broken <img>.
     expect(screen.queryByRole('img', { name: 'Butter Chicken' })).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'Gulab Jamun' })).not.toBeInTheDocument()
   })
 
-  it('shows a not-found message for an unknown restaurant', async () => {
+  it('shows a not-found message for an unknown business', async () => {
     mockedApiFetch.mockRejectedValueOnce(new Error('not found'))
 
     renderPage()
 
-    expect(await screen.findByText('Restaurant not found.')).toBeInTheDocument()
+    expect(await screen.findByText('Business not found.')).toBeInTheDocument()
   })
 
-  it('groups menu items into category sections with headers', async () => {
-    mockedApiFetch.mockResolvedValueOnce(multiCategoryMenu)
+  it('groups items into category sections with headers', async () => {
+    mockedApiFetch.mockResolvedValueOnce(multiCategoryCatalog)
 
     renderPage()
 
@@ -146,7 +146,7 @@ describe('OrderingPage', () => {
   })
 
   it('adds an item to the cart and submits checkout with the required name and pickup order type', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
     const checkoutResponse: OrderingFlowCheckoutResponse = {
       order_id: '33333333-3333-3333-3333-333333333333',
       order_number: 12,
@@ -204,7 +204,7 @@ describe('OrderingPage', () => {
   })
 
   it('shows a validation error when the name is left blank', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
 
     renderPage()
     await screen.findByText('Butter Chicken')
@@ -225,7 +225,7 @@ describe('OrderingPage', () => {
   })
 
   it('requires and submits a delivery address when delivery is selected', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
     const checkoutResponse: OrderingFlowCheckoutResponse = {
       order_id: '33333333-3333-3333-3333-333333333333',
       order_number: 7,
@@ -285,7 +285,7 @@ describe('OrderingPage', () => {
   })
 
   it('prefills name and address for a returning customer once the phone number is entered', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
     const lookupResponse: OrderingFlowCustomerLookupOut = {
       display_name: 'Priya',
       address: {
@@ -325,7 +325,7 @@ describe('OrderingPage', () => {
   })
 
   it('does not error the page when customer-lookup finds no existing customer', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
     mockedApiFetch.mockRejectedValueOnce(new Error('not found'))
 
     renderPage()
@@ -345,11 +345,11 @@ describe('OrderingPage', () => {
     )
 
     expect(screen.getByLabelText('Your name')).toHaveValue('')
-    expect(screen.queryByText('Restaurant not found.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Business not found.')).not.toBeInTheDocument()
   })
 
   it('shows a validation error when "different number" is chosen but left blank', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
 
     renderPage()
     await screen.findByText('Butter Chicken')
@@ -372,7 +372,7 @@ describe('OrderingPage', () => {
   })
 
   it('submits the alternate contact number when "different number" is chosen and filled in', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
     const checkoutResponse: OrderingFlowCheckoutResponse = {
       order_id: '33333333-3333-3333-3333-333333333333',
       order_number: 9,
@@ -413,7 +413,7 @@ describe('OrderingPage', () => {
   })
 
   it('keeps the cart after the page reloads (e.g. backgrounding the WhatsApp webview)', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
 
     const first = renderPage()
     await screen.findByText('Butter Chicken')
@@ -424,15 +424,15 @@ describe('OrderingPage', () => {
     // rebuilt from scratch, same as a fresh page load would be.
     first.unmount()
 
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
     renderPage()
     await screen.findByText('Butter Chicken')
 
     expect(screen.getByText(totalText('Total: INR 349.00'))).toBeInTheDocument()
   })
 
-  it('opens the cart from the docked bar and can jump back to the menu without losing it', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+  it('opens the cart from the docked bar and can jump back to the catalog without losing it', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
 
     renderPage()
     await screen.findByText('Butter Chicken')
@@ -446,16 +446,16 @@ describe('OrderingPage', () => {
     const cartDialog = await screen.findByRole('dialog', { name: 'Your cart' })
     expect(within(cartDialog).getByText('Butter Chicken')).toBeInTheDocument()
 
-    // "Add more items" is the bridge back to the menu -- it closes the
+    // "Add more items" is the bridge back to the catalog -- it closes the
     // sheet without touching the cart, so a second item can be added from
-    // the menu itself.
+    // the catalog itself.
     fireEvent.click(within(cartDialog).getByRole('button', { name: /Add more items/ }))
     expect(screen.queryByRole('dialog', { name: 'Your cart' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /View cart/ })).toBeInTheDocument()
   })
 
-  it('offers a way back to the menu from inside the checkout form', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+  it('offers a way back to the catalog from inside the checkout form', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
 
     renderPage()
     await screen.findByText('Butter Chicken')
@@ -463,14 +463,14 @@ describe('OrderingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '+' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
-    fireEvent.click(screen.getByRole('button', { name: /Back to menu/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Back to catalog/ }))
     // Still on the same page, cart untouched -- this is a scroll, not a
     // navigation, so the form and its data stay mounted.
     expect(screen.getByText(totalText('Total: INR 349.00'))).toBeInTheDocument()
   })
 
   it('prefills "use a different number" for a returning customer with a saved contact_phone', async () => {
-    mockedApiFetch.mockResolvedValueOnce(sampleMenu)
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
     const lookupResponse: OrderingFlowCustomerLookupOut = {
       display_name: 'Priya',
       address: null,

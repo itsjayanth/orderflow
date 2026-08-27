@@ -35,9 +35,8 @@ _TEXT_KEYWORDS: dict[Intent, tuple[str, ...]] = {
         "appointment",
         "booking",
         "book a slot",
-        "book a table",
     ),
-    Intent.PLACE_ORDER: ("order", "menu", "hungry"),
+    Intent.PLACE_ORDER: ("order", "menu", "buy"),
 }
 
 
