@@ -84,6 +84,19 @@ async def setup_whatsapp_flow(
         if resp.status_code >= 400:
             raise FlowSetupError("upload_public_key", resp.text)
 
+        # Persisted the instant the matching public key is confirmed live
+        # at Meta, *before* attempting to create the Flow -- a failure in
+        # that next step (production has seen Meta reject create_flow
+        # after happily accepting the key rotation) must never leave the
+        # newly-live public key with no matching private key on file here,
+        # since this key pair is shared across every Flow this merchant
+        # has, not just the one being set up right now.
+        private_key_encrypted = encrypt(private_pem)
+        await WhatsAppBusinessAccountRepository(session).set_flow_private_key(
+            tenant, private_key_encrypted=private_key_encrypted
+        )
+        await session.commit()
+
         endpoint_uri = (
             f"{backend_base_url.rstrip('/')}/api/v1/whatsapp/flows/{tenant.merchant_id}/data-exchange"
         )
@@ -104,13 +117,13 @@ async def setup_whatsapp_flow(
         # publish -- Meta can start pinging endpoint_uri for its
         # pre-publish health check as soon as the Flow exists, and if that
         # happens before this function returns, our endpoint needs the
-        # private key on file to answer it. It also means a failure in a
-        # later step (as originally happened here -- publish failing
-        # before credentials were ever saved, silently discarding a
-        # generated key Meta had already accepted) doesn't strand an
-        # orphaned Flow with no way to retry against the same key pair.
+        # private key on file to answer it (already true as of the
+        # set_flow_private_key call above; this call just adds flow_id to
+        # the same row). A failure in a later step here no longer strands
+        # an orphaned key -- only an orphaned (unpublished) Flow object,
+        # safely retryable against the same, already-synced key pair.
         await WhatsAppBusinessAccountRepository(session).set_flow_credentials(
-            tenant, flow_id=flow_id, private_key_encrypted=encrypt(private_pem)
+            tenant, flow_id=flow_id, private_key_encrypted=private_key_encrypted
         )
         await session.commit()
 
@@ -162,6 +175,20 @@ async def setup_whatsapp_appointment_flow(
         if resp.status_code >= 400:
             raise FlowSetupError("upload_public_key", resp.text)
 
+        # Persisted the instant the matching public key is confirmed live
+        # at Meta, *before* attempting to create the Flow -- see
+        # setup_whatsapp_flow()'s matching comment above for why (this is
+        # exactly the gap that broke a live merchant's Flows in
+        # production: create_flow failing here after this upload
+        # succeeded left the newly-live public key with no matching
+        # private key saved anywhere, breaking decryption for both this
+        # merchant's Flows since the key pair is shared).
+        private_key_encrypted = encrypt(private_pem)
+        await WhatsAppBusinessAccountRepository(session).set_flow_private_key(
+            tenant, private_key_encrypted=private_key_encrypted
+        )
+        await session.commit()
+
         endpoint_uri = (
             f"{backend_base_url.rstrip('/')}/api/v1/whatsapp/flows/"
             f"{tenant.merchant_id}/appointment-data-exchange"
@@ -180,14 +207,13 @@ async def setup_whatsapp_appointment_flow(
         flow_id = resp.json()["id"]
 
         # Persisted the moment we have a flow_id, *before* JSON upload/
-        # publish -- Meta can start pinging endpoint_uri for its
-        # pre-publish health check as soon as the Flow exists, and if that
-        # happens before this function returns, our endpoint needs the
-        # private key on file to answer it. It also means a failure in a
-        # later step doesn't strand an orphaned Flow with no way to retry
-        # against the same key pair.
+        # publish -- the private key itself is already safely on file as
+        # of the set_flow_private_key call above; this just adds flow_id
+        # to the same row. A failure in a later step here no longer
+        # strands an orphaned key -- only an orphaned (unpublished) Flow
+        # object, safely retryable against the same, already-synced key.
         await WhatsAppBusinessAccountRepository(session).set_appointment_flow_credentials(
-            tenant, flow_id=flow_id, private_key_encrypted=encrypt(private_pem)
+            tenant, flow_id=flow_id, private_key_encrypted=private_key_encrypted
         )
         await session.commit()
 
