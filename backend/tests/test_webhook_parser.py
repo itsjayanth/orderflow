@@ -65,6 +65,31 @@ def test_parses_interactive_button_reply() -> None:
     assert messages[0].text is None
 
 
+def test_parses_interactive_list_reply() -> None:
+    payload = _envelope(
+        value={
+            "metadata": {"phone_number_id": "PNID1"},
+            "messages": [
+                {
+                    "from": "919876543210",
+                    "id": "wamid.LIST1",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "list_reply",
+                        "list_reply": {"id": "faq_menu", "title": "Where are you located?"},
+                    },
+                }
+            ],
+        }
+    )
+
+    messages = parse_inbound_messages(payload)
+
+    assert len(messages) == 1
+    assert messages[0].button_id == "faq_menu"
+    assert messages[0].text is None
+
+
 def test_skips_status_callbacks() -> None:
     """Delivery/read status webhooks carry a `statuses` key, not
     `messages` -- nothing to act on."""

@@ -116,7 +116,7 @@ describe('OnboardingPage', () => {
     expect(screen.getByText('Select a category…')).toBeInTheDocument()
   })
 
-  it('shows the live confirmation once onboarding_status is live', async () => {
+  it('shows the live confirmation once onboarding_status is live, skipping the optional FAQ step', async () => {
     mockedApiFetch.mockResolvedValueOnce(
       statusResponse({
         onboarding_status: 'live',
@@ -129,5 +129,84 @@ describe('OnboardingPage', () => {
     renderPage()
 
     expect(await screen.findByText("You're live!")).toBeInTheDocument()
+    // Reaching "live" never gates on, or stops at, the FAQ step.
+    expect(screen.queryByLabelText('Question')).not.toBeInTheDocument()
+  })
+
+  it('shows the optional FAQ step when the server is at catalog_ready', async () => {
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path === '/api/v1/onboarding/status') {
+        return Promise.resolve(
+          statusResponse({
+            onboarding_status: 'catalog_ready',
+            whatsapp_connected: true,
+            profile_completed: true,
+            has_available_item: true,
+          }),
+        )
+      }
+      if (path === '/api/v1/faq/items') return Promise.resolve([])
+      return Promise.reject(new Error(`Unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Question')).toBeInTheDocument()
+    expect(screen.getByLabelText('Answer')).toBeInTheDocument()
+    expect(screen.getByText(/entirely optional/i)).toBeInTheDocument()
+    expect(screen.getByText(/Where are you located\?/)).toBeInTheDocument()
+  })
+
+  it('submitting the FAQ step form calls the create mutation with parsed keywords', async () => {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/v1/onboarding/status') {
+        return Promise.resolve(
+          statusResponse({
+            onboarding_status: 'catalog_ready',
+            whatsapp_connected: true,
+            profile_completed: true,
+            has_available_item: true,
+          }),
+        )
+      }
+      if (path === '/api/v1/faq/items' && !init) return Promise.resolve([])
+      if (path === '/api/v1/faq/items' && init?.method === 'POST') {
+        return Promise.resolve({
+          faq_item_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          question_text: 'Where are you located?',
+          answer_text: "We're at 12 MG Road, Bengaluru.",
+          keywords: ['location', 'address'],
+          is_active: true,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        })
+      }
+      return Promise.reject(new Error(`Unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+    await screen.findByLabelText('Question')
+
+    fireEvent.change(screen.getByLabelText('Question'), {
+      target: { value: 'Where are you located?' },
+    })
+    fireEvent.change(screen.getByLabelText('Answer'), {
+      target: { value: "We're at 12 MG Road, Bengaluru." },
+    })
+    fireEvent.change(screen.getByLabelText('Keywords (comma-separated, optional)'), {
+      target: { value: 'location, address' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /add another/i }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/faq/items', {
+        method: 'POST',
+        body: JSON.stringify({
+          question_text: 'Where are you located?',
+          answer_text: "We're at 12 MG Road, Bengaluru.",
+          keywords: ['location', 'address'],
+        }),
+      }),
+    )
   })
 })

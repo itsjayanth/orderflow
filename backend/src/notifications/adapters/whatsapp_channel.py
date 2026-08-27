@@ -1,5 +1,6 @@
 import uuid
 
+from appointments.adapters.repository import AppointmentRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
@@ -77,3 +78,60 @@ class WhatsAppNotificationChannel:
 
     async def notify_order_completed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         return await self._send(merchant_id=merchant_id, order_id=order_id, kind="order_completed")
+
+    async def _send_appointment(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID, kind: str
+    ) -> bool:
+        """Mirrors _send exactly, but for the Appointment domain -- kept as
+        a separate method (rather than generalizing _send) so this class
+        stays a straightforward, easy-to-follow one-method-per-domain
+        pair, same as the rest of this codebase's style."""
+        tenant = TenantContext(merchant_id=merchant_id)
+        async with SessionFactory() as session:
+            waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
+            if waba is None or waba.phone_number_id is None or waba.access_token_encrypted is None:
+                return False
+
+            appointment = await AppointmentRepository(session).get(tenant, appointment_id)
+            if appointment is None:
+                return False
+
+            merchant = await MerchantRepository(session).get(tenant.merchant_id)
+
+            context = {
+                "business_name": merchant.business_name if merchant else "",
+                "customer_name": appointment.customer.display_name or "",
+                "appointment_id": str(appointment.appointment_id),
+                "appointment_number": f"{appointment.appointment_number:04d}",
+                "appointment_date": str(appointment.appointment_date),
+                "appointment_time": str(appointment.appointment_time),
+                "notes": appointment.notes or "",
+            }
+            template = await NotificationTemplateRepository(session).get(tenant, kind)
+            template_body = (
+                template.body
+                if template is not None and template.is_active
+                else DEFAULT_MESSAGES[kind]
+            )
+            message = render_template(template_body, context)
+
+            return await self._sender.send_text(
+                phone_number_id=waba.phone_number_id,
+                access_token=decrypt(waba.access_token_encrypted),
+                to=appointment.customer.whatsapp_number,
+                body=message,
+            )
+
+    async def notify_appointment_confirmed(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        return await self._send_appointment(
+            merchant_id=merchant_id, appointment_id=appointment_id, kind="appointment_confirmed"
+        )
+
+    async def notify_appointment_cancelled(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        return await self._send_appointment(
+            merchant_id=merchant_id, appointment_id=appointment_id, kind="appointment_cancelled"
+        )

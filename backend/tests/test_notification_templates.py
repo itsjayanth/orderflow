@@ -207,6 +207,8 @@ async def test_list_templates_defaults_to_unconfigured(client: AsyncClient) -> N
         "order_processing",
         "order_ready",
         "order_completed",
+        "appointment_confirmed",
+        "appointment_cancelled",
     }
     assert all(t["is_configured"] is False for t in body)
     assert all(t["is_active"] is False for t in body)

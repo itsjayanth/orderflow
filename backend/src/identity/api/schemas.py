@@ -25,6 +25,7 @@ class MerchantOut(BaseModel):
     merchant_id: uuid.UUID
     business_name: str
     onboarding_status: str
+    appointment_booking_enabled: bool
 
     model_config = {"from_attributes": True}
 
@@ -42,3 +43,13 @@ class StaffUserOut(BaseModel):
 class MeResponse(BaseModel):
     staff_user: StaffUserOut
     merchant: MerchantOut
+
+
+class AppointmentSettingsOut(BaseModel):
+    appointment_booking_enabled: bool
+
+    model_config = {"from_attributes": True}
+
+
+class AppointmentSettingsUpdate(BaseModel):
+    enabled: bool

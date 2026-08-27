@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from appointment_flow.api.router import router as appointment_flow_router
 from conversation.api.router import router as whatsapp_webhook_router
 from dashboard_api.api.router import router as dashboard_api_router
 from flows.api.router import router as whatsapp_flows_router
@@ -50,6 +51,7 @@ app.include_router(dashboard_api_router)
 app.include_router(whatsapp_webhook_router)
 app.include_router(whatsapp_flows_router)
 app.include_router(ordering_flow_router)
+app.include_router(appointment_flow_router)
 app.include_router(payments_webhook_router)
 
 

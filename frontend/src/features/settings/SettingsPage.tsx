@@ -17,6 +17,7 @@ import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
+import { useAppointmentSettings, useUpdateAppointmentSettings } from './useAppointmentSettings'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
 import { useUpdateWhatsAppSettings, useWhatsAppSettings } from './useWhatsAppSettings'
@@ -254,6 +255,49 @@ function WhatsAppSettingsSection() {
   )
 }
 
+function AppointmentBookingSettingsSection() {
+  const { data, isLoading } = useAppointmentSettings()
+  const update = useUpdateAppointmentSettings()
+  const [justSaved, setJustSaved] = useState(false)
+
+  const onCheckedChange = (checked: boolean) => {
+    update.mutate(checked, {
+      onSuccess: () => {
+        setJustSaved(true)
+        setTimeout(() => setJustSaved(false), 4000)
+      },
+    })
+  }
+
+  return (
+    <Card className="space-y-4 p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-medium">Appointment booking</h2>
+          <p className="text-muted-foreground text-sm">
+            Let customers book a time slot on WhatsApp instead of -- or alongside -- placing an
+            order.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Switch
+            id="appointment_booking_enabled"
+            aria-label="Enable appointment booking"
+            checked={data?.appointment_booking_enabled ?? false}
+            disabled={isLoading || update.isPending}
+            onCheckedChange={onCheckedChange}
+          />
+        </div>
+      </div>
+
+      {update.isError && (
+        <p className="text-destructive text-sm">Failed to save. Please try again.</p>
+      )}
+      {justSaved && !update.isPending && <SavedIndicator message="Saved" />}
+    </Card>
+  )
+}
+
 const templateSchema = z.object({
   template_name: z.string().min(1, 'Required'),
   language_code: z.string().min(1, 'Required'),
@@ -266,6 +310,8 @@ const KIND_LABELS: Record<NotificationTemplateOut['notification_kind'], string> 
   order_processing: 'Order processing',
   order_ready: 'Order ready',
   order_completed: 'Order completed',
+  appointment_confirmed: 'Appointment confirmed',
+  appointment_cancelled: 'Appointment cancelled',
 }
 
 const KIND_DESCRIPTIONS: Record<NotificationTemplateOut['notification_kind'], string> = {
@@ -273,15 +319,30 @@ const KIND_DESCRIPTIONS: Record<NotificationTemplateOut['notification_kind'], st
   order_processing: 'Sent the moment staff mark the order Processing.',
   order_ready: 'Sent the moment staff mark the order Ready for pickup/delivery.',
   order_completed: 'Sent once staff mark the order Completed.',
+  appointment_confirmed: 'Sent when staff confirm a requested appointment.',
+  appointment_cancelled: 'Sent when staff cancel an appointment.',
 }
 
-const TEMPLATE_VARIABLES = [
+const ORDER_TEMPLATE_VARIABLES = [
   '{{business_name}}',
   '{{customer_name}}',
   '{{order_id}}',
   '{{total}}',
   '{{currency}}',
 ]
+
+const APPOINTMENT_TEMPLATE_VARIABLES = [
+  '{{business_name}}',
+  '{{customer_name}}',
+  '{{appointment_date}}',
+  '{{appointment_time}}',
+]
+
+function templateVariablesFor(kind: NotificationTemplateOut['notification_kind']): string[] {
+  return kind === 'appointment_confirmed' || kind === 'appointment_cancelled'
+    ? APPOINTMENT_TEMPLATE_VARIABLES
+    : ORDER_TEMPLATE_VARIABLES
+}
 
 function TemplateRow({ template }: { template: NotificationTemplateOut }) {
   const update = useUpdateNotificationTemplate()
@@ -349,7 +410,7 @@ function TemplateRow({ template }: { template: NotificationTemplateOut }) {
           <Textarea id={`${template.notification_kind}_body`} rows={3} {...register('body')} />
           {errors.body && <p className="text-destructive text-sm">{errors.body.message}</p>}
           <p className="text-muted-foreground text-xs">
-            Variables: {TEMPLATE_VARIABLES.join(', ')}
+            Variables: {templateVariablesFor(template.notification_kind).join(', ')}
           </p>
         </div>
 
@@ -405,6 +466,7 @@ export function SettingsPage() {
       />
       <PaymentSettingsSection />
       <WhatsAppSettingsSection />
+      <AppointmentBookingSettingsSection />
       <TemplatesSettingsSection />
     </div>
   )

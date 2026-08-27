@@ -120,7 +120,7 @@ export function CreateTestOrderForm() {
         />
         {errors.item_id && <p className="text-destructive text-sm">{errors.item_id.message}</p>}
         {items?.length === 0 && (
-          <p className="text-muted-foreground text-sm">Add a menu item in Catalog first.</p>
+          <p className="text-muted-foreground text-sm">Add an item in Catalog first.</p>
         )}
       </div>
 

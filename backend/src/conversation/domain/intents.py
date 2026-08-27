@@ -4,8 +4,19 @@ from enum import StrEnum
 class Intent(StrEnum):
     PLACE_ORDER = "place_order"
     TRACK_ORDER = "track_order"
+    BOOK_APPOINTMENT = "book_appointment"
     TALK_TO_RESTAURANT = "talk_to_restaurant"
     GREETING = "greeting"
+    # Button-driven, like the other menu intents above -- classify() maps
+    # the "FAQs" button's id straight to this via the generic button_id
+    # lookup below, no keyword list needed.
+    FAQ_MENU = "faq_menu"
+    # Reported on HandledMessage when a reply was resolved to a specific
+    # stored FAQItem (either a confident keyword match on free text, or a
+    # tap on a FAQ list-message row) -- never returned by classify() itself,
+    # since that requires a tenant-scoped DB lookup classify() deliberately
+    # doesn't do (see handler.py).
+    FAQ = "faq"
     # Reported on HandledMessage when an inbound message is a completed
     # WhatsApp Flow submission (InboundMessage.flow_response is set) --
     # never returned by classify(), which only sees text/button messages.
@@ -19,6 +30,13 @@ class Intent(StrEnum):
 _TEXT_KEYWORDS: dict[Intent, tuple[str, ...]] = {
     Intent.TRACK_ORDER: ("track", "status", "where is my order"),
     Intent.TALK_TO_RESTAURANT: ("talk", "human", "help", "staff", "call"),
+    Intent.BOOK_APPOINTMENT: (
+        "book appointment",
+        "appointment",
+        "booking",
+        "book a slot",
+        "book a table",
+    ),
     Intent.PLACE_ORDER: ("order", "menu", "hungry"),
 }
 

@@ -57,6 +57,14 @@ def parse_inbound_messages(payload: dict[str, Any]) -> list[InboundMessage]:
                     interactive_type = interactive.get("type")
                     if interactive_type == "button_reply":
                         button_id = interactive.get("button_reply", {}).get("id")
+                    elif interactive_type == "list_reply":
+                        # A tap on an interactive *list* message's row comes
+                        # back shaped differently from a button tap, but
+                        # means the same thing to handler.py -- "the id of
+                        # whichever option the user picked" -- so it's folded
+                        # into the same button_id field rather than adding a
+                        # separate one only FAQ list messages would ever set.
+                        button_id = interactive.get("list_reply", {}).get("id")
                     elif interactive_type == "nfm_reply":
                         response_json = interactive.get("nfm_reply", {}).get("response_json")
                         if response_json:

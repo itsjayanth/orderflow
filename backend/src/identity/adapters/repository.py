@@ -19,6 +19,21 @@ class MerchantRepository:
     async def get(self, merchant_id: uuid.UUID) -> Merchant | None:
         return await self._session.get(Merchant, merchant_id)
 
+    async def update_appointment_booking_enabled(
+        self, merchant_id: uuid.UUID, enabled: bool
+    ) -> Merchant:
+        """Dashboard Settings page toggle for the Appointment Booking
+        feature. A missing merchant here is a caller bug (the API layer
+        resolves merchant_id from an authenticated TenantContext, which
+        can't name a merchant that doesn't exist) -- so this doesn't guard
+        against None, matching the simplicity of MerchantRepository.get's
+        contract elsewhere in this class."""
+        merchant = await self._session.get(Merchant, merchant_id)
+        assert merchant is not None
+        merchant.appointment_booking_enabled = enabled
+        await self._session.flush()
+        return merchant
+
 
 class StaffUserRepository:
     """Not tenant-scoped by TenantContext: login/registration precede tenant
