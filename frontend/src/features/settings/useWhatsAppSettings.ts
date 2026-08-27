@@ -63,3 +63,17 @@ export function useSetupWhatsAppFlow() {
       }),
   })
 }
+
+export function useSetupWhatsAppAppointmentFlow() {
+  return useMutation({
+    mutationFn: (metaWabaId: string) =>
+      apiFetch<WhatsAppFlowSetupResult>('/api/v1/onboarding/whatsapp/appointment-flow-setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          meta_waba_id: metaWabaId,
+          // Never user-facing -- same env var api/client.ts's API_BASE_URL reads.
+          backend_base_url: import.meta.env.VITE_API_URL ?? 'http://localhost:8000',
+        }),
+      }),
+  })
+}

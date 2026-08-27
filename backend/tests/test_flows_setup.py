@@ -5,7 +5,9 @@ from flows.domain import setup as flow_setup_domain
 from flows.domain.setup import (
     FlowSetupError,
     get_flow_validation,
+    setup_whatsapp_appointment_flow,
     setup_whatsapp_flow,
+    update_appointment_flow_assets,
     update_flow_assets,
 )
 from identity.adapters.repository import MerchantRepository
@@ -28,6 +30,29 @@ async def test_setup_fails_precondition_without_credentials(db_session: AsyncSes
 
     with pytest.raises(FlowSetupError) as exc_info:
         await setup_whatsapp_flow(
+            db_session,
+            tenant,
+            account,
+            meta_waba_id="123",
+            backend_base_url="https://example.com",
+        )
+
+    assert exc_info.value.step == "precondition"
+
+
+async def test_setup_appointment_flow_fails_precondition_without_credentials(
+    db_session: AsyncSession,
+) -> None:
+    merchant = await MerchantRepository(db_session).create(
+        business_name="No Appt Creds Yet", owner_contact="nocreds-appt@example.com"
+    )
+    tenant = TenantContext(merchant_id=merchant.merchant_id)
+    account = WhatsAppBusinessAccount(merchant_id=merchant.merchant_id)
+    db_session.add(account)
+    await db_session.commit()
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await setup_whatsapp_appointment_flow(
             db_session,
             tenant,
             account,
@@ -198,6 +223,132 @@ async def test_update_flow_assets_raises_on_publish_failure(
     assert fake_client.calls[1]["url"].endswith("/FLOW_42/publish")
 
 
+async def test_setup_appointment_flow_persists_credentials_and_publishes(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "Appt Setup Success")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        phone_number_id="PHONE_1",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    fake_client = _FakeSequencedClient(
+        [
+            _FakeAssetUploadResponse(200),  # upload_public_key
+            _FakeAssetUploadResponse(200, json_body={"id": "APPT_FLOW_99"}),  # create_flow
+            _FakeAssetUploadResponse(200),  # upload_flow_json
+            _FakeAssetUploadResponse(200),  # publish
+        ]
+    )
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    flow_id = await setup_whatsapp_appointment_flow(
+        db_session,
+        tenant,
+        account,
+        meta_waba_id="META_WABA_1",
+        backend_base_url="https://example.com",
+    )
+
+    assert flow_id == "APPT_FLOW_99"
+    assert account.whatsapp_appointment_flow_id == "APPT_FLOW_99"
+    assert account.flow_private_key_encrypted is not None
+
+    assert len(fake_client.calls) == 4
+    assert fake_client.calls[0]["url"].endswith("/PHONE_1/whatsapp_business_encryption")
+    assert fake_client.calls[1]["url"].endswith("/META_WABA_1/flows")
+    assert fake_client.calls[1]["json"]["name"] == "Book an Appointment"
+    assert fake_client.calls[1]["json"]["categories"] == ["OTHER"]
+    assert fake_client.calls[1]["json"]["endpoint_uri"] == (
+        f"https://example.com/api/v1/whatsapp/flows/{tenant.merchant_id}/appointment-data-exchange"
+    )
+    assert fake_client.calls[2]["url"].endswith("/APPT_FLOW_99/assets")
+    assert fake_client.calls[3]["url"].endswith("/APPT_FLOW_99/publish")
+
+
+async def test_update_appointment_flow_assets_fails_precondition_without_flow_id(
+    db_session: AsyncSession,
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "No Appt Flow Yet")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id, access_token_encrypted=encrypt("dummy-token")
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await update_appointment_flow_assets(db_session, tenant, account)
+
+    assert exc_info.value.step == "precondition"
+
+
+async def test_update_appointment_flow_assets_fails_precondition_without_access_token(
+    db_session: AsyncSession,
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "No Appt Token Yet")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id, whatsapp_appointment_flow_id="APPT_FLOW_1"
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await update_appointment_flow_assets(db_session, tenant, account)
+
+    assert exc_info.value.step == "precondition"
+
+
+async def test_update_appointment_flow_assets_uploads_flow_json(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "Appt Already Set Up")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        whatsapp_appointment_flow_id="APPT_FLOW_42",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    fake_client = _FakeAssetUploadClient(_FakeAssetUploadResponse(200))
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    await update_appointment_flow_assets(db_session, tenant, account)
+
+    assert len(fake_client.calls) == 2
+    assert fake_client.calls[0]["url"].endswith("/APPT_FLOW_42/assets")
+    assert fake_client.calls[0]["data"] == {"name": "flow.json", "asset_type": "FLOW_JSON"}
+    assert fake_client.calls[1]["url"].endswith("/APPT_FLOW_42/publish")
+
+
+async def test_update_appointment_flow_assets_raises_on_publish_failure(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "Appt Publish Fails")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        whatsapp_appointment_flow_id="APPT_FLOW_42",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    fake_client = _FakeSequencedClient(
+        [_FakeAssetUploadResponse(200), _FakeAssetUploadResponse(400, "publish rejected")]
+    )
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await update_appointment_flow_assets(db_session, tenant, account)
+
+    assert exc_info.value.step == "publish_flow"
+    assert len(fake_client.calls) == 2
+    assert fake_client.calls[1]["url"].endswith("/APPT_FLOW_42/publish")
+
+
 async def test_get_flow_validation_fails_precondition_without_flow_id(
     db_session: AsyncSession,
 ) -> None:
@@ -260,3 +411,60 @@ async def test_get_flow_validation_raises_on_failure(db_session: AsyncSession, m
         await get_flow_validation(account)
 
     assert exc_info.value.step == "get_flow_validation"
+
+
+async def test_get_flow_validation_uses_explicit_flow_id_for_appointment_flow(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    tenant = await _seed_merchant_tenant(db_session, "Appt Validation Check")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id,
+        whatsapp_flow_id="FLOW_42",
+        whatsapp_appointment_flow_id="APPT_FLOW_42",
+        access_token_encrypted=encrypt("dummy-token"),
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    body = {
+        "status": "PUBLISHED",
+        "validation_errors": [],
+        "health_status": {"can_send_message": "AVAILABLE"},
+    }
+    fake_client = _FakeAssetUploadClient(_FakeAssetUploadResponse(200, json_body=body))
+    monkeypatch.setattr(flow_setup_domain.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+    result = await get_flow_validation(account, flow_id=account.whatsapp_appointment_flow_id)
+
+    assert result == body
+    assert len(fake_client.calls) == 1
+    # Reads the appointment flow_id, not waba.whatsapp_flow_id (which is
+    # also set here, to prove the explicit flow_id wins).
+    assert fake_client.calls[0]["url"].endswith("/APPT_FLOW_42")
+
+
+async def test_get_flow_validation_fails_precondition_when_appointment_flow_unset(
+    db_session: AsyncSession,
+) -> None:
+    """Passing flow_id=account.whatsapp_appointment_flow_id explicitly still
+    hits the precondition when that flow was never set up -- distinct from
+    test_get_flow_validation_fails_precondition_without_flow_id, which
+    exercises the *omitted* flow_id (defaulting to waba.whatsapp_flow_id)
+    rather than an explicitly-passed one. waba.whatsapp_flow_id is
+    deliberately left unset too here: since flow_id's default is plain
+    `None`, an explicitly-passed None is indistinguishable from an omitted
+    argument and *would* fall back to waba.whatsapp_flow_id if that were
+    set (see get_flow_validation's docstring) -- leaving both unset is
+    what isolates "the appointment flow specifically was never set up" as
+    the actual failure this test is asserting."""
+    tenant = await _seed_merchant_tenant(db_session, "No Appt Flow For Validation")
+    account = WhatsAppBusinessAccount(
+        merchant_id=tenant.merchant_id, access_token_encrypted=encrypt("dummy-token")
+    )
+    db_session.add(account)
+    await db_session.commit()
+
+    with pytest.raises(FlowSetupError) as exc_info:
+        await get_flow_validation(account, flow_id=account.whatsapp_appointment_flow_id)
+
+    assert exc_info.value.step == "precondition"

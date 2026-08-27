@@ -6,7 +6,9 @@ from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_s
 from flows.domain.setup import (
     FlowSetupError,
     get_flow_validation,
+    setup_whatsapp_appointment_flow,
     setup_whatsapp_flow,
+    update_appointment_flow_assets,
     update_flow_assets,
 )
 from identity.adapters.repository import MerchantRepository
@@ -159,7 +161,71 @@ async def sync_whatsapp_flow_endpoint(
 
     try:
         await update_flow_assets(session, tenant, account)
-        validation = await get_flow_validation(account)
+        validation = await get_flow_validation(account, flow_id=account.whatsapp_flow_id)
+    except FlowSetupError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"Flow sync failed at '{exc.step}': {exc.detail}"
+        ) from exc
+
+    return validation
+
+
+@router.post("/whatsapp/appointment-flow-setup", response_model=WhatsAppFlowSetupResult)
+async def setup_whatsapp_appointment_flow_endpoint(
+    body: WhatsAppFlowSetupRequest, tenant: CurrentTenant, session: DbSession
+) -> WhatsAppFlowSetupResult:
+    """One-time per-merchant setup for native WhatsApp appointment booking
+    (see flows/domain/setup.py) -- generates a fresh RSA key pair, uploads
+    the public key to Meta, creates+publishes the "Book an Appointment"
+    Flow, and stores the credentials, all from inside this deployment
+    where real Meta credentials already exist in the environment. Same
+    underlying logic as scripts/setup_whatsapp_appointment_flow.py; this
+    is the version to use against a deployed environment, since nothing
+    needs to leave it."""
+    account = await WhatsAppBusinessAccountRepository(session).get(tenant)
+    if account is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "WhatsApp credentials not configured")
+
+    try:
+        flow_id = await setup_whatsapp_appointment_flow(
+            session,
+            tenant,
+            account,
+            meta_waba_id=body.meta_waba_id,
+            backend_base_url=body.backend_base_url,
+        )
+    except FlowSetupError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"Flow setup failed at '{exc.step}': {exc.detail}"
+        ) from exc
+
+    await session.commit()
+    return WhatsAppFlowSetupResult(flow_id=flow_id)
+
+
+@router.post("/whatsapp/appointment-flow-sync")
+async def sync_whatsapp_appointment_flow_endpoint(
+    tenant: CurrentTenant, session: DbSession
+) -> dict[str, object]:
+    """Pushes the current appointment_flow.json to Meta for a merchant who
+    already ran /whatsapp/appointment-flow-setup once -- for whenever the
+    Flow JSON itself changes and an already-onboarded merchant's live
+    Flow needs to pick up the update, without recreating the whole Flow
+    (new flow_id, new RSA key pair, re-publish) from scratch. See
+    flows/domain/setup.py's update_appointment_flow_assets.
+
+    Returns Meta's own read-back of the Flow's status/validation_errors/
+    health_status right after the upload, same as /whatsapp/flow-sync
+    does for the order Flow."""
+    account = await WhatsAppBusinessAccountRepository(session).get(tenant)
+    if account is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "WhatsApp credentials not configured")
+
+    try:
+        await update_appointment_flow_assets(session, tenant, account)
+        validation = await get_flow_validation(
+            account, flow_id=account.whatsapp_appointment_flow_id
+        )
     except FlowSetupError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"Flow sync failed at '{exc.step}': {exc.detail}"
