@@ -7,6 +7,30 @@ from shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# WhatsApp Cloud API hard-caps interactive list message row titles at 24
+# characters -- a longer title makes Meta reject the *entire* send_list call
+# with a 4xx, which _post logs and swallows (returns False) rather than
+# raising, so the caller silently gets no reply delivered. Truncating here,
+# at the one place that knows this wire-format constraint, protects every
+# send_list call site (FAQ menu, FAQ disambiguation list, the greeting menu)
+# rather than relying on each caller to remember the limit.
+_LIST_ROW_TITLE_MAX_LEN = 24
+_LIST_ROW_DESCRIPTION_MAX_LEN = 72
+
+
+def _list_row(option_id: str, title: str) -> dict[str, str]:
+    if len(title) <= _LIST_ROW_TITLE_MAX_LEN:
+        return {"id": option_id, "title": title}
+    # Title alone can't carry the full text once truncated -- surface it via
+    # description too (also capped by Meta, at 72 chars) so e.g. a full FAQ
+    # question stays legible instead of just "What are your deliv…".
+    truncated_title = title[: _LIST_ROW_TITLE_MAX_LEN - 1].rstrip() + "…"
+    return {
+        "id": option_id,
+        "title": truncated_title,
+        "description": title[:_LIST_ROW_DESCRIPTION_MAX_LEN],
+    }
+
 
 class WhatsAppSender(Protocol):
     async def send_text(
@@ -209,8 +233,7 @@ class GraphApiWhatsAppSender:
                             {
                                 "title": "Options",
                                 "rows": [
-                                    {"id": option_id, "title": title}
-                                    for option_id, title in options
+                                    _list_row(option_id, title) for option_id, title in options
                                 ],
                             }
                         ],
