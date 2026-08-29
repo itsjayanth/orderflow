@@ -33,6 +33,12 @@ from shared.config import get_settings
 from shared.encryption import decrypt
 from shared.tenant import TenantContext
 
+# WhatsApp interactive list messages cap out at 10 rows -- the greeting
+# menu, the "browse every FAQ" menu, and the "did you mean" disambiguation
+# list all stay under it.
+_LIST_MESSAGE_MAX_ROWS = 10
+_FAQ_DISAMBIGUATION_MAX_ROWS = 3
+
 
 async def _menu_options(
     session: AsyncSession, tenant: TenantContext, appointment_booking_enabled: bool
@@ -49,15 +55,26 @@ async def _menu_options(
     if appointment_booking_enabled:
         options.append((Intent.BOOK_APPOINTMENT.value, "Book appointment"))
     options.append((Intent.TALK_TO_RESTAURANT.value, "Talk to us"))
-    if await FAQItemRepository(session).list(tenant, include_inactive=False):
-        options.append((Intent.FAQ_MENU.value, "FAQs"))
+
+    faqs = await FAQItemRepository(session).list(tenant, include_inactive=False)
+    if faqs:
+        # Folding each FAQ in as its own row -- rather than a single "FAQs"
+        # row that opens a *second* list message -- means answering a
+        # question is one tap (open the menu, tap the question) instead of
+        # two (open the menu, tap "FAQs", open another list, tap the
+        # question). _faq_item_for_button below already resolves any row id
+        # that's a FAQItem uuid before classify() ever sees it, so tapping
+        # one of these rows needs no other wiring. Only falls back to the
+        # old single "FAQs" row (leading to _send_faq_menu's own list) once
+        # there are more active FAQs than remaining row slots -- WhatsApp
+        # list messages cap out at 10 rows total, shared with the fixed
+        # options above.
+        remaining_rows = _LIST_MESSAGE_MAX_ROWS - len(options)
+        if len(faqs) <= remaining_rows:
+            options.extend((str(item.faq_item_id), item.question_text) for item in faqs)
+        else:
+            options.append((Intent.FAQ_MENU.value, "FAQs"))
     return options
-
-
-# WhatsApp interactive list messages cap out at 10 rows -- both the "browse
-# every FAQ" menu and the "did you mean" disambiguation list stay under it.
-_FAQ_MENU_MAX_ROWS = 10
-_FAQ_DISAMBIGUATION_MAX_ROWS = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,7 +352,9 @@ async def _send_faq_menu(
             to=message.from_phone,
             body="No FAQs have been added yet.",
         )
-    options = [(str(item.faq_item_id), item.question_text) for item in items[:_FAQ_MENU_MAX_ROWS]]
+    options = [
+        (str(item.faq_item_id), item.question_text) for item in items[:_LIST_MESSAGE_MAX_ROWS]
+    ]
     return await sender.send_list(
         phone_number_id=message.phone_number_id,
         access_token=access_token,
