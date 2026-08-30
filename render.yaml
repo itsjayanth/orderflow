@@ -52,10 +52,20 @@ services:
       # ORDZO's "OrdzoLive" Meta App (decided 2026-08-30) via a dedicated
       # Facebook Login for Business configuration scoped to orderflow's
       # own domain -- not secrets, safe to commit as literal values.
+      # NOTE: config recreated as "Orderflow Embedded Signup v2"
+      # (2026-08-30) -- the original (2032001420768003) had the "General"
+      # login variation, which has no WhatsApp Business Account asset
+      # option and hits Meta error #1690130 ("<business_id> isn't a valid
+      # Business ID") at the WABA-attachment step. Recreated from Meta's
+      # "WhatsApp Embedded Signup Configuration With 60 Expiration Token"
+      # template instead -- same root cause/fix fastflow already hit on
+      # this same Meta App. Token expires in 60 days (Meta locks this to
+      # the template choice, not editable) -- no re-auth/refresh flow
+      # built for this yet.
       - key: META_APP_ID
         value: "1012236041846794"
       - key: META_ES_CONFIG_ID
-        value: "2032001420768003"
+        value: "2095824314380999"
       - key: META_GRAPH_API_VERSION
         value: v22.0
       # Real secret -- set in the Render dashboard, not here. Get it from
