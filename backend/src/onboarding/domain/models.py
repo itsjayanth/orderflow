@@ -27,6 +27,15 @@ class WhatsAppBusinessAccount(Base):
     access_token_encrypted: Mapped[str | None] = mapped_column(String(2048), default=None)
     token_expiry_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
 
+    # Set once by onboarding/domain/embedded_signup.py's phone-number
+    # registration step (POST /{phone_number_id}/register) -- Meta doesn't
+    # return the PIN, so it must be generated and persisted client-side to
+    # re-register with the same PIN later (a re-run with a different PIN
+    # against an already-registered number fails 2-step verification).
+    # Always None for accounts connected via the manual/legacy path, which
+    # never calls /register at all.
+    registration_pin_encrypted: Mapped[str | None] = mapped_column(String(255), default=None)
+
     # "pending" | "connected" | "token_expired" | "disconnected"
     connection_status: Mapped[str] = mapped_column(String(32), default="pending")
     webhook_subscribed: Mapped[bool] = mapped_column(default=False)

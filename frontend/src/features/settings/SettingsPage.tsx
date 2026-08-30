@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButton'
 import type { NotificationTemplateOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
@@ -21,7 +22,7 @@ import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
 import { useAppointmentSettings, useUpdateAppointmentSettings } from './useAppointmentSettings'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
-import { useUpdateWhatsAppSettings, useWhatsAppSettings } from './useWhatsAppSettings'
+import { useWhatsAppSettings } from './useWhatsAppSettings'
 import { WhatsAppFlowSetupCard } from './WhatsAppFlowSetupCard'
 
 const paymentSchema = z.object({
@@ -29,13 +30,6 @@ const paymentSchema = z.object({
   razorpay_key_secret: z.string().min(1, 'Required'),
 })
 type PaymentForm = z.infer<typeof paymentSchema>
-
-const whatsappSchema = z.object({
-  phone_number_id: z.string().min(1, 'Required'),
-  access_token: z.string().min(1, 'Required'),
-  display_phone_number: z.string().optional(),
-})
-type WhatsAppForm = z.infer<typeof whatsappSchema>
 
 function PaymentSettingsSection() {
   const { data, isLoading } = usePaymentSettings()
@@ -133,37 +127,11 @@ function PaymentSettingsSection() {
 function WhatsAppSettingsSection() {
   const { data, isLoading } = useWhatsAppSettings()
   const { data: appointmentSettings } = useAppointmentSettings()
-  const update = useUpdateWhatsAppSettings()
   const [justSaved, setJustSaved] = useState(false)
-  const {
-    register,
-    handleSubmit,
-    resetField,
-    formState: { errors },
-  } = useForm<WhatsAppForm>({
-    resolver: zodResolver(whatsappSchema),
-    // Keeps the phone number ID field in sync with what's actually saved
-    // (re-syncs after the query refetches post-save too) so it's always
-    // visible for reference/copy-paste, not just in the read-only summary
-    // line below -- test tokens expiring hourly means this gets visited
-    // often, and re-typing the same ID every time is friction worth
-    // removing. The access token is deliberately never pre-filled here:
-    // the API only ever reports whether one is set, never the value.
-    values: {
-      phone_number_id: data?.phone_number_id ?? '',
-      display_phone_number: data?.display_phone_number ?? '',
-      access_token: '',
-    },
-  })
 
-  const onSubmit = (values: WhatsAppForm) => {
-    update.mutate(values, {
-      onSuccess: () => {
-        resetField('access_token')
-        setJustSaved(true)
-        setTimeout(() => setJustSaved(false), 4000)
-      },
-    })
+  const handleSaved = () => {
+    setJustSaved(true)
+    setTimeout(() => setJustSaved(false), 4000)
   }
 
   const tone = data?.connection_status === 'connected' ? 'green' : 'gray'
@@ -187,69 +155,10 @@ function WhatsAppSettingsSection() {
         </p>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="phone_number_id">Phone number ID</Label>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info
-                  className="text-muted-foreground size-3.5"
-                  aria-label="Phone number ID help"
-                />
-              </TooltipTrigger>
-              <TooltipContent>
-                Found on Meta's WhatsApp API Setup page, labeled "Phone number ID" -- not the phone
-                number itself.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <Input id="phone_number_id" {...register('phone_number_id')} />
-          {errors.phone_number_id && (
-            <p className="text-destructive text-sm">{errors.phone_number_id.message}</p>
-          )}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="display_phone_number">Display phone number (optional)</Label>
-          <Input
-            id="display_phone_number"
-            placeholder="+91 90000 00000"
-            {...register('display_phone_number')}
-          />
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="access_token">Access token</Label>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info className="text-muted-foreground size-3.5" aria-label="Access token help" />
-              </TooltipTrigger>
-              <TooltipContent>
-                A permanent or temporary token generated for your WhatsApp Business app in Meta's
-                developer console. Never pre-filled here -- re-paste it to rotate.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <Input
-            id="access_token"
-            type="password"
-            placeholder="Leave any value for now if you don't have a real token yet"
-            {...register('access_token')}
-          />
-          {errors.access_token && (
-            <p className="text-destructive text-sm">{errors.access_token.message}</p>
-          )}
-        </div>
-        {update.isError && (
-          <p className="text-destructive text-sm">Failed to save. Please try again.</p>
-        )}
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={update.isPending}>
-            {update.isPending ? 'Saving…' : 'Save & connect'}
-          </Button>
-          {justSaved && !update.isPending && <SavedIndicator message="Saved and connected" />}
-        </div>
-      </form>
+      <div className="flex items-center gap-3">
+        <ConnectWhatsAppButton data={data} onSaved={handleSaved} />
+      </div>
+      {justSaved && <SavedIndicator message="Saved and connected" />}
 
       <TestWhatsAppMessageCard disabled={!data?.access_token_set} />
       <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />

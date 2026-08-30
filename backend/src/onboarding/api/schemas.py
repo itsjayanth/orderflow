@@ -14,6 +14,42 @@ class WhatsAppSettingsUpdate(BaseModel):
     display_phone_number: str | None = None
 
 
+class EmbeddedSignupRequest(BaseModel):
+    """What Meta's Embedded Signup popup hands back client-side (see
+    frontend/src/features/onboarding/useEmbeddedSignup.ts). Every field but
+    `event` is optional -- a CANCEL carries no code or IDs at all, and the
+    endpoint has to be able to respond to that rather than reject it as a
+    malformed request. code has a ~30s TTL at Meta and is never logged,
+    stored, or echoed back."""
+
+    code: str | None = Field(None, description="Embedded Signup authorization code (~30s TTL)")
+    waba_id: str | None = Field(None, description="WhatsApp Business Account ID")
+    phone_number_id: str | None = Field(None, description="WhatsApp phone number ID")
+    business_id: str | None = Field(None, description="Meta business portfolio ID")
+    event: str = Field(
+        "FINISH",
+        description="Terminal session event from the popup: FINISH, FINISH_ONLY_WABA, or CANCEL",
+    )
+    backend_base_url: str | None = Field(
+        None,
+        description=(
+            "This deployment's own public base URL (e.g. https://api.example.com), used to build "
+            "the WABA webhook subscription's override_callback_uri -- required because the Meta "
+            "App backing Embedded Signup is shared with fastflow/ORDZO, so without an override, "
+            "webhook events would route to fastflow's backend instead of orderflow's."
+        ),
+    )
+
+
+class EmbeddedSignupResult(BaseModel):
+    status: str  # "connected" | "not_completed"
+    message: str
+    phone_number_id: str | None = None
+    display_phone_number: str | None = None
+    connection_status: str | None = None
+    pending_steps: list[str] = Field(default_factory=list)
+
+
 class WhatsAppTestMessageRequest(BaseModel):
     to: str = Field(..., description="Recipient phone number in E.164 format, e.g. +919876543210")
 

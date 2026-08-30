@@ -131,6 +131,24 @@ export interface WhatsAppSettingsOut {
   connection_status: string
 }
 
+export interface EmbeddedSignupRequest {
+  code: string
+  waba_id: string | null
+  phone_number_id: string | null
+  business_id: string | null
+  event: string
+  backend_base_url: string | null
+}
+
+export interface EmbeddedSignupResult {
+  status: 'connected' | 'not_completed'
+  message: string
+  phone_number_id: string | null
+  display_phone_number: string | null
+  connection_status: string | null
+  pending_steps: string[]
+}
+
 export interface WhatsAppTestMessageResult {
   status: 'success' | 'failed'
   message: string
