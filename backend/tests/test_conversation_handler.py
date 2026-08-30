@@ -182,14 +182,12 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
 async def test_greeting_sends_menu_including_faqs_when_merchant_has_an_active_faq(
     db_session: AsyncSession,
 ) -> None:
-    """Like appointment booking, FAQs are additive and only appear once the
-    merchant has actually set something up -- a merchant with zero
-    FAQItems sees the exact 3-button menu (previous test), unaffected by
-    this feature ever having been built. Each active FAQ is folded in as
-    its own row (rather than a single "FAQs" row leading to a second list
-    message), so answering one is a single tap."""
+    """Like appointment booking, the FAQs option is additive and only
+    appears once the merchant has actually set something up -- a merchant
+    with zero FAQItems sees the exact 3-button menu (previous test),
+    unaffected by this feature ever having been built."""
     _, tenant = await _seed_connected_merchant(db_session)
-    faq = await FAQItemRepository(db_session).create(
+    await FAQItemRepository(db_session).create(
         tenant,
         question_text="Where are you located?",
         answer_text="12 MG Road.",
@@ -203,37 +201,6 @@ async def test_greeting_sends_menu_including_faqs_when_merchant_has_an_active_fa
 
     assert result.reply_sent is True
     assert sender.button_calls == []
-    assert len(sender.list_calls) == 1
-    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
-    assert option_ids == {
-        "place_order",
-        "track_order",
-        "talk_to_restaurant",
-        str(faq.faq_item_id),
-    }
-
-
-async def test_greeting_falls_back_to_faq_menu_row_when_too_many_faqs_to_fit(
-    db_session: AsyncSession,
-) -> None:
-    """Once there are more active FAQs than remaining row slots in the
-    greeting menu (10 rows total, 3 already taken by the fixed options),
-    folding every question in directly would blow WhatsApp's list-message
-    row cap -- falls back to the old single "FAQs" row, which opens
-    _send_faq_menu's own list instead."""
-    _, tenant = await _seed_connected_merchant(db_session)
-    faq_repo = FAQItemRepository(db_session)
-    for i in range(8):
-        await faq_repo.create(
-            tenant, question_text=f"Question {i}?", answer_text=f"Answer {i}.", keywords=[f"q{i}"]
-        )
-    await db_session.commit()
-    sender = FakeSender()
-    message = _inbound(text="hi")
-
-    result = await handle_inbound_message(db_session, sender, message)
-
-    assert result.reply_sent is True
     assert len(sender.list_calls) == 1
     option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
     assert option_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
@@ -748,14 +715,13 @@ async def test_unrecognized_text_with_no_faq_match_falls_back_to_greeting_menu(
     assert result.reply_sent is True
     assert sender.text_calls == []
     # The merchant has an active FAQ (just not one matching this text), so
-    # the greeting menu itself includes it as its own row and is sent as a
+    # the greeting menu itself includes the "FAQs" option and is sent as a
     # list -- still the existing greeting/intent-menu behavior, not a FAQ
     # answer.
     assert sender.button_calls == []
     assert len(sender.list_calls) == 1
     option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
-    assert "place_order" in option_ids
-    assert "faq_menu" not in option_ids
+    assert option_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
 
 
 async def test_unrecognized_text_with_close_matches_sends_disambiguation_list(
