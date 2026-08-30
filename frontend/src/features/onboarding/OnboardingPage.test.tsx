@@ -48,12 +48,26 @@ describe('OnboardingPage', () => {
     useOnboardingWizardStore.setState({ currentStep: 0 })
   })
 
+  // ConnectWhatsAppButton (embedded signup) collapses the manual-entry
+  // form behind an "Advanced: connect manually" accordion whenever
+  // VITE_META_APP_ID/VITE_META_ES_CONFIG_ID are configured -- open it
+  // first so these tests, which exercise the manual fallback path, work
+  // regardless of whether this env has Meta configured.
+  async function openManualEntryIfCollapsed() {
+    await screen.findByText('Connect WhatsApp, add your business details', { exact: false })
+    const advancedToggle = screen.queryByRole('button', { name: /advanced: connect manually/i })
+    if (advancedToggle && advancedToggle.getAttribute('data-state') !== 'open') {
+      fireEvent.click(advancedToggle)
+    }
+    return screen.findByLabelText('Phone number ID')
+  }
+
   it('shows the Connect WhatsApp step for a freshly registered merchant', async () => {
     mockedApiFetch.mockResolvedValueOnce(statusResponse())
 
     renderPage()
 
-    expect(await screen.findByLabelText('Phone number ID')).toBeInTheDocument()
+    expect(await openManualEntryIfCollapsed()).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /connect & continue/i })).toBeInTheDocument()
   })
 
@@ -72,7 +86,7 @@ describe('OnboardingPage', () => {
     })
 
     renderPage()
-    await screen.findByLabelText('Phone number ID')
+    await openManualEntryIfCollapsed()
 
     fireEvent.change(screen.getByLabelText('Phone number ID'), { target: { value: '1234567890' } })
     fireEvent.change(screen.getByLabelText('Access token'), { target: { value: 'dummy-token' } })

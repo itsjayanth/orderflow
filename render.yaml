@@ -47,6 +47,21 @@ services:
       # blocked by CORS.
       - key: CORS_ALLOW_ORIGINS
         sync: false
+      # Meta Embedded Signup ("Connect your WhatsApp Business account"
+      # button, onboarding/domain/embedded_signup.py). Reuses fastflow/
+      # ORDZO's "OrdzoLive" Meta App (decided 2026-08-30) via a dedicated
+      # Facebook Login for Business configuration scoped to orderflow's
+      # own domain -- not secrets, safe to commit as literal values.
+      - key: META_APP_ID
+        value: "1012236041846794"
+      - key: META_ES_CONFIG_ID
+        value: "2032001420768003"
+      - key: META_GRAPH_API_VERSION
+        value: v22.0
+      # Real secret -- set in the Render dashboard, not here. Get it from
+      # the Meta App Dashboard: App settings -> Basic -> App Secret -> Show.
+      - key: META_APP_SECRET
+        sync: false
 
 databases:
   - name: orderflow-db

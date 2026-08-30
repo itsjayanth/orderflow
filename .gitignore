@@ -227,3 +227,4 @@ node_modules/
 .vercel
 
 LOCAL_DEV.md
+.env*

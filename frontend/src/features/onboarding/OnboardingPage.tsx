@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check, Info } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -16,21 +16,18 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCreateItem } from '@/features/catalog/useCreateItem'
 import { useItems } from '@/features/catalog/useItems'
 import { useCreateFAQItem } from '@/features/faq/useCreateFAQItem'
 import { useFAQItems } from '@/features/faq/useFAQItems'
+import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButton'
 import {
   useBusinessProfile,
   useOnboardingStatus,
   useUpdateBusinessProfile,
 } from '@/features/onboarding/useOnboarding'
 import { TestWhatsAppMessageCard } from '@/features/settings/TestWhatsAppMessageCard'
-import {
-  useUpdateWhatsAppSettings,
-  useWhatsAppSettings,
-} from '@/features/settings/useWhatsAppSettings'
+import { useWhatsAppSettings } from '@/features/settings/useWhatsAppSettings'
 import { cn } from '@/lib/utils'
 import type { OnboardingStatus } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
@@ -139,116 +136,21 @@ function Stepper({
   )
 }
 
-const whatsappSchema = z.object({
-  phone_number_id: z.string().min(1, 'Required'),
-  access_token: z.string().min(1, 'Required'),
-  display_phone_number: z.string().optional(),
-})
-type WhatsAppForm = z.infer<typeof whatsappSchema>
-
 function ConnectWhatsAppStep() {
   const { data } = useWhatsAppSettings()
-  const update = useUpdateWhatsAppSettings()
   const [justSaved, setJustSaved] = useState(false)
-  const {
-    register,
-    handleSubmit,
-    resetField,
-    formState: { errors },
-  } = useForm<WhatsAppForm>({
-    resolver: zodResolver(whatsappSchema),
-    // Same reasoning as SettingsPage.tsx's WhatsAppSettingsSection: keeps
-    // the phone number ID visible/editable across visits instead of a
-    // blank field every time, which matters when re-pasting an expired
-    // test token means coming back to this step repeatedly.
-    values: {
-      phone_number_id: data?.phone_number_id ?? '',
-      display_phone_number: data?.display_phone_number ?? '',
-      access_token: '',
-    },
-  })
 
-  const onSubmit = (values: WhatsAppForm) => {
-    update.mutate(values, {
-      onSuccess: () => {
-        resetField('access_token')
-        setJustSaved(true)
-        setTimeout(() => setJustSaved(false), 4000)
-      },
-    })
+  const handleSaved = () => {
+    setJustSaved(true)
+    setTimeout(() => setJustSaved(false), 4000)
   }
 
   return (
-    <>
-      <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
-        <p className="text-muted-foreground text-sm">
-          Paste your WhatsApp Business phone number ID and access token. Test/dummy values work fine
-          for now -- switching to real credentials later doesn't require redoing this step.
-        </p>
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="phone_number_id">Phone number ID</Label>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info
-                  className="text-muted-foreground size-3.5"
-                  aria-label="Phone number ID help"
-                />
-              </TooltipTrigger>
-              <TooltipContent>
-                Found on Meta's WhatsApp API Setup page, labeled "Phone number ID" -- not the phone
-                number itself.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <Input id="phone_number_id" {...register('phone_number_id')} />
-          {errors.phone_number_id && (
-            <p className="text-destructive text-sm">{errors.phone_number_id.message}</p>
-          )}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="display_phone_number">Display phone number (optional)</Label>
-          <Input
-            id="display_phone_number"
-            placeholder="+91 90000 00000"
-            {...register('display_phone_number')}
-          />
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="access_token">Access token</Label>
-            <Tooltip>
-              <TooltipTrigger>
-                <Info className="text-muted-foreground size-3.5" aria-label="Access token help" />
-              </TooltipTrigger>
-              <TooltipContent>
-                A permanent or temporary token generated for your WhatsApp Business app in Meta's
-                developer console. Never pre-filled here -- re-paste it to rotate.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <Input
-            id="access_token"
-            type="password"
-            placeholder="Leave any value for now if you don't have a real token yet"
-            {...register('access_token')}
-          />
-          {errors.access_token && (
-            <p className="text-destructive text-sm">{errors.access_token.message}</p>
-          )}
-        </div>
-        {update.isError && (
-          <p className="text-destructive text-sm">Failed to save. Please try again.</p>
-        )}
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={update.isPending}>
-            {update.isPending ? 'Connecting…' : 'Connect & continue'}
-          </Button>
-          {justSaved && !update.isPending && <SavedIndicator message="Saved and connected" />}
-        </div>
-      </form>
+    <div className="space-y-4">
+      <ConnectWhatsAppButton data={data} onSaved={handleSaved} />
+      {justSaved && <SavedIndicator message="Saved and connected" />}
       {data?.access_token_set && <TestWhatsAppMessageCard />}
-    </>
+    </div>
   )
 }
 

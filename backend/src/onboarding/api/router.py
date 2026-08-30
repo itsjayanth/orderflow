@@ -17,6 +17,8 @@ from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.api.schemas import (
     BusinessProfileOut,
     BusinessProfileUpdate,
+    EmbeddedSignupRequest,
+    EmbeddedSignupResult,
     OnboardingStatusOut,
     WhatsAppFlowSetupRequest,
     WhatsAppFlowSetupResult,
@@ -24,6 +26,11 @@ from onboarding.api.schemas import (
     WhatsAppSettingsUpdate,
     WhatsAppTestMessageRequest,
     WhatsAppTestMessageResult,
+)
+from onboarding.domain.embedded_signup import (
+    STATUS_CONNECTED,
+    EmbeddedSignupError,
+    complete_embedded_signup,
 )
 from onboarding.domain.models import WhatsAppBusinessAccount
 from onboarding.domain.onboarding_service import (
@@ -85,6 +92,45 @@ async def update_whatsapp_settings(
     await advance_after_whatsapp_connected(session, tenant)
     await session.commit()
     return _whatsapp_to_out(account)
+
+
+@router.post("/whatsapp/embedded-signup", response_model=EmbeddedSignupResult)
+async def embedded_signup_endpoint(
+    body: EmbeddedSignupRequest, tenant: CurrentTenant, session: DbSession
+) -> EmbeddedSignupResult:
+    """Replaces manually pasting phone_number_id + access_token: the
+    frontend's "Connect your WhatsApp Business account" button runs Meta's
+    Embedded Signup popup and posts whatever it returns here. See
+    onboarding/domain/embedded_signup.py for the full exchange -> verify ->
+    persist -> (best-effort) webhook-subscribe/register-number sequence.
+    A CANCELled popup is not an error -- comes back as
+    status="not_completed" with a 200, same as onboarding/domain/
+    embedded_signup.py's contract."""
+    try:
+        result = await complete_embedded_signup(
+            session,
+            tenant,
+            code=body.code,
+            waba_id=body.waba_id,
+            phone_number_id=body.phone_number_id,
+            business_id=body.business_id,
+            event=body.event,
+            backend_base_url=body.backend_base_url,
+        )
+    except EmbeddedSignupError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{exc.step}: {exc.detail}") from exc
+
+    if result.status == STATUS_CONNECTED:
+        await advance_after_whatsapp_connected(session, tenant)
+    await session.commit()
+    return EmbeddedSignupResult(
+        status=result.status,
+        message=result.message,
+        phone_number_id=result.phone_number_id,
+        display_phone_number=result.display_phone_number,
+        connection_status=result.connection_status,
+        pending_steps=result.pending_steps,
+    )
 
 
 @router.post("/whatsapp/test-message", response_model=WhatsAppTestMessageResult)

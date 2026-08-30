@@ -53,6 +53,50 @@ class WhatsAppBusinessAccountRepository:
         await self._session.flush()
         return account
 
+    async def upsert_from_embedded_signup(
+        self,
+        tenant: TenantContext,
+        *,
+        meta_waba_id: str,
+        phone_number_id: str | None,
+        display_phone_number: str | None,
+        access_token_encrypted: str,
+        registration_pin_encrypted: str | None,
+    ) -> WhatsAppBusinessAccount:
+        """Same idea as upsert() (the manual-entry path), but also records
+        meta_waba_id and registration_pin_encrypted, which the manual form
+        never captures -- see onboarding/domain/embedded_signup.py.
+        connection_status/webhook_subscribed intentionally are NOT set to
+        "connected"/True here the way upsert() unconditionally does:
+        embedded_signup.py sets webhook_subscribed only after the WABA
+        subscription call actually succeeds, so this only persists what's
+        verified to exist so far (a real token, tied to a real WABA)."""
+        account = await self.get(tenant)
+        if account is None:
+            account = WhatsAppBusinessAccount(merchant_id=tenant.merchant_id)
+            self._session.add(account)
+
+        account.meta_waba_id = meta_waba_id
+        if phone_number_id is not None:
+            account.phone_number_id = phone_number_id
+        if display_phone_number is not None:
+            account.display_phone_number = display_phone_number
+        account.access_token_encrypted = access_token_encrypted
+        if registration_pin_encrypted is not None:
+            account.registration_pin_encrypted = registration_pin_encrypted
+        account.connection_status = "connected"
+        if account.connected_at is None:
+            account.connected_at = datetime.datetime.now(datetime.UTC)
+
+        await self._session.flush()
+        return account
+
+    async def mark_webhook_subscribed(self, tenant: TenantContext) -> None:
+        account = await self.get(tenant)
+        if account is not None:
+            account.webhook_subscribed = True
+            await self._session.flush()
+
     async def get_by_flow_id(self, flow_id: str) -> WhatsAppBusinessAccount | None:
         """Cross-tenant on purpose, same reason as get_by_phone_number_id --
         flows/api/router.py's data-exchange endpoint doesn't have a
