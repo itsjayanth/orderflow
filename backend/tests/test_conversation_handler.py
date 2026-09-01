@@ -15,17 +15,23 @@ from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.domain.checkout import CheckoutItem, perform_checkout
 from orders.adapters.repository import OrderRepository
+from shared.config import get_settings
 from shared.encryption import encrypt
+from shared.interaction_mode import reset_cache_for_tests
 from shared.tenant import TenantContext
 
 
 class FakeSender(WhatsAppSender):
-    def __init__(self, *, flow_send_succeeds: bool = True) -> None:
+    def __init__(
+        self, *, flow_send_succeeds: bool = True, cta_url_send_succeeds: bool = True
+    ) -> None:
         self.text_calls: list[dict] = []
         self.button_calls: list[dict] = []
         self.flow_calls: list[dict] = []
         self.list_calls: list[dict] = []
+        self.cta_url_calls: list[dict] = []
         self._flow_send_succeeds = flow_send_succeeds
+        self._cta_url_send_succeeds = cta_url_send_succeeds
 
     async def send_text(
         self, *, phone_number_id: str, access_token: str, to: str, body: str
@@ -80,6 +86,26 @@ class FakeSender(WhatsAppSender):
             {"to": to, "body": body, "button_label": button_label, "options": options}
         )
         return True
+
+    async def send_cta_url_button(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        display_text: str,
+        url: str,
+    ) -> bool:
+        self.cta_url_calls.append(
+            {
+                "to": to,
+                "body": body,
+                "display_text": display_text,
+                "url": url,
+            }
+        )
+        return self._cta_url_send_succeeds
 
 
 class NoopNotificationChannel:
@@ -348,6 +374,38 @@ async def test_place_order_falls_back_to_link_when_flow_send_fails(
     assert len(sender.flow_calls) == 1
     assert len(sender.text_calls) == 1
     assert f"/order/{merchant.merchant_id}" in sender.text_calls[0]["body"]
+
+
+async def test_place_order_uses_browser_link_when_interaction_mode_is_browser_link(
+    db_session: AsyncSession,
+) -> None:
+    """BROWSER_LINK mode overrides a configured Flow entirely -- no Flow
+    send happens even though the WABA has whatsapp_flow_id set, matching
+    the acceptance criterion that BROWSER_LINK mode never triggers a Flow."""
+    merchant, tenant = await _seed_connected_merchant(db_session)
+    await WhatsAppBusinessAccountRepository(db_session).set_flow_credentials(
+        tenant, flow_id="FLOW_123", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await db_session.commit()
+    settings = get_settings()
+    settings.interaction_mode = "BROWSER_LINK"
+    reset_cache_for_tests()
+    try:
+        sender = FakeSender()
+        message = _inbound(button_id="place_order")
+
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        settings.interaction_mode = "WHATSAPP_FLOW"
+        reset_cache_for_tests()
+
+    assert result.intent == Intent.PLACE_ORDER
+    assert result.reply_sent is True
+    assert sender.flow_calls == []
+    assert len(sender.cta_url_calls) == 1
+    assert sender.cta_url_calls[0]["display_text"] == "Order now"
+    assert f"order/{merchant.merchant_id}" in sender.cta_url_calls[0]["url"]
+    assert "?wa=" in sender.cta_url_calls[0]["url"]
 
 
 async def test_talk_to_restaurant_sends_fixed_message(db_session: AsyncSession) -> None:
@@ -856,6 +914,38 @@ async def test_book_appointment_falls_back_to_link_when_flow_send_fails(
     assert len(sender.flow_calls) == 1
     assert len(sender.text_calls) == 1
     assert f"/book/{merchant.merchant_id}" in sender.text_calls[0]["body"]
+
+
+async def test_book_appointment_uses_browser_link_when_interaction_mode_is_browser_link(
+    db_session: AsyncSession,
+) -> None:
+    """Same override as PLACE_ORDER's browser-link test above, but for
+    appointment booking -- a configured Flow is still ignored entirely."""
+    merchant, tenant = await _seed_connected_merchant(db_session)
+    merchant.appointment_booking_enabled = True
+    await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
+        tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await db_session.commit()
+    settings = get_settings()
+    settings.interaction_mode = "BROWSER_LINK"
+    reset_cache_for_tests()
+    try:
+        sender = FakeSender()
+        message = _inbound(button_id="book_appointment")
+
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        settings.interaction_mode = "WHATSAPP_FLOW"
+        reset_cache_for_tests()
+
+    assert result.intent == Intent.BOOK_APPOINTMENT
+    assert result.reply_sent is True
+    assert sender.flow_calls == []
+    assert len(sender.cta_url_calls) == 1
+    assert sender.cta_url_calls[0]["display_text"] == "Book now"
+    assert f"book/{merchant.merchant_id}" in sender.cta_url_calls[0]["url"]
+    assert "?wa=" in sender.cta_url_calls[0]["url"]
 
 
 async def test_appointment_flow_completion_creates_appointment_not_order(

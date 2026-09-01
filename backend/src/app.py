@@ -14,12 +14,18 @@ from notifications.wiring import register_notification_handlers
 from ordering_flow.api.router import router as ordering_flow_router
 from payments.api.router import router as payments_webhook_router
 from shared.config import get_settings
+from shared.interaction_mode import validate_startup_config
 from shared.logging import configure_logging
 from shared.scheduler import create_scheduler
 
 configure_logging()
 settings = get_settings()
 request_logger = logging.getLogger("orderflow.request")
+
+# Fail fast if INTERACTION_MODE=BROWSER_LINK is missing a required CTA
+# template name, rather than only discovering it the first time a customer
+# tries to place an order or book an appointment.
+validate_startup_config()
 
 # Module level, not inside lifespan -- lifespan doesn't run under the
 # ASGITransport tests use, so subscriptions registered there would never

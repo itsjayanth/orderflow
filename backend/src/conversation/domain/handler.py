@@ -31,6 +31,12 @@ from orders.adapters.repository import OrderRepository
 from orders.domain.models import Order
 from shared.config import get_settings
 from shared.encryption import decrypt
+from shared.interaction_mode import (
+    Feature,
+    InteractionMode,
+    get_delivery_strategy,
+    get_feature_config,
+)
 from shared.tenant import TenantContext
 
 # WhatsApp interactive list messages cap out at 10 rows -- both the "browse
@@ -168,6 +174,50 @@ async def handle_inbound_message(
     return HandledMessage(intent=intent, reply_sent=reply_sent)
 
 
+async def _send_browser_link_reply(
+    sender: WhatsAppSender,
+    *,
+    waba: WhatsAppBusinessAccount,
+    message: InboundMessage,
+    feature: Feature,
+    merchant_id: uuid.UUID,
+) -> bool:
+    """BROWSER_LINK-mode reply for either feature: an interactive CTA-URL
+    button (no Meta template approval needed -- this is always a reply to
+    an inbound message, so it's inside the 24h session window, same as
+    send_flow/send_buttons/send_list). Falls back to a plain-text link if
+    the interactive send fails, mirroring WHATSAPP_FLOW mode's own
+    fallback-on-failure behavior. Never triggers a Flow either way.
+
+    The web page identifies who's completing the action via a `wa` query
+    param carrying the customer's own WhatsApp number, the same role
+    flow_token=message.from_phone plays for the native Flow."""
+    config = get_feature_config(feature)
+    web_path = config.web_path.format(merchant_id=merchant_id)
+    link = f"{get_settings().frontend_base_url}{web_path}?wa={message.from_phone}"
+    access_token = _access_token(waba)
+
+    sent = await sender.send_cta_url_button(
+        phone_number_id=message.phone_number_id,
+        access_token=access_token,
+        to=message.from_phone,
+        body=f"Tap below to {config.cta_display_text.lower()}.",
+        display_text=config.cta_display_text,
+        url=link,
+    )
+    if sent:
+        return True
+    # Interactive send failed -- fall through to plain text, mirroring
+    # WHATSAPP_FLOW mode's own fallback-on-failure behavior below.
+
+    return await sender.send_text(
+        phone_number_id=message.phone_number_id,
+        access_token=access_token,
+        to=message.from_phone,
+        body=f"Here you go: {link}",
+    )
+
+
 async def _reply_for_intent(
     session: AsyncSession,
     sender: WhatsAppSender,
@@ -182,6 +232,15 @@ async def _reply_for_intent(
     access_token = _access_token(waba)
 
     if intent == Intent.PLACE_ORDER:
+        if get_delivery_strategy(Feature.ORDER_PLACING) == InteractionMode.BROWSER_LINK:
+            return await _send_browser_link_reply(
+                sender,
+                waba=waba,
+                message=message,
+                feature=Feature.ORDER_PLACING,
+                merchant_id=tenant.merchant_id,
+            )
+
         if waba.whatsapp_flow_id:
             # Native in-chat ordering (see flows/) -- set once per merchant
             # by scripts/setup_whatsapp_flow.py. Falls back to the webview
@@ -227,6 +286,15 @@ async def _reply_for_intent(
         )
 
     if intent == Intent.BOOK_APPOINTMENT and appointment_booking_enabled:
+        if get_delivery_strategy(Feature.APPOINTMENT_BOOKING) == InteractionMode.BROWSER_LINK:
+            return await _send_browser_link_reply(
+                sender,
+                waba=waba,
+                message=message,
+                feature=Feature.APPOINTMENT_BOOKING,
+                merchant_id=tenant.merchant_id,
+            )
+
         if waba.whatsapp_appointment_flow_id:
             # Native in-chat appointment booking (see flows/) -- same
             # dual-path pattern as PLACE_ORDER above: falls back to the

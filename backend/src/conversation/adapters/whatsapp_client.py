@@ -74,6 +74,17 @@ class WhatsAppSender(Protocol):
         options: list[tuple[str, str]],  # (id, title)
     ) -> bool: ...
 
+    async def send_cta_url_button(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        display_text: str,
+        url: str,
+    ) -> bool: ...
+
 
 class GraphApiWhatsAppSender:
     """Real WhatsApp Cloud API client. Every call is best-effort: a failed
@@ -196,6 +207,40 @@ class GraphApiWhatsAppSender:
                             # the button is sent with "data_exchange" here.
                             "flow_action": "data_exchange",
                         },
+                    },
+                },
+            },
+        )
+
+    async def send_cta_url_button(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        body: str,
+        display_text: str,
+        url: str,
+    ) -> bool:
+        """Interactive CTA-URL-button message -- BROWSER_LINK mode's
+        equivalent of send_flow. Unlike a template message, this needs no
+        Meta pre-approval: it's a freeform interactive send, valid within
+        the 24h customer-service window every call site here is already
+        inside (a reply to an inbound message), same as send_buttons/
+        send_list/send_flow above."""
+        return await self._post(
+            phone_number_id,
+            access_token,
+            {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "interactive",
+                "interactive": {
+                    "type": "cta_url",
+                    "body": {"text": body},
+                    "action": {
+                        "name": "cta_url",
+                        "parameters": {"display_text": display_text, "url": url},
                     },
                 },
             },

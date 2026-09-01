@@ -3,6 +3,12 @@ import os
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://orderflow:orderflow@localhost:5432/orderflow_test"
 )
+# Tests assert on WHATSAPP_FLOW-mode behavior by default (only
+# test_interaction_mode.py and the BROWSER_LINK-specific handler tests
+# override it themselves) -- pinning this here keeps the suite deterministic
+# regardless of what a developer's local backend/.env sets INTERACTION_MODE
+# to, the same way DATABASE_URL is pinned above rather than trusting .env.
+os.environ.setdefault("INTERACTION_MODE", "WHATSAPP_FLOW")
 
 from collections.abc import AsyncIterator
 

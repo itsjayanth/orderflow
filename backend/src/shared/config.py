@@ -74,6 +74,15 @@ class Settings(BaseSettings):
     # register) use this instead so they aren't stuck on a stale pin.
     meta_graph_api_version: str = "v22.0"
 
+    # Feature flag controller (shared/interaction_mode.py) -- selects
+    # whether WhatsApp-driven features (order placing, appointment
+    # booking) use native in-chat Flows or an interactive CTA-URL button
+    # linking out to the hosted web page. Validated against InteractionMode
+    # by get_delivery_strategy(), not here -- an invalid value here falls
+    # back with a logged warning rather than failing Settings construction,
+    # so a bad value doesn't crash the whole app at import time.
+    interaction_mode: str = "WHATSAPP_FLOW"
+
     # Where the customer-facing ordering webview lives, for links the bot
     # sends in-chat (see conversation/domain/handler.py).
     frontend_base_url: str = "http://localhost:5173"
