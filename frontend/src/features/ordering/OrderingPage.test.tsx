@@ -199,7 +199,7 @@ describe('OrderingPage', () => {
     )
     expect(screen.getByRole('link', { name: 'Tap here to return to WhatsApp' })).toHaveAttribute(
       'href',
-      'https://wa.me/919000000000?text=Thanks!',
+      'https://wa.me/919000000000',
     )
     // This order still owes payment, so the confirmation must sit still
     // rather than pulling the customer off the payment link above --
