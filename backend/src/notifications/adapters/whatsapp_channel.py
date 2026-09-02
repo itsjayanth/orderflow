@@ -1,6 +1,7 @@
 import uuid
 
 from appointments.adapters.repository import AppointmentRepository
+from appointments.adapters.scheduling_repository import AppointmentServiceRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
@@ -99,6 +100,19 @@ class WhatsAppNotificationChannel:
 
             merchant = await MerchantRepository(session).get(tenant.merchant_id)
 
+            # Only "appointment_requested"'s default template actually uses
+            # service_line, but it costs nothing to include it in every
+            # appointment context -- render_template just ignores unused
+            # keys, same as appointment_id/notes already do for kinds that
+            # don't reference them.
+            service_line = ""
+            if appointment.service_id is not None:
+                service = await AppointmentServiceRepository(session).get(
+                    tenant, appointment.service_id
+                )
+                if service is not None:
+                    service_line = f"{service.name} — "
+
             context = {
                 "business_name": merchant.business_name if merchant else "",
                 "customer_name": appointment.customer.display_name or "",
@@ -106,6 +120,7 @@ class WhatsAppNotificationChannel:
                 "appointment_number": f"{appointment.appointment_number:04d}",
                 "appointment_date": str(appointment.appointment_date),
                 "appointment_time": str(appointment.start_time),
+                "service_line": service_line,
                 "notes": appointment.notes or "",
             }
             template = await NotificationTemplateRepository(session).get(tenant, kind)
@@ -122,6 +137,13 @@ class WhatsAppNotificationChannel:
                 to=appointment.customer.whatsapp_number,
                 body=message,
             )
+
+    async def notify_appointment_requested(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        return await self._send_appointment(
+            merchant_id=merchant_id, appointment_id=appointment_id, kind="appointment_requested"
+        )
 
     async def notify_appointment_confirmed(
         self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID

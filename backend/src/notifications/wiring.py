@@ -2,6 +2,7 @@ from appointments.domain.events import (
     AppointmentCancelled,
     AppointmentConfirmed,
     AppointmentEvent,
+    AppointmentRequested,
 )
 from appointments.domain.events import (
     subscribe as subscribe_appointment_event,
@@ -52,6 +53,12 @@ async def _on_order_completed(event: OrderEvent) -> None:
     await _channel.notify_order_completed(merchant_id=event.merchant_id, order_id=event.order_id)
 
 
+async def _on_appointment_requested(event: AppointmentEvent) -> None:
+    await _channel.notify_appointment_requested(
+        merchant_id=event.merchant_id, appointment_id=event.appointment_id
+    )
+
+
 async def _on_appointment_confirmed(event: AppointmentEvent) -> None:
     await _channel.notify_appointment_confirmed(
         merchant_id=event.merchant_id, appointment_id=event.appointment_id
@@ -79,6 +86,7 @@ def register_notification_handlers() -> None:
     subscribe(OrderCompleted, _on_order_completed)
     # A second, separate pub-sub system from orders' -- see
     # appointments/domain/events.py.
+    subscribe_appointment_event(AppointmentRequested, _on_appointment_requested)
     subscribe_appointment_event(AppointmentConfirmed, _on_appointment_confirmed)
     subscribe_appointment_event(AppointmentCancelled, _on_appointment_cancelled)
     _registered = True

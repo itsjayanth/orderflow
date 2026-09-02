@@ -10,6 +10,7 @@ from appointments.adapters.scheduling_repository import (
     AppointmentServiceRepository,
     MerchantAvailabilityRepository,
 )
+from appointments.domain.events import AppointmentRequested, publish
 from appointments.domain.models import Appointment
 from customers.adapters.repository import CustomerRepository
 from identity.domain.models import Merchant
@@ -86,11 +87,16 @@ async def perform_booking(
     the WhatsApp Flow completion handler
     (conversation/domain/handler.py's _handle_appointment_flow_completion),
     mirroring ordering_flow.domain.checkout.perform_checkout's role for
-    product orders. Deliberately does not publish any event: only the
-    `confirmed`/`cancelled` transitions (set later from the dashboard)
-    trigger a WhatsApp notification per the product spec -- a fresh
-    "requested" booking is silent on WhatsApp by design (the booking page
-    itself shows the on-screen confirmation).
+    product orders. Publishes AppointmentRequested on success --
+    notifications/wiring.py turns that into the merchant's own configured
+    "appointment_requested" template (or the built-in default) over the
+    same channel every other lifecycle notification uses, matching how
+    perform_checkout already does this for OrderConfirmedCOD/OrderPaid.
+    Being the single creation path for both the browser flow and the
+    native WhatsApp Flow means this is the only place that needs to fire
+    it -- the Flow-completion handler used to also hand-roll its own
+    "requested" text send, which would now double-send, so it no longer
+    does (see handler.py).
 
     Takes `merchant` (not just `tenant`) because the past-date check needs
     Merchant.timezone -- the caller already has the row loaded (both call
@@ -135,4 +141,9 @@ async def perform_booking(
         raise
 
     await session.commit()
+    await publish(
+        AppointmentRequested(
+            appointment_id=appointment.appointment_id, merchant_id=tenant.merchant_id
+        )
+    )
     return BookingResult(appointment=appointment)

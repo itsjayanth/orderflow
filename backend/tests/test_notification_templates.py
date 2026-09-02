@@ -207,6 +207,7 @@ async def test_list_templates_defaults_to_unconfigured(client: AsyncClient) -> N
         "order_processing",
         "order_ready",
         "order_completed",
+        "appointment_requested",
         "appointment_confirmed",
         "appointment_cancelled",
     }

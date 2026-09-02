@@ -11,6 +11,11 @@ class AppointmentEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class AppointmentRequested(AppointmentEvent):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class AppointmentConfirmed(AppointmentEvent):
     pass
 

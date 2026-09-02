@@ -5,7 +5,13 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from appointments.adapters.repository import AppointmentRepository
-from appointments.domain.events import AppointmentCancelled, AppointmentConfirmed, publish
+from appointments.adapters.scheduling_repository import AppointmentServiceRepository
+from appointments.domain.events import (
+    AppointmentCancelled,
+    AppointmentConfirmed,
+    AppointmentRequested,
+    publish,
+)
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from notifications import wiring
@@ -48,8 +54,15 @@ class FakeSender:
 
 class RecordingChannel:
     def __init__(self) -> None:
+        self.requested: list[tuple[uuid.UUID, uuid.UUID]] = []
         self.confirmed: list[tuple[uuid.UUID, uuid.UUID]] = []
         self.cancelled: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    async def notify_appointment_requested(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        self.requested.append((merchant_id, appointment_id))
+        return True
 
     async def notify_appointment_confirmed(
         self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
@@ -92,6 +105,44 @@ async def _seed_appointment(db_session: AsyncSession, *, connect_whatsapp: bool 
 
 
 # --- WhatsAppNotificationChannel: appointment kinds -------------------------
+
+
+async def test_notify_appointment_requested_sends_expected_message(
+    db_session: AsyncSession,
+) -> None:
+    tenant, appointment = await _seed_appointment(db_session)
+    sender = FakeSender()
+    channel = WhatsAppNotificationChannel(sender)
+
+    result = await channel.notify_appointment_requested(
+        merchant_id=tenant.merchant_id, appointment_id=appointment.appointment_id
+    )
+
+    assert result is True
+    assert len(sender.calls) == 1
+    assert sender.calls[0]["to"] == "919876543210"
+    assert "request" in sender.calls[0]["body"].lower()
+    assert "2026-09-01" in sender.calls[0]["body"]
+    assert "18:00:00" in sender.calls[0]["body"]
+
+
+async def test_notify_appointment_requested_includes_service_name_when_service_set(
+    db_session: AsyncSession,
+) -> None:
+    tenant, appointment = await _seed_appointment(db_session)
+    service = await AppointmentServiceRepository(db_session).create(
+        tenant, name="Haircut", duration_minutes=30, price=None
+    )
+    appointment.service_id = service.service_id
+    await db_session.commit()
+    sender = FakeSender()
+    channel = WhatsAppNotificationChannel(sender)
+
+    await channel.notify_appointment_requested(
+        merchant_id=tenant.merchant_id, appointment_id=appointment.appointment_id
+    )
+
+    assert "Haircut" in sender.calls[0]["body"]
 
 
 async def test_notify_appointment_confirmed_sends_expected_message(
@@ -211,6 +262,21 @@ async def test_notify_appointment_cancelled_falls_back_to_default_when_template_
 # --- event wiring ------------------------------------------------------
 
 
+async def test_appointment_requested_event_routes_to_requested_notification() -> None:
+    real_channel = wiring.get_notification_channel()
+    recording = RecordingChannel()
+    wiring.set_notification_channel(recording)
+    try:
+        merchant_id, appointment_id = uuid.uuid4(), uuid.uuid4()
+        await publish(AppointmentRequested(appointment_id=appointment_id, merchant_id=merchant_id))
+    finally:
+        wiring.set_notification_channel(real_channel)
+
+    assert recording.requested == [(merchant_id, appointment_id)]
+    assert recording.confirmed == []
+    assert recording.cancelled == []
+
+
 async def test_appointment_confirmed_event_routes_to_confirmed_notification() -> None:
     real_channel = wiring.get_notification_channel()
     recording = RecordingChannel()
@@ -264,4 +330,4 @@ async def test_templates_list_includes_appointment_kinds(
 
     assert list_response.status_code == 200
     kinds = {t["notification_kind"] for t in list_response.json()}
-    assert {"appointment_confirmed", "appointment_cancelled"} <= kinds
+    assert {"appointment_requested", "appointment_confirmed", "appointment_cancelled"} <= kinds
