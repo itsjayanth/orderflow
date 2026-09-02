@@ -35,9 +35,11 @@ function renderPage() {
 function statusResponse(overrides: Partial<OnboardingStatusOut> = {}): OnboardingStatusOut {
   return {
     onboarding_status: 'registered',
+    vertical: null,
     whatsapp_connected: false,
     profile_completed: false,
     has_available_item: false,
+    has_available_service: false,
     ...overrides,
   }
 }
@@ -62,8 +64,57 @@ describe('OnboardingPage', () => {
     return screen.findByLabelText('Phone number ID')
   }
 
-  it('shows the Connect WhatsApp step for a freshly registered merchant', async () => {
+  it('shows the business-type step for a freshly registered merchant', async () => {
     mockedApiFetch.mockResolvedValueOnce(statusResponse())
+
+    renderPage()
+
+    expect(await screen.findByText(/what kind of business is this/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /restaurant/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /appointment booking/i })).toBeInTheDocument()
+  })
+
+  it('picking a business type calls the vertical mutation, then renders it read-only', async () => {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/v1/onboarding/status') return Promise.resolve(statusResponse())
+      if (path === '/api/v1/onboarding/vertical' && init?.method === 'PUT') {
+        return Promise.resolve({ vertical: 'restaurant' })
+      }
+      return Promise.reject(new Error(`Unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /restaurant/i }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/onboarding/vertical', {
+        method: 'PUT',
+        body: JSON.stringify({ vertical: 'restaurant' }),
+      }),
+    )
+  })
+
+  it("shows the vertical read-only once it's already set, never a clickable choice", async () => {
+    mockedApiFetch.mockResolvedValueOnce(
+      statusResponse({ onboarding_status: 'vertical_selected', vertical: 'appointment' }),
+    )
+
+    renderPage()
+    // Server progress auto-advances the displayed step past "Business
+    // type" once it's answered -- click back into it to see its (now
+    // read-only) content, same as clicking back into any other done step.
+    await openManualEntryIfCollapsed()
+    fireEvent.click(screen.getByRole('button', { name: /business type/i }))
+
+    expect(await screen.findByText(/appointment booking/i)).toBeInTheDocument()
+    expect(screen.getByText(/can't be changed/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^restaurant$/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the Connect WhatsApp step once a vertical is already chosen', async () => {
+    mockedApiFetch.mockResolvedValueOnce(
+      statusResponse({ onboarding_status: 'vertical_selected', vertical: 'restaurant' }),
+    )
 
     renderPage()
 
@@ -73,7 +124,11 @@ describe('OnboardingPage', () => {
 
   it('submitting the WhatsApp form calls the update mutation with the right payload', async () => {
     mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/v1/onboarding/status') return Promise.resolve(statusResponse())
+      if (path === '/api/v1/onboarding/status') {
+        return Promise.resolve(
+          statusResponse({ onboarding_status: 'vertical_selected', vertical: 'restaurant' }),
+        )
+      }
       if (path === '/api/v1/onboarding/whatsapp' && init?.method === 'PUT') {
         return Promise.resolve<WhatsAppSettingsOut>({
           phone_number_id: '1234567890',

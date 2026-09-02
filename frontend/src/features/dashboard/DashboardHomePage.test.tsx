@@ -31,6 +31,7 @@ const meResponse: MeResponse = {
     merchant_id: '11111111-1111-1111-1111-111111111111',
     business_name: 'Test Business',
     onboarding_status: 'live',
+    vertical: 'restaurant',
     appointment_booking_enabled: false,
   },
 }
@@ -83,9 +84,11 @@ function mockRoutes(overrides: {
     if (path === '/api/v1/onboarding/status') {
       return Promise.resolve<OnboardingStatusOut>({
         onboarding_status: onboardingStatus,
+        vertical: 'restaurant',
         whatsapp_connected: true,
         profile_completed: true,
         has_available_item: true,
+        has_available_service: false,
       })
     }
     // Must come before the generic /api/v1/orders prefix check below.

@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check } from 'lucide-react'
+import { Calendar, Check, UtensilsCrossed } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -24,21 +24,36 @@ import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButt
 import {
   useBusinessProfile,
   useOnboardingStatus,
+  useSelectVertical,
   useUpdateBusinessProfile,
 } from '@/features/onboarding/useOnboarding'
 import { TestWhatsAppMessageCard } from '@/features/settings/TestWhatsAppMessageCard'
+import {
+  useAppointmentServices,
+  useCreateAppointmentService,
+} from '@/features/settings/useAppointmentServices'
 import { useWhatsAppSettings } from '@/features/settings/useWhatsAppSettings'
 import { cn } from '@/lib/utils'
-import type { OnboardingStatus } from '@/shared/api/types'
+import type { MerchantVertical, OnboardingStatus } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { useOnboardingWizardStore } from './onboardingWizardStore'
 
 const STEP_LABELS = [
+  'Business type',
   'Connect WhatsApp',
   'Business details',
   'Add an item',
+  'FAQs (optional)',
+  'Go live',
+] as const
+
+const APPOINTMENT_STEP_LABELS = [
+  'Business type',
+  'Connect WhatsApp',
+  'Business details',
+  'Add a service',
   'FAQs (optional)',
   'Go live',
 ] as const
@@ -47,21 +62,24 @@ const STEP_LABELS = [
 // server-side source of truth, per IMPLEMENTATION_PLAN.md's Phase 8 note),
 // not derived independently client-side. FAQs are a purely optional add-on
 // with no server-side gate of their own (unlike every other step here) --
-// `catalog_ready` still lands on it, but `live` skips straight past it, so
-// nothing about reaching "live" ever depends on visiting this step.
+// `catalog_ready` still lands on it, but `live` skips straight past it (both
+// verticals -- see onboarding_service.py's try_advance_for_catalog_ready),
+// so nothing about reaching "live" ever depends on visiting this step.
 function stepForStatus(status: OnboardingStatus): number {
   switch (status) {
     case 'registered':
-    case 'meta_connected':
       return 0
-    case 'whatsapp_verified':
+    case 'vertical_selected':
+    case 'meta_connected':
       return 1
-    case 'profile_completed':
+    case 'whatsapp_verified':
       return 2
-    case 'catalog_ready':
+    case 'profile_completed':
       return 3
-    case 'live':
+    case 'catalog_ready':
       return 4
+    case 'live':
+      return 5
   }
 }
 
@@ -69,18 +87,20 @@ function Stepper({
   current,
   furthestReached,
   onSelect,
+  labels,
 }: {
   current: number
   furthestReached: number
   onSelect: (step: number) => void
+  labels: readonly string[]
 }) {
   return (
     <Card className="p-5 sm:p-6">
       <ol className="flex items-start">
-        {STEP_LABELS.map((label, index) => {
+        {labels.map((label, index) => {
           const state = index < furthestReached ? 'done' : index === current ? 'active' : 'upcoming'
           const clickable = state === 'done' && index !== current
-          const isLast = index === STEP_LABELS.length - 1
+          const isLast = index === labels.length - 1
           return (
             <li key={label} className={cn('flex items-start gap-2 sm:gap-3', !isLast && 'flex-1')}>
               <button
@@ -136,6 +156,83 @@ function Stepper({
   )
 }
 
+const VERTICAL_OPTIONS: {
+  value: MerchantVertical
+  icon: typeof UtensilsCrossed
+  title: string
+  description: string
+}[] = [
+  {
+    value: 'restaurant',
+    icon: UtensilsCrossed,
+    title: 'Restaurant',
+    description: 'Customers browse a menu and place food orders over WhatsApp.',
+  },
+  {
+    value: 'appointment',
+    icon: Calendar,
+    title: 'Appointment booking',
+    description:
+      'Customers book a time slot with you over WhatsApp -- salons, clinics, consultants.',
+  },
+]
+
+// The first wizard step (MULTI_VERTICAL_PLAN.md Phase M2) -- unlike every
+// other step, this one is never editable once answered: the backend
+// (MerchantRepository.set_vertical) 409s a second PUT, and a merchant's
+// vertical is fixed at registration by product design (no "switch vertical
+// later" path). So once `vertical` is set, this renders read-only instead
+// of the usual clickable form.
+function VerticalSelectStep({ vertical }: { vertical: MerchantVertical | null }) {
+  const selectVertical = useSelectVertical()
+
+  if (vertical) {
+    const chosen = VERTICAL_OPTIONS.find((option) => option.value === vertical)
+    return (
+      <div className="max-w-md space-y-3">
+        <p className="text-muted-foreground text-sm">
+          Business type is set for this account and can't be changed.
+        </p>
+        {chosen && (
+          <div className="flex items-center gap-3 rounded-lg border p-4">
+            <chosen.icon className="text-primary size-6 shrink-0" aria-hidden />
+            <div>
+              <p className="font-medium">{chosen.title}</p>
+              <p className="text-muted-foreground text-sm">{chosen.description}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-md space-y-4">
+      <p className="text-muted-foreground text-sm">
+        What kind of business is this? This can't be changed later, so pick carefully.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {VERTICAL_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            disabled={selectVertical.isPending}
+            onClick={() => selectVertical.mutate(option.value)}
+            className="hover:border-primary hover:bg-secondary/40 focus-visible:ring-ring/30 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors duration-150 focus-visible:ring-4 disabled:opacity-60"
+          >
+            <option.icon className="text-primary size-6" aria-hidden />
+            <span className="font-medium">{option.title}</span>
+            <span className="text-muted-foreground text-sm">{option.description}</span>
+          </button>
+        ))}
+      </div>
+      {selectVertical.isError && (
+        <p className="text-destructive text-sm">Failed to save. Please try again.</p>
+      )}
+    </div>
+  )
+}
+
 function ConnectWhatsAppStep() {
   const { data } = useWhatsAppSettings()
   const [justSaved, setJustSaved] = useState(false)
@@ -154,11 +251,19 @@ function ConnectWhatsAppStep() {
   )
 }
 
-const BUSINESS_CATEGORY_OPTIONS = [
+const RESTAURANT_CATEGORY_OPTIONS = [
   'Restaurant',
-  'Retail / Clothing',
-  'Auto Parts',
-  'Pharmacy',
+  'Cafe',
+  'Cloud kitchen',
+  'Bakery',
+  'Other',
+] as const
+
+const APPOINTMENT_CATEGORY_OPTIONS = [
+  'Salon / Spa',
+  'Clinic / Healthcare',
+  'Consulting',
+  'Pet care',
   'Other',
 ] as const
 
@@ -172,7 +277,14 @@ const profileSchema = z.object({
 })
 type ProfileForm = z.infer<typeof profileSchema>
 
-function BusinessDetailsStep() {
+function BusinessDetailsStep({ vertical }: { vertical: MerchantVertical | null }) {
+  const isAppointment = vertical === 'appointment'
+  const addressLabel = isAppointment ? 'Business/practice address' : 'Kitchen/restaurant address'
+  const categoryLabel = isAppointment ? 'Service category' : 'Cuisine type'
+  const categoryOptions = isAppointment ? APPOINTMENT_CATEGORY_OPTIONS : RESTAURANT_CATEGORY_OPTIONS
+  const licenseLabel = isAppointment
+    ? 'License/registration number (optional)'
+    : 'FSSAI license number (optional)'
   const { data } = useBusinessProfile()
   const update = useUpdateBusinessProfile()
   const {
@@ -197,7 +309,7 @@ function BusinessDetailsStep() {
   return (
     <form onSubmit={handleSubmit((values) => update.mutate(values))} className="max-w-md space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="address_line1">Address line 1</Label>
+        <Label htmlFor="address_line1">{addressLabel} -- line 1</Label>
         <Input id="address_line1" {...register('address_line1')} />
         {errors.address_line1 && (
           <p className="text-destructive text-sm">{errors.address_line1.message}</p>
@@ -220,7 +332,7 @@ function BusinessDetailsStep() {
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="business_category">Business category</Label>
+        <Label htmlFor="business_category">{categoryLabel}</Label>
         <Controller
           name="business_category"
           control={control}
@@ -230,7 +342,7 @@ function BusinessDetailsStep() {
                 <SelectValue placeholder="Select a category…" />
               </SelectTrigger>
               <SelectContent>
-                {BUSINESS_CATEGORY_OPTIONS.map((option) => (
+                {categoryOptions.map((option) => (
                   <SelectItem key={option} value={option}>
                     {option}
                   </SelectItem>
@@ -244,7 +356,7 @@ function BusinessDetailsStep() {
         )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="license_no">License number (optional)</Label>
+        <Label htmlFor="license_no">{licenseLabel}</Label>
         <Input id="license_no" {...register('license_no')} />
       </div>
       {update.isError && (
@@ -312,6 +424,82 @@ function AddItemStep() {
         )}
         <Button type="submit" disabled={createItem.isPending}>
           {createItem.isPending ? 'Adding…' : 'Add item & go live'}
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+const serviceSchema = z.object({
+  name: z.string().min(1, 'Required'),
+  duration_minutes: z
+    .string()
+    .min(1, 'Required')
+    .refine((value) => Number.isInteger(Number(value)) && Number(value) > 0, 'Enter valid minutes'),
+  price: z.string().optional(),
+})
+type ServiceForm = z.infer<typeof serviceSchema>
+
+// Unlike AddItemStep, adding a service is entirely optional -- appointment
+// services are optional by design (MULTI_VERTICAL_PLAN.md Decision 5: a
+// merchant with zero rows just has one generic appointment type), so this
+// step's copy and submit label reflect that it never blocks going live,
+// the same non-blocking framing AddFAQStep already uses below.
+function AddServiceStep() {
+  const { data: services } = useAppointmentServices()
+  const createService = useCreateAppointmentService()
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ServiceForm>({ resolver: zodResolver(serviceSchema) })
+
+  const onSubmit = (values: ServiceForm) => {
+    createService.mutate(
+      {
+        name: values.name,
+        duration_minutes: Number(values.duration_minutes),
+        price: values.price || null,
+      },
+      { onSuccess: () => reset() },
+    )
+  }
+
+  return (
+    <div className="max-w-md space-y-4">
+      <p className="text-muted-foreground text-sm">
+        Optional -- add the kinds of appointments customers can book (e.g. "Haircut,"
+        "Consultation"). Leave this empty and customers can still book a generic time slot with you.
+        You can manage these anytime from the Services page.
+      </p>
+      {services && services.length > 0 && (
+        <p className="text-sm">
+          {services.length} service{services.length === 1 ? '' : 's'} already added.
+        </p>
+      )}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="service_name">Service name</Label>
+          <Input id="service_name" placeholder="e.g. Haircut" {...register('name')} />
+          {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="service_duration">Duration (minutes)</Label>
+          <Input id="service_duration" placeholder="30" {...register('duration_minutes')} />
+          {errors.duration_minutes && (
+            <p className="text-destructive text-sm">{errors.duration_minutes.message}</p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="service_price">Price (optional)</Label>
+          <Input id="service_price" placeholder="500.00" {...register('price')} />
+        </div>
+        {createService.isError && (
+          <p className="text-destructive text-sm">Failed to save. Please try again.</p>
+        )}
+        <Button type="submit" disabled={createService.isPending}>
+          {createService.isPending ? 'Adding…' : 'Add another'}
         </Button>
       </form>
     </div>
@@ -413,17 +601,18 @@ function AddFAQStep() {
   )
 }
 
-function LiveStep() {
+function LiveStep({ vertical }: { vertical: MerchantVertical | null }) {
+  const description =
+    vertical === 'appointment'
+      ? 'Customers can now message your WhatsApp number to book an appointment. Incoming bookings will show up on the Appointments page.'
+      : 'Customers can now message your WhatsApp number to browse the catalog and place orders. Incoming orders will show up on the Orders page.'
   return (
     <div className="max-w-md space-y-3">
       <span className="bg-primary text-primary-foreground flex size-10 items-center justify-center rounded-full text-lg">
         ✓
       </span>
       <p className="font-serif text-lg font-medium">You're live!</p>
-      <p className="text-muted-foreground text-sm">
-        Customers can now message your WhatsApp number to browse the catalog and place orders.
-        Incoming orders will show up on the Orders page.
-      </p>
+      <p className="text-muted-foreground text-sm">{description}</p>
     </div>
   )
 }
@@ -434,6 +623,8 @@ export function OnboardingPage() {
   const setStep = useOnboardingWizardStore((s) => s.setStep)
 
   const serverStep = status ? stepForStatus(status.onboarding_status) : 0
+  const vertical = status?.vertical ?? null
+  const stepLabels = vertical === 'appointment' ? APPOINTMENT_STEP_LABELS : STEP_LABELS
 
   // Auto-advance the displayed step whenever server progress newly moves
   // past where it was last seen -- but only fire once per such change (keyed
@@ -456,13 +647,18 @@ export function OnboardingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Onboarding"
-        description="Connect WhatsApp, add your business details, and list at least one item to go live. FAQs are optional."
+        description="Pick a business type, connect WhatsApp, add your business details, and go live. Adding an item/service and FAQs are optional."
       />
 
-      <Stepper current={currentStep} furthestReached={serverStep} onSelect={setStep} />
+      <Stepper
+        current={currentStep}
+        furthestReached={serverStep}
+        onSelect={setStep}
+        labels={stepLabels}
+      />
 
       <Card className="p-6">
-        {currentStep < serverStep && (
+        {currentStep < serverStep && currentStep !== 0 && (
           <div className="bg-muted mb-4 flex items-center justify-between rounded-lg p-3 text-sm">
             <span>This step is already done -- you're editing it.</span>
             <Button variant="ghost" size="sm" onClick={() => setStep(serverStep)}>
@@ -470,11 +666,12 @@ export function OnboardingPage() {
             </Button>
           </div>
         )}
-        {currentStep === 0 && <ConnectWhatsAppStep />}
-        {currentStep === 1 && <BusinessDetailsStep />}
-        {currentStep === 2 && <AddItemStep />}
-        {currentStep === 3 && <AddFAQStep />}
-        {currentStep === 4 && <LiveStep />}
+        {currentStep === 0 && <VerticalSelectStep vertical={vertical} />}
+        {currentStep === 1 && <ConnectWhatsAppStep />}
+        {currentStep === 2 && <BusinessDetailsStep vertical={vertical} />}
+        {currentStep === 3 && (vertical === 'appointment' ? <AddServiceStep /> : <AddItemStep />)}
+        {currentStep === 4 && <AddFAQStep />}
+        {currentStep === 5 && <LiveStep vertical={vertical} />}
       </Card>
     </div>
   )
