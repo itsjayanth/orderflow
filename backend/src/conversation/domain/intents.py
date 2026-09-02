@@ -5,7 +5,10 @@ class Intent(StrEnum):
     PLACE_ORDER = "place_order"
     TRACK_ORDER = "track_order"
     BOOK_APPOINTMENT = "book_appointment"
-    TALK_TO_RESTAURANT = "talk_to_restaurant"
+    # MULTI_VERTICAL_PLAN.md Phase M4: the appointment vertical's analogue
+    # of TRACK_ORDER, pointed at Appointment instead of Order -- same
+    # lookup-by-phone-number pattern, see handler.py's TRACK_ORDER branch.
+    TRACK_APPOINTMENT = "track_appointment"
     GREETING = "greeting"
     # Button-driven, like the other menu intents above -- classify() maps
     # the "FAQs" button's id straight to this via the generic button_id
@@ -28,13 +31,23 @@ class Intent(StrEnum):
     FLOW_APPOINTMENT_COMPLETED = "flow_appointment_completed"
 
 
-# Order matters: checked top to bottom, first match wins. TRACK_ORDER and
-# TALK_TO_RESTAURANT are checked before PLACE_ORDER specifically because
-# "order" is a broad word that shows up inside phrases like "track my
-# order" -- the narrower intents have to get first look.
+# Order matters: checked top to bottom, first match wins. TRACK_APPOINTMENT is
+# checked before TRACK_ORDER (its "status" keyword would otherwise swallow
+# "appointment status"), which in turn is checked before PLACE_ORDER, and
+# TRACK_APPOINTMENT before BOOK_APPOINTMENT (whose "appointment" keyword is
+# broad) -- same "narrower intents get first look" rule this table already
+# followed for TRACK_ORDER vs. PLACE_ORDER. classify() itself doesn't know
+# the merchant's vertical (see handler.py for that gate); this table just
+# has to not misfire between the two verticals' own intents.
 _TEXT_KEYWORDS: dict[Intent, tuple[str, ...]] = {
+    Intent.TRACK_APPOINTMENT: (
+        "appointment status",
+        "my appointment",
+        "track appointment",
+        "recent appointment",
+        "appointment history",
+    ),
     Intent.TRACK_ORDER: ("track", "status", "where is my order"),
-    Intent.TALK_TO_RESTAURANT: ("talk", "human", "help", "staff", "call"),
     Intent.BOOK_APPOINTMENT: (
         "book appointment",
         "appointment",

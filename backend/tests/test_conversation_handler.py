@@ -1,3 +1,4 @@
+import datetime
 import uuid
 from decimal import Decimal
 
@@ -180,7 +181,9 @@ class RecordingNotificationChannel:
         return True
 
 
-async def _seed_connected_merchant(db_session: AsyncSession, phone_number_id: str = "PNID1"):
+async def _seed_connected_merchant(
+    db_session: AsyncSession, phone_number_id: str = "PNID1", vertical: str = "restaurant"
+):
     merchant = await MerchantRepository(db_session).create(
         business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
@@ -191,8 +194,12 @@ async def _seed_connected_merchant(db_session: AsyncSession, phone_number_id: st
     # These tests exercise the conversation handler itself, not onboarding
     # progression (that's test_onboarding_flow.py) -- jump the merchant
     # straight to "live" so the handler's onboarding-status guard doesn't
-    # reject every inbound message here.
+    # reject every inbound message here. Defaults to the restaurant
+    # vertical since most existing tests here predate the appointment
+    # vertical; pass vertical="appointment" for the appointment-specific
+    # tests below.
     merchant.onboarding_status = "live"
+    merchant.vertical = vertical
     await db_session.commit()
     return merchant, tenant
 
@@ -236,16 +243,37 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
     assert len(sender.button_calls) == 1
     assert "Test Business" in sender.button_calls[0]["body"]
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
-    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+    assert button_ids == {"place_order", "track_order"}
+
+
+async def test_greeting_sends_appointment_menu_for_appointment_vertical(
+    db_session: AsyncSession,
+) -> None:
+    """MULTI_VERTICAL_PLAN.md Phase M4: exclusive, not additive -- an
+    appointment-vertical merchant never sees "Place order", and "Talk to
+    us" is gone for both verticals."""
+    await _seed_connected_merchant(db_session, vertical="appointment")
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.button_calls) == 1
+    assert sender.list_calls == []
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"book_appointment", "track_appointment"}
 
 
 async def test_greeting_sends_menu_including_faqs_when_merchant_has_an_active_faq(
     db_session: AsyncSession,
 ) -> None:
-    """Like appointment booking, the FAQs option is additive and only
-    appears once the merchant has actually set something up -- a merchant
-    with zero FAQItems sees the exact 3-button menu (previous test),
-    unaffected by this feature ever having been built."""
+    """FAQs are additive and only appear once the merchant has actually set
+    something up -- a merchant with zero FAQItems sees the exact 2-button
+    menu (previous test), unaffected by this feature ever having been
+    built. Now that "Talk to us" is gone, a vertical's 2 base options plus
+    FAQs is only 3 total -- still within Meta's 3-button cap, so this stays
+    a button message rather than tipping over into a list."""
     _, tenant = await _seed_connected_merchant(db_session)
     await FAQItemRepository(db_session).create(
         tenant,
@@ -260,52 +288,16 @@ async def test_greeting_sends_menu_including_faqs_when_merchant_has_an_active_fa
     result = await handle_inbound_message(db_session, sender, message)
 
     assert result.reply_sent is True
-    assert sender.button_calls == []
-    assert len(sender.list_calls) == 1
-    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
-    assert option_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
-
-
-async def test_greeting_sends_3_button_menu_when_appointment_booking_disabled(
-    db_session: AsyncSession,
-) -> None:
-    """Toggle OFF (the default) must send the exact same 3-button menu as
-    before this feature existed -- byte-for-byte unchanged behavior."""
-    await _seed_connected_merchant(db_session)
-    sender = FakeSender()
-    message = _inbound(text="hi")
-
-    result = await handle_inbound_message(db_session, sender, message)
-
-    assert result.reply_sent is True
-    assert len(sender.button_calls) == 1
     assert sender.list_calls == []
+    assert len(sender.button_calls) == 1
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
-    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+    assert button_ids == {"place_order", "track_order", "faq_menu"}
 
 
-async def test_greeting_sends_4_option_list_when_appointment_booking_enabled(
+async def test_book_appointment_sends_booking_link_for_appointment_vertical(
     db_session: AsyncSession,
 ) -> None:
-    merchant, _ = await _seed_connected_merchant(db_session)
-    merchant.appointment_booking_enabled = True
-    await db_session.commit()
-    sender = FakeSender()
-    message = _inbound(text="hi")
-
-    result = await handle_inbound_message(db_session, sender, message)
-
-    assert result.reply_sent is True
-    assert sender.button_calls == []
-    assert len(sender.list_calls) == 1
-    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
-    assert option_ids == {"place_order", "track_order", "book_appointment", "talk_to_restaurant"}
-
-
-async def test_book_appointment_sends_booking_link_when_enabled(db_session: AsyncSession) -> None:
-    merchant, _ = await _seed_connected_merchant(db_session)
-    merchant.appointment_booking_enabled = True
-    await db_session.commit()
+    merchant, _ = await _seed_connected_merchant(db_session, vertical="appointment")
     sender = FakeSender()
     message = _inbound(button_id="book_appointment")
 
@@ -316,12 +308,12 @@ async def test_book_appointment_sends_booking_link_when_enabled(db_session: Asyn
     assert f"/book/{merchant.merchant_id}" in sender.text_calls[0]["body"]
 
 
-async def test_book_appointment_falls_back_to_menu_when_disabled(
+async def test_book_appointment_falls_back_to_menu_for_restaurant_vertical(
     db_session: AsyncSession,
 ) -> None:
-    """A customer typing "book appointment" for a merchant that never
-    enabled the feature just sees the normal 3-button menu, same as any
-    other unrecognized/unavailable request."""
+    """A restaurant-vertical customer typing "book appointment" just sees
+    the normal 2-button menu, same as any other unrecognized/unavailable
+    request -- BOOK_APPOINTMENT never fires for the wrong vertical."""
     await _seed_connected_merchant(db_session)
     sender = FakeSender()
     message = _inbound(button_id="book_appointment")
@@ -332,7 +324,25 @@ async def test_book_appointment_falls_back_to_menu_when_disabled(
     assert sender.text_calls == []
     assert len(sender.button_calls) == 1
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
-    assert button_ids == {"place_order", "track_order", "talk_to_restaurant"}
+    assert button_ids == {"place_order", "track_order"}
+
+
+async def test_place_order_falls_back_to_menu_for_appointment_vertical(
+    db_session: AsyncSession,
+) -> None:
+    """The mirror image of the test above -- PLACE_ORDER never fires for an
+    appointment-vertical merchant."""
+    await _seed_connected_merchant(db_session, vertical="appointment")
+    sender = FakeSender()
+    message = _inbound(button_id="place_order")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.PLACE_ORDER
+    assert sender.text_calls == []
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"book_appointment", "track_appointment"}
 
 
 async def test_greeting_creates_customer_record(db_session: AsyncSession) -> None:
@@ -442,17 +452,6 @@ async def test_place_order_uses_browser_link_when_interaction_mode_is_browser_li
     assert "?wa=" in sender.cta_url_calls[0]["url"]
 
 
-async def test_talk_to_restaurant_sends_fixed_message(db_session: AsyncSession) -> None:
-    await _seed_connected_merchant(db_session)
-    sender = FakeSender()
-    message = _inbound(button_id="talk_to_restaurant")
-
-    result = await handle_inbound_message(db_session, sender, message)
-
-    assert result.intent == Intent.TALK_TO_RESTAURANT
-    assert "reach out" in sender.text_calls[0]["body"]
-
-
 async def test_track_order_with_no_orders(db_session: AsyncSession) -> None:
     await _seed_connected_merchant(db_session)
     sender = FakeSender()
@@ -496,6 +495,59 @@ async def test_track_order_with_existing_order_shows_status(db_session: AsyncSes
 
     assert result.intent == Intent.TRACK_ORDER
     assert "new" in sender.text_calls[0]["body"]
+
+
+async def test_track_appointment_with_no_appointments(db_session: AsyncSession) -> None:
+    await _seed_connected_merchant(db_session, vertical="appointment")
+    sender = FakeSender()
+    message = _inbound(button_id="track_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.TRACK_APPOINTMENT
+    assert "don't have any appointments" in sender.text_calls[0]["body"]
+
+
+async def test_track_appointment_with_existing_appointment_shows_status(
+    db_session: AsyncSession,
+) -> None:
+    _, tenant = await _seed_connected_merchant(db_session, vertical="appointment")
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    await AppointmentRepository(db_session).create(
+        tenant,
+        customer_id=customer.customer_id,
+        name="Asha",
+        email="asha@example.com",
+        appointment_date=datetime.date(2026, 9, 10),
+        start_time=datetime.time(14, 30),
+        end_time=datetime.time(15, 0),
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(from_phone="919876543210", button_id="track_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.TRACK_APPOINTMENT
+    assert "requested" in sender.text_calls[0]["body"]
+    assert "2026-09-10" in sender.text_calls[0]["body"]
+
+
+async def test_track_appointment_falls_back_to_menu_for_restaurant_vertical(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(button_id="track_appointment")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.TRACK_APPOINTMENT
+    assert sender.text_calls == []
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order"}
 
 
 async def test_flow_completion_creates_cod_order(db_session: AsyncSession) -> None:
@@ -807,13 +859,13 @@ async def test_unrecognized_text_with_no_faq_match_falls_back_to_greeting_menu(
     assert result.reply_sent is True
     assert sender.text_calls == []
     # The merchant has an active FAQ (just not one matching this text), so
-    # the greeting menu itself includes the "FAQs" option and is sent as a
-    # list -- still the existing greeting/intent-menu behavior, not a FAQ
-    # answer.
-    assert sender.button_calls == []
-    assert len(sender.list_calls) == 1
-    option_ids = {option_id for option_id, _ in sender.list_calls[0]["options"]}
-    assert option_ids == {"place_order", "track_order", "talk_to_restaurant", "faq_menu"}
+    # the greeting menu itself includes the "FAQs" option -- still the
+    # existing greeting/intent-menu behavior, not a FAQ answer. 3 options
+    # total stays within Meta's button cap (see the test above).
+    assert sender.list_calls == []
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order", "faq_menu"}
 
 
 async def test_unrecognized_text_with_close_matches_sends_disambiguation_list(
@@ -913,7 +965,7 @@ async def test_tapping_faq_list_row_returns_stored_answer(db_session: AsyncSessi
 
 async def test_book_appointment_sends_flow_when_flow_configured(db_session: AsyncSession) -> None:
     merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.appointment_booking_enabled = True
+    merchant.vertical = "appointment"
     await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
         tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
     )
@@ -934,7 +986,7 @@ async def test_book_appointment_falls_back_to_link_when_flow_send_fails(
     db_session: AsyncSession,
 ) -> None:
     merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.appointment_booking_enabled = True
+    merchant.vertical = "appointment"
     await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
         tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
     )
@@ -956,7 +1008,7 @@ async def test_book_appointment_uses_browser_link_when_interaction_mode_is_brows
     """Same override as PLACE_ORDER's browser-link test above, but for
     appointment booking -- a configured Flow is still ignored entirely."""
     merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.appointment_booking_enabled = True
+    merchant.vertical = "appointment"
     await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
         tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
     )
@@ -995,7 +1047,7 @@ async def test_appointment_flow_completion_creates_appointment_not_order(
     from notifications import wiring
 
     merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.appointment_booking_enabled = True
+    merchant.vertical = "appointment"
     await db_session.commit()
     sender = FakeSender()
     message = _inbound(

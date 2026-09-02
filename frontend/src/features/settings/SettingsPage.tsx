@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useMe } from '@/features/auth/useAuth'
 import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButton'
 import type { NotificationTemplateOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
@@ -130,7 +131,7 @@ function PaymentSettingsSection() {
 
 function WhatsAppSettingsSection() {
   const { data, isLoading } = useWhatsAppSettings()
-  const { data: appointmentSettings } = useAppointmentSettings()
+  const { data: me } = useMe()
   const [justSaved, setJustSaved] = useState(false)
 
   const handleSaved = () => {
@@ -165,8 +166,13 @@ function WhatsAppSettingsSection() {
       {justSaved && <SavedIndicator message="Saved and connected" />}
 
       <TestWhatsAppMessageCard disabled={!data?.access_token_set} />
-      <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />
-      {appointmentSettings?.appointment_booking_enabled && (
+      {/* Vertical-gated (MULTI_VERTICAL_PLAN.md Phase M4): a merchant only
+          ever sends the Flow their own vertical's WhatsApp menu offers --
+          setting up the other one's Flow would be dead configuration. */}
+      {me?.merchant.vertical === 'restaurant' && (
+        <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />
+      )}
+      {me?.merchant.vertical === 'appointment' && (
         <AppointmentFlowSetupCard disabled={!data?.access_token_set} />
       )}
     </Card>
