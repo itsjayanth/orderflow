@@ -2,7 +2,7 @@ import { endOfWeek, format, getDay, parse, startOfWeek } from 'date-fns'
 import { enUS } from 'date-fns/locale/en-US'
 import { useMemo, useState } from 'react'
 import { Calendar as BigCalendar, dateFnsLocalizer, type View, Views } from 'react-big-calendar'
-import withDragAndDrop, {
+import withDragAndDropImport, {
   type EventInteractionArgs,
 } from 'react-big-calendar/lib/addons/dragAndDrop'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
@@ -27,6 +27,17 @@ const localizer = dateFnsLocalizer({
   getDay,
   locales,
 })
+
+// react-big-calendar's dragAndDrop addon is CJS; depending on the bundler's
+// interop handling, `withDragAndDropImport` can end up as either the HOC
+// function itself or `{ default: <the HOC> }` (esbuild/Rollup don't always
+// unwrap a nested `exports.default` reassignment the same way) -- this
+// caused a hard crash (`withDragAndDrop is not a function`) on every route
+// in production, not just the calendar view, since the whole app is one
+// bundle. Unwrap defensively so it works under either shape.
+const withDragAndDrop =
+  (withDragAndDropImport as unknown as { default?: typeof withDragAndDropImport }).default ??
+  withDragAndDropImport
 
 const DragAndDropCalendar = withDragAndDrop<CalendarEvent>(BigCalendar)
 
