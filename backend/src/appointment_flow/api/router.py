@@ -16,6 +16,7 @@ from appointments.adapters.repository import SlotConflictError
 from appointments.adapters.scheduling_repository import AppointmentServiceRepository
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
+from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from shared.deps import DbSession
 from shared.tenant import TenantContext
 
@@ -40,7 +41,12 @@ async def get_appointment_flow_info(
     """Public and unauthenticated -- this is what the customer-facing
     booking webview loads before showing its date/time/details form."""
     merchant = await _get_bookable_merchant_or_404(session, merchant_id)
-    return AppointmentFlowInfoOut(business_name=merchant.business_name)
+    tenant = TenantContext(merchant_id=merchant.merchant_id)
+    waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
+    return AppointmentFlowInfoOut(
+        business_name=merchant.business_name,
+        merchant_whatsapp_number=waba.display_phone_number if waba else None,
+    )
 
 
 @router.get("/{merchant_id}/services", response_model=list[AppointmentFlowServiceOut])

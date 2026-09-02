@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { apiFetch } from '@/shared/api/client'
 import type { OrderingFlowCustomerLookupOut, PublicItemOut } from '@/shared/api/types'
 import { ItemImage } from '@/shared/components/ItemImage'
+import { WhatsAppReturn } from '@/shared/components/WhatsAppReturn'
 import { formatOrderNumber } from '@/shared/lib/orderNumber'
 
 import { useOrderingCheckout } from './useOrderingCheckout'
@@ -420,12 +421,6 @@ export function OrderingPage() {
   }
 
   if (checkout.isSuccess) {
-    // A website can't programmatically hand control back to the WhatsApp
-    // app -- that's a platform restriction on both iOS and Android, not
-    // something fixable here -- so this is a one-tap link, not an
-    // automatic return.
-    const whatsappNumber = catalog.merchant_whatsapp_number?.replace(/\D/g, '')
-
     const orderTypeLabel = getValues('order_type') === 'delivery' ? 'Delivery' : 'Pickup'
     const paymentOutstanding = Boolean(checkout.data.payment_link_url)
 
@@ -471,14 +466,23 @@ export function OrderingPage() {
               <a href={checkout.data.payment_link_url}>Complete payment</a>
             </Button>
           )}
-          {whatsappNumber && (
-            <a
-              href={`https://wa.me/${whatsappNumber}`}
-              className="text-muted-foreground hover:text-foreground block text-sm underline-offset-4 transition-colors duration-150 hover:underline"
-            >
-              Return to WhatsApp chat
-            </a>
-          )}
+          {/* An order still awaiting payment must not be redirected away
+              from its "Complete payment" button -- and its confirmation
+              message only goes out once Razorpay's webhook lands, so
+              there is nothing in the chat to return to yet either. COD
+              orders are already confirmed on the backend by this point,
+              so those do auto-return. */}
+          <WhatsAppReturn
+            phoneNumber={catalog.merchant_whatsapp_number}
+            flow="order"
+            autoRedirect={!paymentOutstanding}
+            text="Thanks!"
+            analyticsProps={{
+              order_number: checkout.data.order_number,
+              payment_status: checkout.data.payment_status,
+              payment_outstanding: paymentOutstanding,
+            }}
+          />
         </Card>
       </div>
     )

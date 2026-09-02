@@ -9,6 +9,8 @@ from appointment_flow.domain.booking import PastDateError, perform_booking
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
+from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
+from shared.encryption import encrypt
 from shared.tenant import TenantContext
 
 # A fixed calendar date goes stale the moment the wall clock crosses it --
@@ -51,6 +53,18 @@ async def _tenant_for(client: AsyncClient, tokens: dict) -> TenantContext:
     me = await client.get("/api/v1/auth/me", headers=_auth_headers(tokens))
     assert me.status_code == 200
     return TenantContext(merchant_id=uuid.UUID(me.json()["merchant"]["merchant_id"]))
+
+
+async def _connect_whatsapp(
+    db_session: AsyncSession, tenant: TenantContext, display_phone_number: str
+) -> None:
+    await WhatsAppBusinessAccountRepository(db_session).upsert(
+        tenant,
+        phone_number_id="PNID1",
+        access_token_encrypted=encrypt("dummy-token"),
+        display_phone_number=display_phone_number,
+    )
+    await db_session.commit()
 
 
 async def _enable_appointment_booking(client: AsyncClient, tokens: dict) -> None:
@@ -144,6 +158,36 @@ async def test_appointment_flow_info_requires_no_auth(
 
     assert response.status_code == 200
     assert response.json()["business_name"] == "Public Business"
+
+
+async def test_appointment_flow_info_exposes_merchant_whatsapp_number(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _enable_appointment_booking(client, tokens)
+    await _connect_whatsapp(db_session, tenant, "+91 90000 00000")
+
+    response = await client.get(f"/api/v1/appointment-flow/{tenant.merchant_id}/info")
+
+    assert response.status_code == 200
+    # The dialable display number (as Meta returns it, "+" and spaces
+    # included), not the opaque phone_number_id -- the booking webview
+    # strips non-digits to build the wa.me link back to the chat.
+    assert response.json()["merchant_whatsapp_number"] == "+91 90000 00000"
+
+
+async def test_appointment_flow_info_whatsapp_number_null_without_waba(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _enable_appointment_booking(client, tokens)
+
+    response = await client.get(f"/api/v1/appointment-flow/{tenant.merchant_id}/info")
+
+    assert response.status_code == 200
+    assert response.json()["merchant_whatsapp_number"] is None
 
 
 async def test_appointment_flow_info_404_when_toggle_off(

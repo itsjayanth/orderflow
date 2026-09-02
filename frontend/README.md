@@ -45,6 +45,44 @@ src/
 
 Server state goes through TanStack Query (`shared/hooks`); Zustand is reserved for genuinely client-only UI state (e.g. the onboarding wizard's current step before it's persisted — see `features/onboarding/onboardingWizardStore.ts`).
 
+## Returning the customer to WhatsApp
+
+Both customer-facing browser-mode screens -- `/order/:merchantId` and
+`/book/:merchantId` -- open inside WhatsApp's in-app browser when the
+customer taps a link the bot sent them. Their confirmation screens use
+`shared/components/WhatsAppReturn.tsx` to send them back to the chat:
+a short "Redirecting you back to WhatsApp" countdown, then a hidden
+`whatsapp://send` iframe attempt, a `window.location.href` navigation to
+the merchant's `wa.me` link, and a best-effort `window.close()`. A manual
+"Tap here to return to WhatsApp" button is always rendered alongside.
+
+None of this is documented by Meta, and whether an in-app browser hands
+back to the chat rather than opening another webview has changed between
+WhatsApp versions and differs by platform -- hence the manual button, and
+hence `VITE_WHATSAPP_RETURN_REDIRECT` (see `.env.example`), which reverts
+to manual-only without touching code. `VITE_WHATSAPP_RETURN_DELAY_MS`
+tunes the countdown.
+
+Two things it deliberately does not do:
+
+- **It never auto-redirects an order that still owes payment.** That
+  screen carries the Razorpay payment link, and the order's WhatsApp
+  confirmation is only sent once the payment webhook lands
+  (`backend/src/payments/api/router.py`), so there would be nothing in
+  the chat to return to yet either. COD orders and appointments are both
+  fully recorded and already notified by the time their confirmation
+  renders, so those do auto-return.
+- **Nothing on the backend depends on the redirect firing.** Orders and
+  appointments are committed and their WhatsApp messages dispatched
+  server-side before the POST response is returned. A redirect that
+  never fires costs the customer one tap, nothing else.
+
+Events go through `shared/lib/analytics.ts` (`success_page_viewed`,
+`whatsapp_return_auto_redirect_attempted`,
+`whatsapp_return_manual_fallback_clicked`) -- the last one carries
+`after_auto_redirect_attempt`, which is what tells you how often the
+automatic return actually failed on real devices.
+
 ## shadcn/ui components
 
 `components.json` is configured (`style: new-york`, Radix base). The CLI (`npx shadcn@latest add <component>`) fetches from `ui.shadcn.com`, which may be blocked by network policy in some sandboxed environments — in that case copy component source manually into `src/components/ui/`, following the existing `button.tsx` as the pattern.

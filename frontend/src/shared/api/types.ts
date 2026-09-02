@@ -311,6 +311,10 @@ export interface AppointmentOut {
 
 export interface AppointmentFlowInfoOut {
   business_name: string
+  // Null until the merchant connects WhatsApp during onboarding. Mirrors
+  // PublicCatalogOut.merchant_whatsapp_number -- the dialable display
+  // number, used to link the booking confirmation back to the chat.
+  merchant_whatsapp_number: string | null
 }
 
 export interface AppointmentFlowServiceOut {
