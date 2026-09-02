@@ -50,6 +50,13 @@ export function WhatsAppReturn({
   const delayMs = getWhatsAppReturnDelayMs()
   const shouldAutoRedirect = autoRedirect && isWhatsAppReturnEnabled() && digits !== null
 
+  // Solid only when this button is the screen's primary action: that is
+  // when the automatic return is switched off globally AND the caller
+  // hasn't said something more important shares the screen. An unpaid
+  // order passes autoRedirect={false} precisely because its payment link
+  // must win, so this stays an outline there and never competes with it.
+  const isPrimaryAction = autoRedirect && !isWhatsAppReturnEnabled()
+
   const [secondsLeft, setSecondsLeft] = useState(() => Math.ceil(delayMs / 1000))
 
   // StrictMode double-invokes effects in dev, and a re-render must not
@@ -164,7 +171,7 @@ export function WhatsAppReturn({
           {secondsLeft > 0 ? ` in ${secondsLeft}s…` : '…'}
         </p>
       )}
-      <Button asChild variant={shouldAutoRedirect ? 'outline' : 'default'} className="w-full">
+      <Button asChild variant={isPrimaryAction ? 'default' : 'outline'} className="w-full">
         {/* Same tab deliberately: inside WhatsApp's in-app browser a
             target="_blank" stacks another webview on an already-embedded
             view instead of handing back to the chat. */}

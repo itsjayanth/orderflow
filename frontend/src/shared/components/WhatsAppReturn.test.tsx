@@ -130,6 +130,27 @@ describe('WhatsAppReturn', () => {
     expect(eventNames()).not.toContain('whatsapp_return_auto_redirect_attempted')
   })
 
+  it('stays an outline button when the caller has a more important CTA on screen', () => {
+    // The unpaid-order confirmation passes autoRedirect={false} because
+    // its Razorpay "Complete payment" button must win -- rendering this
+    // one solid would put two equal-weight CTAs on that screen.
+    render(<WhatsAppReturn phoneNumber="919000000000" flow="order" autoRedirect={false} />)
+
+    expect(screen.getByRole('link', { name: /return to whatsapp/i }).className).toContain('border')
+  })
+
+  it('becomes the primary button when only the kill switch disarmed it', () => {
+    // Nothing else competes here, so the manual link is the screen's
+    // one action and should look like it.
+    vi.stubEnv('VITE_WHATSAPP_RETURN_REDIRECT', 'false')
+
+    render(<WhatsAppReturn phoneNumber="919000000000" flow="appointment" />)
+
+    expect(screen.getByRole('link', { name: /return to whatsapp/i }).className).toContain(
+      'bg-primary',
+    )
+  })
+
   it('honours the VITE_WHATSAPP_RETURN_REDIRECT kill switch', async () => {
     vi.stubEnv('VITE_WHATSAPP_RETURN_REDIRECT', 'false')
 
