@@ -1,4 +1,5 @@
 import datetime
+import itertools
 import uuid
 
 import pytest
@@ -10,6 +11,13 @@ from appointments.domain.state_machine import IllegalTransitionError
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from shared.tenant import TenantContext
+
+# Overlap prevention (AppointmentRepository._assert_no_overlap) means two
+# _seed_appointment calls for the same tenant/date can no longer silently
+# share the same default time -- generate a fresh one per call so tests
+# that seed several appointments and don't care about the exact time (most
+# of them) don't collide with each other.
+_next_seed_hour = itertools.count(9)
 
 
 async def _make_tenant(
@@ -53,19 +61,25 @@ async def _seed_appointment(
     customer_whatsapp_number: str = "+919876543210",
     customer_display_name: str | None = None,
     appointment_date: datetime.date | None = None,
-    appointment_time: datetime.time | None = None,
+    start_time: datetime.time | None = None,
     notes: str | None = None,
 ):
     customer = await CustomerRepository(db_session).find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
     )
+    if start_time is None:
+        start_time = datetime.time(next(_next_seed_hour) % 24, 0)
+    end_time = (
+        datetime.datetime.combine(datetime.date.min, start_time) + datetime.timedelta(minutes=30)
+    ).time()
     appointment = await AppointmentRepository(db_session).create(
         tenant,
         customer_id=customer.customer_id,
         name="Asha Rao",
         email="asha@example.com",
         appointment_date=appointment_date or datetime.date(2026, 9, 1),
-        appointment_time=appointment_time or datetime.time(18, 0),
+        start_time=start_time,
+        end_time=end_time,
         notes=notes,
     )
     if status != "requested":

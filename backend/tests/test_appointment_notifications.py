@@ -84,7 +84,8 @@ async def _seed_appointment(db_session: AsyncSession, *, connect_whatsapp: bool 
         name="Asha Rao",
         email="asha@example.com",
         appointment_date=datetime.date(2026, 9, 1),
-        appointment_time=datetime.time(18, 0),
+        start_time=datetime.time(18, 0),
+        end_time=datetime.time(18, 30),
     )
     await db_session.commit()
     return tenant, appointment

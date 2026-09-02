@@ -9,6 +9,7 @@ from notifications.domain.models import DEFAULT_MESSAGES
 from notifications.domain.rendering import render_template
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from orders.adapters.repository import OrderRepository
+from shared.config import get_settings
 from shared.db import SessionFactory
 from shared.encryption import decrypt
 from shared.tenant import TenantContext
@@ -104,7 +105,7 @@ class WhatsAppNotificationChannel:
                 "appointment_id": str(appointment.appointment_id),
                 "appointment_number": f"{appointment.appointment_number:04d}",
                 "appointment_date": str(appointment.appointment_date),
-                "appointment_time": str(appointment.appointment_time),
+                "appointment_time": str(appointment.start_time),
                 "notes": appointment.notes or "",
             }
             template = await NotificationTemplateRepository(session).get(tenant, kind)
@@ -135,3 +136,47 @@ class WhatsAppNotificationChannel:
         return await self._send_appointment(
             merchant_id=merchant_id, appointment_id=appointment_id, kind="appointment_cancelled"
         )
+
+    async def notify_appointment_reminder(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        """Distinct from _send_appointment above -- a reminder fires hours
+        after the triggering (confirmed) transition, genuinely outside the
+        customer's 24h WhatsApp session window, so it must go out as a
+        Meta-approved `type: template` send (send_template_message) with
+        positional body params, not the freeform send_text +
+        our-own-{{var}}-rendering _send_appointment uses for the
+        immediate confirmed/cancelled notifications. Returns False (no
+        send attempted) when no reminder template name is configured,
+        same "unset = safe no-op" convention as every other optional Meta
+        config in this codebase."""
+        settings = get_settings()
+        if not settings.whatsapp_appointment_reminder_template_name:
+            return False
+
+        tenant = TenantContext(merchant_id=merchant_id)
+        async with SessionFactory() as session:
+            waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
+            if waba is None or waba.phone_number_id is None or waba.access_token_encrypted is None:
+                return False
+
+            appointment = await AppointmentRepository(session).get(tenant, appointment_id)
+            if appointment is None:
+                return False
+
+            merchant = await MerchantRepository(session).get(tenant.merchant_id)
+            body_params = [
+                merchant.business_name if merchant else "",
+                f"{appointment.appointment_number:04d}",
+                appointment.appointment_date.strftime("%a, %d %b"),
+                appointment.start_time.strftime("%I:%M %p").lstrip("0"),
+            ]
+
+            return await self._sender.send_template_message(
+                phone_number_id=waba.phone_number_id,
+                access_token=decrypt(waba.access_token_encrypted),
+                to=appointment.customer.whatsapp_number,
+                template_name=settings.whatsapp_appointment_reminder_template_name,
+                language_code=settings.whatsapp_appointment_reminder_language_code,
+                body_params=body_params,
+            )

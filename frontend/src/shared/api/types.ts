@@ -259,7 +259,31 @@ export interface AppointmentSettingsOut {
   appointment_booking_enabled: boolean
 }
 
+export interface AppointmentAvailabilityWindow {
+  day_of_week: number // 0=Monday .. 6=Sunday
+  start_time: string // "HH:MM:SS"
+  end_time: string // "HH:MM:SS"
+  slot_duration_minutes: number
+  buffer_minutes: number
+}
+
+export interface AppointmentAvailabilitySettingsOut {
+  timezone: string
+  windows: AppointmentAvailabilityWindow[]
+}
+
+export interface AppointmentServiceSettingsOut {
+  service_id: string
+  name: string
+  duration_minutes: number
+  price: string | null
+  is_active: boolean
+}
+
 export type AppointmentStatus = 'requested' | 'confirmed' | 'completed' | 'cancelled'
+
+export type AppointmentPaymentStatus = 'not_required' | 'pending' | 'paid' | 'failed'
+export type AppointmentCreatedVia = 'flow' | 'browser' | 'dashboard'
 
 export interface AppointmentOut {
   appointment_id: string
@@ -271,7 +295,12 @@ export interface AppointmentOut {
   name: string
   email: string
   appointment_date: string // "YYYY-MM-DD"
-  appointment_time: string // "HH:MM:SS"
+  start_time: string // "HH:MM:SS"
+  end_time: string // "HH:MM:SS"
+  service_id: string | null
+  staff_id: string | null
+  created_via: AppointmentCreatedVia
+  payment_status: AppointmentPaymentStatus
   notes: string | null
   status: AppointmentStatus
   requested_at: string
@@ -284,10 +313,23 @@ export interface AppointmentFlowInfoOut {
   business_name: string
 }
 
+export interface AppointmentFlowServiceOut {
+  service_id: string
+  name: string
+  duration_minutes: number
+  price: string | null
+}
+
+export interface AppointmentFlowSlotOut {
+  start_time: string
+  end_time: string
+}
+
 export interface AppointmentFlowBookingResponse {
   appointment_id: string
   appointment_number: number
   status: string
   appointment_date: string
-  appointment_time: string
+  start_time: string
+  end_time: string
 }

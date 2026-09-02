@@ -54,7 +54,8 @@ class PaymentEventRepository:
     async def create(
         self,
         *,
-        order_id: uuid.UUID,
+        order_id: uuid.UUID | None = None,
+        appointment_id: uuid.UUID | None = None,
         provider: str,
         event_type: str,
         provider_payment_id: str | None = None,
@@ -62,8 +63,13 @@ class PaymentEventRepository:
         raw_payload: str | None = None,
         recorded_by: str = "system",
     ) -> PaymentEvent:
+        """Exactly one of order_id/appointment_id must be set -- enforced
+        by the DB's ck_payment_events_exactly_one_entity check constraint,
+        not re-validated here (a caller violating this gets a clear DB
+        error rather than this repository silently picking one)."""
         event = PaymentEvent(
             order_id=order_id,
+            appointment_id=appointment_id,
             provider=provider,
             event_type=event_type,
             provider_payment_id=provider_payment_id,

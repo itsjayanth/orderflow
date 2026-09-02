@@ -34,7 +34,7 @@ def _payload(*, event: str, payment_id: str, order_id: str) -> bytes:
 def test_dummy_gateway_create_link_does_not_hit_network() -> None:
     gateway = DummyPaymentGateway("some-secret")
 
-    link = gateway.create_link(order_id=uuid.uuid4(), amount=Decimal("349.00"), currency="INR")
+    link = gateway.create_link(entity_id=uuid.uuid4(), amount=Decimal("349.00"), currency="INR")
 
     assert link.url.startswith("https://dummy-checkout.orderflow.local/pay/")
     assert link.provider_order_id.startswith("dummy_order_")
@@ -121,7 +121,7 @@ def test_create_link_test_mode_key_never_requests_upi_link() -> None:
         "id": "plink_1",
     }
 
-    link = gateway.create_link(order_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
+    link = gateway.create_link(entity_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
 
     assert link.url == "https://rzp.io/x"
     gateway._client.payment_link.create.assert_called_once()
@@ -136,7 +136,7 @@ def test_create_link_live_mode_key_requests_upi_link() -> None:
         "id": "plink_2",
     }
 
-    link = gateway.create_link(order_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
+    link = gateway.create_link(entity_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
 
     assert link.url == "https://rzp.io/y"
     gateway._client.payment_link.create.assert_called_once()
@@ -151,7 +151,7 @@ def test_create_link_live_mode_falls_back_when_upi_link_rejected() -> None:
         {"short_url": "https://rzp.io/z", "id": "plink_3"},
     ]
 
-    link = gateway.create_link(order_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
+    link = gateway.create_link(entity_id=uuid.uuid4(), amount=Decimal("199.00"), currency="INR")
 
     assert link.url == "https://rzp.io/z"
     assert gateway._client.payment_link.create.call_count == 2

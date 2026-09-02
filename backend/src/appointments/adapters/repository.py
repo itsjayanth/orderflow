@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,6 +13,14 @@ from shared.tenant import TenantContext
 
 class AppointmentNotFoundError(Exception):
     pass
+
+
+class SlotConflictError(Exception):
+    """Raised when the requested [start_time, end_time) range overlaps an
+    existing non-cancelled appointment for the same merchant (and staff,
+    once staff assignment is in use). The API layer turns this into a 409
+    with a machine-readable reason so the frontend can refresh available
+    slots rather than show a generic error."""
 
 
 class AppointmentRepository:
@@ -39,6 +47,86 @@ class AppointmentRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one() - 1
 
+    async def _assert_no_overlap(
+        self,
+        merchant_id: uuid.UUID,
+        *,
+        appointment_date: datetime.date,
+        start_time: datetime.time,
+        end_time: datetime.time,
+        staff_id: uuid.UUID | None,
+        exclude_appointment_id: uuid.UUID | None = None,
+    ) -> None:
+        """Race-condition-safe overlap check -- must run inside the same
+        transaction as the INSERT/UPDATE that follows it.
+
+        A plain `SELECT ... FOR UPDATE` is NOT sufficient on its own here:
+        FOR UPDATE only locks rows the SELECT actually reads, and a slot
+        nobody has booked yet has zero existing rows to lock -- two
+        concurrent requests for the very same never-before-booked slot
+        would each see an empty result set and both proceed to INSERT,
+        which is exactly the double-booking this exists to prevent
+        (a classic phantom-read gap, not covered by Postgres's default READ
+        COMMITTED isolation). `pg_advisory_xact_lock` closes that gap: it
+        serializes every booking/reschedule attempt for the same
+        (merchant, date) pair -- transaction-scoped, auto-released on
+        commit or rollback -- so a second concurrent transaction blocks
+        here until the first one finishes, and then its own SELECT
+        correctly sees whatever the first one just committed.
+
+        staff_id scoping: no UI sets staff_id yet, so every appointment for
+        a merchant is created with staff_id=NULL today. Two NULL-staff
+        appointments must still be detected as competing for the same
+        capacity -- `staff_id IS NOT DISTINCT FROM :staff_id` treats NULL
+        as an ordinary equal-to-NULL value (unlike `=`, which is never true
+        for NULL), so this naturally degrades to "one shared calendar per
+        merchant" today and becomes real per-staff isolation the moment a
+        booking path starts passing a real staff_id. The advisory lock key
+        is scoped to (merchant_id, date) only, not staff_id -- coarser than
+        it needs to be once multi-staff ships (it'll serialize different
+        staff members' bookings on the same day against each other
+        unnecessarily), but correct, and cheap to narrow later."""
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"appointments:{merchant_id}:{appointment_date.isoformat()}"},
+        )
+
+        # asyncpg's prepared-statement type inference can't resolve a
+        # parameter's type when it only ever appears in an `IS NULL`/`!=`
+        # comparison with no other type context (AmbiguousParameterError)
+        # -- explicit ::uuid/::time casts sidestep that, harmlessly, since
+        # every value here already comes in as the right Python type.
+        stmt = text(
+            """
+            SELECT 1 FROM appointments
+            WHERE merchant_id = :merchant_id
+              AND appointment_date = :appointment_date
+              AND staff_id IS NOT DISTINCT FROM CAST(:staff_id AS uuid)
+              AND status != 'cancelled'
+              AND start_time < CAST(:end_time AS time)
+              AND end_time > CAST(:start_time AS time)
+              AND (
+                CAST(:exclude_id AS uuid) IS NULL
+                OR appointment_id != CAST(:exclude_id AS uuid)
+              )
+            """
+        )
+        result = await self._session.execute(
+            stmt,
+            {
+                "merchant_id": merchant_id,
+                "appointment_date": appointment_date,
+                "staff_id": staff_id,
+                "start_time": start_time,
+                "end_time": end_time,
+                "exclude_id": exclude_appointment_id,
+            },
+        )
+        if result.first() is not None:
+            raise SlotConflictError(
+                f"slot {appointment_date} {start_time}-{end_time} already booked"
+            )
+
     async def create(
         self,
         tenant: TenantContext,
@@ -47,23 +135,45 @@ class AppointmentRepository:
         name: str,
         email: str,
         appointment_date: datetime.date,
-        appointment_time: datetime.time,
+        start_time: datetime.time,
+        end_time: datetime.time,
+        service_id: uuid.UUID | None = None,
+        staff_id: uuid.UUID | None = None,
+        created_via: str = "browser",
         notes: str | None = None,
         whatsapp_conversation_ref: str | None = None,
     ) -> Appointment:
         """Called by appointment_flow.domain.booking.perform_booking (the
-        public booking webview) -- the only entry point that creates
-        Appointment rows. status is set directly to "requested" here
-        rather than routed through the domain state machine, matching
-        OrderRepository.create's convention for the initial write of a
-        state-machine-governed field."""
+        public booking webview and the WhatsApp Flow completion handler) --
+        the only entry point that creates Appointment rows. status is set
+        directly to "requested" here rather than routed through the domain
+        state machine, matching OrderRepository.create's convention for the
+        initial write of a state-machine-governed field.
+
+        Raises SlotConflictError if [start_time, end_time) overlaps an
+        existing booking -- caller must be inside a transaction that will
+        roll back on that exception (FastAPI's session-per-request +
+        session.commit()-on-success pattern already used everywhere else in
+        this codebase satisfies this automatically)."""
+        await self._assert_no_overlap(
+            tenant.merchant_id,
+            appointment_date=appointment_date,
+            start_time=start_time,
+            end_time=end_time,
+            staff_id=staff_id,
+        )
+
         appointment_number = await self._next_appointment_number(tenant.merchant_id)
         appointment = Appointment(
             merchant_id=tenant.merchant_id,
             customer_id=customer_id,
             appointment_number=appointment_number,
             appointment_date=appointment_date,
-            appointment_time=appointment_time,
+            start_time=start_time,
+            end_time=end_time,
+            service_id=service_id,
+            staff_id=staff_id,
+            created_via=created_via,
             notes=notes,
             name=name,
             email=email,
@@ -85,6 +195,40 @@ class AppointmentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_booked_ranges(
+        self,
+        tenant: TenantContext,
+        *,
+        appointment_date: datetime.date,
+        staff_id: uuid.UUID | None = None,
+    ) -> list[tuple[datetime.time, datetime.time]]:
+        """Every non-cancelled [start_time, end_time) range booked for this
+        merchant/date -- used by appointment_flow.domain.availability's
+        get_available_slots() to subtract from the working-hours window.
+        Deliberately not staff-scoped by default (staff_id=None returns
+        every booking regardless of staff_id, since no booking path sets
+        staff_id yet and a merchant-wide calendar means every booking
+        blocks every slot) -- pass staff_id explicitly once per-staff
+        availability is real.
+
+        NOTE: defined before list() below on purpose -- a method literally
+        named `list` in this class shadows the builtin `list` for every
+        annotation textually after it in the class body (class bodies
+        resolve bare names against their own already-populated namespace
+        first), so any later method using a bare `list[...]` return
+        annotation would break at class-definition time. Keep any new
+        method with a `list[...]`/`tuple[...]` annotation above the `list`
+        method, not below it."""
+        stmt = select(Appointment.start_time, Appointment.end_time).where(
+            Appointment.merchant_id == tenant.merchant_id,
+            Appointment.appointment_date == appointment_date,
+            Appointment.status != "cancelled",
+        )
+        if staff_id is not None:
+            stmt = stmt.where(Appointment.staff_id == staff_id)
+        result = await self._session.execute(stmt)
+        return [(row.start_time, row.end_time) for row in result.all()]
+
     async def list(
         self,
         tenant: TenantContext,
@@ -100,7 +244,7 @@ class AppointmentRepository:
             select(Appointment)
             .where(Appointment.merchant_id == tenant.merchant_id)
             .options(selectinload(Appointment.customer))
-            .order_by(Appointment.appointment_date.asc(), Appointment.appointment_time.asc())
+            .order_by(Appointment.appointment_date.asc(), Appointment.start_time.asc())
         )
         if status is not None:
             stmt = stmt.where(Appointment.status == status)
@@ -141,5 +285,40 @@ class AppointmentRepository:
         if notes is not None:
             appointment.notes = notes
 
+        await self._session.flush()
+        return appointment
+
+    async def reschedule(
+        self,
+        tenant: TenantContext,
+        appointment_id: uuid.UUID,
+        *,
+        appointment_date: datetime.date,
+        start_time: datetime.time,
+        end_time: datetime.time,
+    ) -> Appointment | None:
+        """Dashboard-initiated date/time change. Deliberately NOT a
+        appointments.domain.state_machine transition -- rescheduling
+        doesn't change `status`, it's a plain field mutation, same
+        rationale as update_notes above, just with the same
+        overlap-safety guarantee create() gives a fresh booking (excluding
+        this appointment's own current row from the conflict check, so it
+        doesn't collide with itself)."""
+        appointment = await self.get(tenant, appointment_id)
+        if appointment is None:
+            return None
+
+        await self._assert_no_overlap(
+            tenant.merchant_id,
+            appointment_date=appointment_date,
+            start_time=start_time,
+            end_time=end_time,
+            staff_id=appointment.staff_id,
+            exclude_appointment_id=appointment_id,
+        )
+
+        appointment.appointment_date = appointment_date
+        appointment.start_time = start_time
+        appointment.end_time = end_time
         await self._session.flush()
         return appointment

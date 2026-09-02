@@ -164,7 +164,9 @@ async def perform_checkout(
     credentials = await MerchantPaymentCredentialsRepository(session).get(tenant)
     key_id, key_secret = resolve_credentials(credentials, tenant.merchant_id)
     gateway = get_payment_gateway(key_id, key_secret)
-    link = gateway.create_link(order_id=order.order_id, amount=order.total, currency=order.currency)
+    link = gateway.create_link(
+        entity_id=order.order_id, amount=order.total, currency=order.currency
+    )
 
     is_real = key_id is not None and key_id.startswith(REAL_KEY_PREFIXES)
     await payment_event_repo.create(

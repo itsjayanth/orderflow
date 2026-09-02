@@ -85,6 +85,17 @@ class WhatsAppSender(Protocol):
         url: str,
     ) -> bool: ...
 
+    async def send_template_message(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        template_name: str,
+        language_code: str,
+        body_params: list[str],
+    ) -> bool: ...
+
 
 class GraphApiWhatsAppSender:
     """Real WhatsApp Cloud API client. Every call is best-effort: a failed
@@ -242,6 +253,43 @@ class GraphApiWhatsAppSender:
                         "name": "cta_url",
                         "parameters": {"display_text": display_text, "url": url},
                     },
+                },
+            },
+        )
+
+    async def send_template_message(
+        self,
+        *,
+        phone_number_id: str,
+        access_token: str,
+        to: str,
+        template_name: str,
+        language_code: str,
+        body_params: list[str],
+    ) -> bool:
+        """Meta-approved `type: template` send -- unlike send_cta_url_button
+        above, this genuinely needs pre-approval, because callers use it
+        for messages sent well outside the customer's 24h session window
+        (currently only shared/scheduler.py's appointment reminders).
+        body_params fill the template's `{{1}}`, `{{2}}`, ... positional
+        variables in order -- Meta has no named-variable concept, just
+        position."""
+        return await self._post(
+            phone_number_id,
+            access_token,
+            {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "template",
+                "template": {
+                    "name": template_name,
+                    "language": {"code": language_code},
+                    "components": [
+                        {
+                            "type": "body",
+                            "parameters": [{"type": "text", "text": p} for p in body_params],
+                        }
+                    ],
                 },
             },
         )

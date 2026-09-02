@@ -21,12 +21,12 @@ class RazorpayGateway:
         self._key_id = key_id
         self._key_secret = key_secret
 
-    def create_link(self, *, order_id: uuid.UUID, amount: Decimal, currency: str) -> PaymentLink:
+    def create_link(self, *, entity_id: uuid.UUID, amount: Decimal, currency: str) -> PaymentLink:
         payload = {
             "amount": int(amount * 100),  # paise
             "currency": currency,
-            "reference_id": str(order_id),
-            "notes": {"order_id": str(order_id)},
+            "reference_id": str(entity_id),
+            "notes": {"entity_id": str(entity_id)},
         }
 
         # UPI Payment Links skip Razorpay's full checkout page (card/netbanking/

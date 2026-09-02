@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Info } from 'lucide-react'
-import { useState } from 'react'
+import { Info, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
@@ -13,12 +13,22 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButton'
-import type { NotificationTemplateOut } from '@/shared/api/types'
+import type { AppointmentServiceSettingsOut, NotificationTemplateOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { AppointmentFlowSetupCard } from './AppointmentFlowSetupCard'
 import { TestWhatsAppMessageCard } from './TestWhatsAppMessageCard'
+import {
+  useAppointmentAvailability,
+  useUpdateAppointmentAvailability,
+} from './useAppointmentAvailability'
+import {
+  useAppointmentServices,
+  useCreateAppointmentService,
+  useDeleteAppointmentService,
+  useUpdateAppointmentService,
+} from './useAppointmentServices'
 import { useAppointmentSettings, useUpdateAppointmentSettings } from './useAppointmentSettings'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
@@ -212,6 +222,314 @@ function AppointmentBookingSettingsSection() {
   )
 }
 
+const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+interface DayRow {
+  enabled: boolean
+  start_time: string
+  end_time: string
+  slot_duration_minutes: number
+  buffer_minutes: number
+}
+
+function defaultDayRow(): DayRow {
+  return {
+    enabled: false,
+    start_time: '09:00',
+    end_time: '17:00',
+    slot_duration_minutes: 30,
+    buffer_minutes: 0,
+  }
+}
+
+// react-hook-form-free on purpose: 7 independent rows toggled in and out
+// of the submitted payload is simpler as plain local state than a form
+// array, and nothing here needs field-level validation beyond the native
+// <input type="time"> constraint.
+function AppointmentAvailabilitySettingsSection() {
+  const { data, isLoading } = useAppointmentAvailability()
+  const update = useUpdateAppointmentAvailability()
+  const [timezone, setTimezone] = useState('Asia/Kolkata')
+  const [days, setDays] = useState<DayRow[]>(() => Array.from({ length: 7 }, defaultDayRow))
+  const [justSaved, setJustSaved] = useState(false)
+
+  useEffect(() => {
+    if (!data) return
+    setTimezone(data.timezone)
+    setDays((prev) =>
+      prev.map((_row, dayOfWeek) => {
+        const window = data.windows.find((w) => w.day_of_week === dayOfWeek)
+        if (!window) return { ...defaultDayRow() }
+        return {
+          enabled: true,
+          start_time: window.start_time.slice(0, 5),
+          end_time: window.end_time.slice(0, 5),
+          slot_duration_minutes: window.slot_duration_minutes,
+          buffer_minutes: window.buffer_minutes,
+        }
+      }),
+    )
+  }, [data])
+
+  function updateDay(index: number, patch: Partial<DayRow>) {
+    setDays((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  function onSave() {
+    update.mutate(
+      {
+        timezone,
+        windows: days
+          .map((row, day_of_week) => ({ row, day_of_week }))
+          .filter(({ row }) => row.enabled)
+          .map(({ row, day_of_week }) => ({
+            day_of_week,
+            start_time: `${row.start_time}:00`,
+            end_time: `${row.end_time}:00`,
+            slot_duration_minutes: row.slot_duration_minutes,
+            buffer_minutes: row.buffer_minutes,
+          })),
+      },
+      {
+        onSuccess: () => {
+          setJustSaved(true)
+          setTimeout(() => setJustSaved(false), 4000)
+        },
+      },
+    )
+  }
+
+  return (
+    <Card className="space-y-4 p-6">
+      <div>
+        <h2 className="text-lg font-medium">Appointment availability</h2>
+        <p className="text-muted-foreground text-sm">
+          Working hours the booking page and WhatsApp Flow offer slots from. A day left off (toggle
+          disabled) shows no slots at all -- customers can't book a time you haven't opened up.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <p className="text-muted-foreground text-sm">Loading…</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="max-w-xs space-y-2">
+            <Label htmlFor="appointment_timezone">Timezone (IANA name)</Label>
+            <Input
+              id="appointment_timezone"
+              placeholder="Asia/Kolkata"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            {days.map((row, index) => (
+              // Fixed 7-day week -- DAY_LABELS[index] is a stable, unique key.
+              <div
+                key={DAY_LABELS[index]}
+                className="flex flex-wrap items-center gap-3 border-t pt-3 first:border-t-0 first:pt-0"
+              >
+                <div className="flex w-32 items-center gap-2">
+                  <Switch
+                    id={`day_${index}_enabled`}
+                    checked={row.enabled}
+                    onCheckedChange={(checked) => updateDay(index, { enabled: checked })}
+                  />
+                  <Label htmlFor={`day_${index}_enabled`} className="text-sm">
+                    {DAY_LABELS[index]}
+                  </Label>
+                </div>
+                {row.enabled && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="time"
+                      aria-label={`${DAY_LABELS[index]} start time`}
+                      value={row.start_time}
+                      onChange={(e) => updateDay(index, { start_time: e.target.value })}
+                      className="h-8 w-28"
+                    />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input
+                      type="time"
+                      aria-label={`${DAY_LABELS[index]} end time`}
+                      value={row.end_time}
+                      onChange={(e) => updateDay(index, { end_time: e.target.value })}
+                      className="h-8 w-28"
+                    />
+                    <Input
+                      type="number"
+                      min={5}
+                      aria-label={`${DAY_LABELS[index]} slot duration minutes`}
+                      value={row.slot_duration_minutes}
+                      onChange={(e) =>
+                        updateDay(index, { slot_duration_minutes: Number(e.target.value) || 5 })
+                      }
+                      className="h-8 w-24"
+                    />
+                    <span className="text-muted-foreground text-sm">min slots</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      aria-label={`${DAY_LABELS[index]} buffer minutes`}
+                      value={row.buffer_minutes}
+                      onChange={(e) =>
+                        updateDay(index, { buffer_minutes: Number(e.target.value) || 0 })
+                      }
+                      className="h-8 w-24"
+                    />
+                    <span className="text-muted-foreground text-sm">min buffer</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {update.isError && (
+            <p className="text-destructive text-sm">Failed to save. Please try again.</p>
+          )}
+          <div className="flex items-center gap-3">
+            <Button type="button" onClick={onSave} disabled={update.isPending}>
+              {update.isPending ? 'Saving…' : 'Save availability'}
+            </Button>
+            {justSaved && !update.isPending && <SavedIndicator message="Saved" />}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function ServiceRow({ service }: { service: AppointmentServiceSettingsOut }) {
+  const update = useUpdateAppointmentService()
+  const remove = useDeleteAppointmentService()
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t py-3 first:border-t-0">
+      <div>
+        <p className="text-sm font-medium">{service.name}</p>
+        <p className="text-muted-foreground text-xs">
+          {service.duration_minutes} min{service.price ? ` · ${service.price}` : ''}
+        </p>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Switch
+            id={`service_${service.service_id}_active`}
+            checked={service.is_active}
+            onCheckedChange={(checked) =>
+              update.mutate({ serviceId: service.service_id, is_active: checked })
+            }
+          />
+          <Label htmlFor={`service_${service.service_id}_active`} className="text-xs">
+            Active
+          </Label>
+        </div>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          aria-label={`Delete ${service.name}`}
+          disabled={remove.isPending}
+          onClick={() => remove.mutate(service.service_id)}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+const newServiceSchema = z.object({
+  name: z.string().trim().min(1, 'Required'),
+  duration_minutes: z.number().int().positive('Must be greater than 0'),
+  price: z.string().trim().optional(),
+})
+type NewServiceForm = z.infer<typeof newServiceSchema>
+
+function AppointmentServicesSettingsSection() {
+  const { data: services, isLoading } = useAppointmentServices()
+  const create = useCreateAppointmentService()
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<NewServiceForm>({ resolver: zodResolver(newServiceSchema) })
+
+  const onSubmit = (values: NewServiceForm) => {
+    create.mutate(
+      {
+        name: values.name,
+        duration_minutes: values.duration_minutes,
+        price: values.price || null,
+      },
+      { onSuccess: () => reset() },
+    )
+  }
+
+  return (
+    <Card className="space-y-4 p-6">
+      <div>
+        <h2 className="text-lg font-medium">Service types</h2>
+        <p className="text-muted-foreground text-sm">
+          Optional -- shown as a "what are you booking?" step before the customer picks a time.
+          Leave this empty to skip that step entirely and use the default slot duration above.
+        </p>
+      </div>
+
+      {isLoading && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {services && services.length > 0 && (
+        <div>
+          {services.map((service) => (
+            <ServiceRow key={service.service_id} service={service} />
+          ))}
+        </div>
+      )}
+
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="flex flex-wrap items-end gap-3 border-t pt-4"
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="new_service_name">Name</Label>
+          <Input id="new_service_name" placeholder="Haircut" {...register('name')} />
+          {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="new_service_duration">Duration (min)</Label>
+          <Input
+            id="new_service_duration"
+            type="number"
+            min={5}
+            className="w-28"
+            {...register('duration_minutes', { valueAsNumber: true })}
+          />
+          {errors.duration_minutes && (
+            <p className="text-destructive text-sm">{errors.duration_minutes.message}</p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="new_service_price">Price (optional)</Label>
+          <Input
+            id="new_service_price"
+            placeholder="500.00"
+            className="w-28"
+            {...register('price')}
+          />
+        </div>
+        {create.isError && (
+          <p className="text-destructive text-sm">Failed to add. Please try again.</p>
+        )}
+        <Button type="submit" size="sm" disabled={create.isPending}>
+          <Plus className="size-4" />
+          {create.isPending ? 'Adding…' : 'Add service'}
+        </Button>
+      </form>
+    </Card>
+  )
+}
+
 const templateSchema = z.object({
   template_name: z.string().min(1, 'Required'),
   language_code: z.string().min(1, 'Required'),
@@ -381,6 +699,8 @@ export function SettingsPage() {
       <PaymentSettingsSection />
       <WhatsAppSettingsSection />
       <AppointmentBookingSettingsSection />
+      <AppointmentAvailabilitySettingsSection />
+      <AppointmentServicesSettingsSection />
       <TemplatesSettingsSection />
     </div>
   )

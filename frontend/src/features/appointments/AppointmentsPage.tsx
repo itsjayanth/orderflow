@@ -21,6 +21,8 @@ import { PageHeader } from '@/shared/components/PageHeader'
 import { formatAppointmentNumber } from '@/shared/lib/appointmentNumber'
 import { formatCustomerNumber } from '@/shared/lib/customerNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
+import { AppointmentCalendarView, defaultWeekRange } from './AppointmentCalendarView'
+import { AppointmentQuickStats } from './AppointmentQuickStats'
 import { StatusActionsMenu } from './StatusActionsMenu'
 import { STATUS_LABELS } from './statusTransitions'
 import { useAppointments } from './useAppointments'
@@ -32,6 +34,8 @@ const TABS: (AppointmentStatus | 'all')[] = [
   'completed',
   'cancelled',
 ]
+
+type ViewMode = 'list' | 'calendar'
 
 const COLUMN_COUNT = 7
 const SKELETON_ROW_COUNT = 5
@@ -80,10 +84,21 @@ export function AppointmentsPage() {
   const [tab, setTab] = useState<AppointmentStatus | 'all'>(
     isAppointmentStatus(statusParam) ? statusParam : 'all',
   )
+  const viewParam = searchParams.get('view')
+  const [viewMode, setViewMode] = useState<ViewMode>(viewParam === 'calendar' ? 'calendar' : 'list')
+  // The calendar view pages by week/day/month on its own (onRangeChange) --
+  // a separate range from the list view's DateRangeFilter, which the
+  // calendar doesn't use at all while active.
+  const [calendarRange, setCalendarRange] = useState(defaultWeekRange)
+
   const from_date = searchParams.get('from_date') ?? undefined
   const to_date = searchParams.get('to_date') ?? undefined
-  const range: DateRangeValue = { from_date, to_date }
-  const { data: appointments, isLoading } = useAppointments(range)
+  const listRange: DateRangeValue = { from_date, to_date }
+  const activeRange = viewMode === 'calendar' ? calendarRange : listRange
+  // Fetched unfiltered-by-status (same as before the calendar view existed)
+  // and filtered client-side below -- both the tab counts and the visible
+  // rows/events come from this one query.
+  const { data: appointments, isLoading } = useAppointments(activeRange)
 
   function selectTab(next: AppointmentStatus | 'all') {
     setTab(next)
@@ -102,6 +117,14 @@ export function AppointmentsPage() {
     setSearchParams(params)
   }
 
+  function selectViewMode(next: ViewMode) {
+    setViewMode(next)
+    const params = new URLSearchParams(searchParams)
+    if (next === 'list') params.delete('view')
+    else params.set('view', next)
+    setSearchParams(params)
+  }
+
   const counts = countByStatus(appointments)
   const visibleAppointments = appointments?.filter(
     (appointment) => tab === 'all' || appointment.status === tab,
@@ -112,7 +135,17 @@ export function AppointmentsPage() {
       <PageHeader
         title="Appointments"
         description="Requested time slots from WhatsApp -- confirm, complete, or cancel right here."
-        actions={<DateRangeFilter value={range} onChange={selectRange} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {viewMode === 'list' && <DateRangeFilter value={listRange} onChange={selectRange} />}
+            <Tabs value={viewMode} onValueChange={(value) => selectViewMode(value as ViewMode)}>
+              <TabsList>
+                <TabsTrigger value="list">List</TabsTrigger>
+                <TabsTrigger value="calendar">Calendar</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        }
       />
 
       <Tabs value={tab} onValueChange={(value) => selectTab(value as AppointmentStatus | 'all')}>
@@ -133,111 +166,123 @@ export function AppointmentsPage() {
         </TabsList>
       </Tabs>
 
-      <Card className="overflow-hidden py-0">
-        <div className="max-h-[32rem] overflow-auto [&>div]:overflow-visible">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                  Appointment
-                </TableHead>
-                <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                  Customer
-                </TableHead>
-                <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                  Date
-                </TableHead>
-                <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                  Time
-                </TableHead>
-                <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                  Name
-                </TableHead>
-                <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                  Email
-                </TableHead>
-                <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                  Status
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading &&
-                Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable identity
-                  <TableRow key={`appointments-skeleton-${i}`} className="hover:bg-transparent">
-                    <TableCell className="py-2.5">
-                      <Skeleton className="h-4 w-14" />
+      {viewMode === 'calendar' && (
+        <>
+          <AppointmentQuickStats appointments={appointments ?? []} />
+          <AppointmentCalendarView
+            appointments={visibleAppointments ?? []}
+            onRangeChange={setCalendarRange}
+          />
+        </>
+      )}
+
+      {viewMode === 'list' && (
+        <Card className="overflow-hidden py-0">
+          <div className="max-h-[32rem] overflow-auto [&>div]:overflow-visible">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                    Appointment
+                  </TableHead>
+                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                    Customer
+                  </TableHead>
+                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                    Date
+                  </TableHead>
+                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                    Time
+                  </TableHead>
+                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                    Name
+                  </TableHead>
+                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                    Email
+                  </TableHead>
+                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                    Status
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading &&
+                  Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable identity
+                    <TableRow key={`appointments-skeleton-${i}`} className="hover:bg-transparent">
+                      <TableCell className="py-2.5">
+                        <Skeleton className="h-4 w-14" />
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <Skeleton className="h-4 w-32" />
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <Skeleton className="h-4 w-16" />
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <Skeleton className="h-4 w-32" />
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <Skeleton className="h-5 w-20 rounded-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                {!isLoading && visibleAppointments?.length === 0 && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={COLUMN_COUNT}>
+                      <EmptyState
+                        icon={CalendarDays}
+                        title={
+                          tab === 'all'
+                            ? 'No appointments yet.'
+                            : `No ${STATUS_LABELS[tab].toLowerCase()} appointments.`
+                        }
+                      />
                     </TableCell>
-                    <TableCell className="py-2.5">
-                      <Skeleton className="h-4 w-32" />
+                  </TableRow>
+                )}
+                {visibleAppointments?.map((appointment) => (
+                  <TableRow
+                    key={appointment.appointment_id}
+                    onClick={() => navigate(`/appointments/${appointment.appointment_id}`)}
+                    className="cursor-pointer"
+                  >
+                    <TableCell className="text-primary py-2.5 font-medium">
+                      {formatAppointmentNumber(appointment.appointment_number)}
                     </TableCell>
-                    <TableCell className="py-2.5">
-                      <Skeleton className="h-4 w-24" />
+                    <TableCell className="py-2.5 font-medium">
+                      {appointment.customer_name ??
+                        formatPhoneNumber(appointment.customer_whatsapp_number)}{' '}
+                      <span className="text-muted-foreground font-normal">
+                        ({formatCustomerNumber(appointment.customer_number)})
+                      </span>
                     </TableCell>
-                    <TableCell className="py-2.5">
-                      <Skeleton className="h-4 w-16" />
+                    <TableCell className="text-muted-foreground py-2.5">
+                      {formatDate(appointment.appointment_date)}
                     </TableCell>
-                    <TableCell className="py-2.5">
-                      <Skeleton className="h-4 w-24" />
+                    <TableCell className="text-muted-foreground py-2.5">
+                      {formatTime(appointment.start_time)}
                     </TableCell>
-                    <TableCell className="py-2.5">
-                      <Skeleton className="h-4 w-32" />
+                    <TableCell className="py-2.5">{appointment.name}</TableCell>
+                    <TableCell className="text-muted-foreground py-2.5">
+                      {appointment.email}
                     </TableCell>
-                    <TableCell className="py-2.5">
-                      <Skeleton className="h-5 w-20 rounded-full" />
+                    <TableCell className="py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <StatusActionsMenu appointment={appointment} />
                     </TableCell>
                   </TableRow>
                 ))}
-              {!isLoading && visibleAppointments?.length === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={COLUMN_COUNT}>
-                    <EmptyState
-                      icon={CalendarDays}
-                      title={
-                        tab === 'all'
-                          ? 'No appointments yet.'
-                          : `No ${STATUS_LABELS[tab].toLowerCase()} appointments.`
-                      }
-                    />
-                  </TableCell>
-                </TableRow>
-              )}
-              {visibleAppointments?.map((appointment) => (
-                <TableRow
-                  key={appointment.appointment_id}
-                  onClick={() => navigate(`/appointments/${appointment.appointment_id}`)}
-                  className="cursor-pointer"
-                >
-                  <TableCell className="text-primary py-2.5 font-medium">
-                    {formatAppointmentNumber(appointment.appointment_number)}
-                  </TableCell>
-                  <TableCell className="py-2.5 font-medium">
-                    {appointment.customer_name ??
-                      formatPhoneNumber(appointment.customer_whatsapp_number)}{' '}
-                    <span className="text-muted-foreground font-normal">
-                      ({formatCustomerNumber(appointment.customer_number)})
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground py-2.5">
-                    {formatDate(appointment.appointment_date)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground py-2.5">
-                    {formatTime(appointment.appointment_time)}
-                  </TableCell>
-                  <TableCell className="py-2.5">{appointment.name}</TableCell>
-                  <TableCell className="text-muted-foreground py-2.5">
-                    {appointment.email}
-                  </TableCell>
-                  <TableCell className="py-2.5" onClick={(e) => e.stopPropagation()}>
-                    <StatusActionsMenu appointment={appointment} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </Card>
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }
