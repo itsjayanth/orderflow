@@ -11,8 +11,8 @@ from flows.domain.setup import (
     update_appointment_flow_assets,
     update_flow_assets,
 )
-from identity.adapters.repository import MerchantRepository
-from identity.domain.models import Merchant
+from identity.adapters.repository import MerchantRepository, VerticalAlreadySetError
+from identity.domain.models import Merchant, MerchantVertical
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.api.schemas import (
     BusinessProfileOut,
@@ -20,6 +20,8 @@ from onboarding.api.schemas import (
     EmbeddedSignupRequest,
     EmbeddedSignupResult,
     OnboardingStatusOut,
+    VerticalSelectionOut,
+    VerticalSelectionRequest,
     WhatsAppFlowSetupRequest,
     WhatsAppFlowSetupResult,
     WhatsAppSettingsOut,
@@ -35,6 +37,7 @@ from onboarding.domain.embedded_signup import (
 from onboarding.domain.models import WhatsAppBusinessAccount
 from onboarding.domain.onboarding_service import (
     advance_after_profile_completed,
+    advance_after_vertical_selected,
     advance_after_whatsapp_connected,
     get_checklist,
 )
@@ -71,6 +74,35 @@ def _profile_to_out(merchant: Merchant) -> BusinessProfileOut:
         business_category=merchant.business_category,
         license_no=merchant.license_no,
     )
+
+
+@router.put("/vertical", response_model=VerticalSelectionOut)
+async def select_vertical(
+    body: VerticalSelectionRequest, tenant: CurrentTenant, session: DbSession
+) -> VerticalSelectionOut:
+    """The new first wizard step (MULTI_VERTICAL_PLAN.md Phase M1/M2) --
+    one-time, immutable: a merchant that already has a vertical gets a 409,
+    never a silent overwrite (see identity/adapters/repository.py's
+    VerticalAlreadySetError, and the explicit-out-of-scope "no admin
+    ability to switch a merchant's vertical after onboarding")."""
+    try:
+        vertical = MerchantVertical(body.vertical)
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Invalid vertical {body.vertical!r} -- must be one of "
+            f"{[v.value for v in MerchantVertical]}",
+        ) from exc
+
+    try:
+        merchant = await MerchantRepository(session).set_vertical(tenant.merchant_id, vertical)
+    except VerticalAlreadySetError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Vertical already set") from exc
+
+    await advance_after_vertical_selected(session, tenant)
+    await session.commit()
+    assert merchant.vertical is not None
+    return VerticalSelectionOut(vertical=merchant.vertical)
 
 
 @router.get("/whatsapp", response_model=WhatsAppSettingsOut)
@@ -314,7 +346,9 @@ async def get_onboarding_status(tenant: CurrentTenant, session: DbSession) -> On
     await session.commit()
     return OnboardingStatusOut(
         onboarding_status=checklist.onboarding_status,
+        vertical=checklist.vertical,
         whatsapp_connected=checklist.whatsapp_connected,
         profile_completed=checklist.profile_completed,
         has_available_item=checklist.has_available_item,
+        has_available_service=checklist.has_available_service,
     )

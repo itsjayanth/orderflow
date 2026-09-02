@@ -3,7 +3,14 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from identity.domain.models import Merchant, StaffUser
+from identity.domain.models import Merchant, MerchantVertical, StaffUser
+
+
+class VerticalAlreadySetError(Exception):
+    """Raised by set_vertical when a merchant's vertical was already chosen
+    -- MULTI_VERTICAL_PLAN.md's explicit-out-of-scope item: no admin ability
+    to switch a merchant's vertical after onboarding, enforced here rather
+    than left as merely absent from the UI."""
 
 
 class MerchantRepository:
@@ -18,6 +25,15 @@ class MerchantRepository:
 
     async def get(self, merchant_id: uuid.UUID) -> Merchant | None:
         return await self._session.get(Merchant, merchant_id)
+
+    async def set_vertical(self, merchant_id: uuid.UUID, vertical: MerchantVertical) -> Merchant:
+        merchant = await self._session.get(Merchant, merchant_id)
+        assert merchant is not None
+        if merchant.vertical is not None:
+            raise VerticalAlreadySetError(str(merchant_id))
+        merchant.vertical = vertical.value
+        await self._session.flush()
+        return merchant
 
     async def update_appointment_booking_enabled(
         self, merchant_id: uuid.UUID, enabled: bool

@@ -10,11 +10,12 @@ from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
 from conversation.domain.webhook_parser import InboundMessage
-from identity.adapters.repository import MerchantRepository
-from identity.domain.models import ONBOARDING_STATUSES, Merchant
+from identity.adapters.repository import MerchantRepository, VerticalAlreadySetError
+from identity.domain.models import ONBOARDING_STATUSES, Merchant, MerchantVertical
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.domain.onboarding_service import (
     advance_after_profile_completed,
+    advance_after_vertical_selected,
     advance_after_whatsapp_connected,
     try_advance_for_catalog_ready,
 )
@@ -83,6 +84,16 @@ async def _make_tenant(db_session: AsyncSession) -> TenantContext:
     return TenantContext(merchant_id=merchant.merchant_id)
 
 
+async def _select_vertical(
+    db_session: AsyncSession, tenant: TenantContext, vertical: MerchantVertical
+) -> None:
+    """The new first wizard step (MULTI_VERTICAL_PLAN.md Phase M1) -- must
+    happen before WhatsApp connection, same as production onboarding."""
+    await MerchantRepository(db_session).set_vertical(tenant.merchant_id, vertical)
+    await advance_after_vertical_selected(db_session, tenant)
+    await db_session.commit()
+
+
 async def test_new_merchant_starts_registered(db_session: AsyncSession) -> None:
     tenant = await _make_tenant(db_session)
 
@@ -94,6 +105,7 @@ async def test_new_merchant_starts_registered(db_session: AsyncSession) -> None:
 
 async def test_connecting_whatsapp_advances_to_whatsapp_verified(db_session: AsyncSession) -> None:
     tenant = await _make_tenant(db_session)
+    await _select_vertical(db_session, tenant, MerchantVertical.RESTAURANT)
     await WhatsAppBusinessAccountRepository(db_session).upsert(
         tenant, phone_number_id="PNID1", access_token_encrypted=encrypt("dummy-token")
     )
@@ -107,6 +119,7 @@ async def test_reconnecting_whatsapp_does_not_move_status_backwards(
     db_session: AsyncSession,
 ) -> None:
     tenant = await _make_tenant(db_session)
+    await _select_vertical(db_session, tenant, MerchantVertical.RESTAURANT)
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
@@ -121,6 +134,7 @@ async def test_reconnecting_whatsapp_does_not_move_status_backwards(
 
 async def test_catalog_ready_and_live_cascade_once_gate_is_met(db_session: AsyncSession) -> None:
     tenant = await _make_tenant(db_session)
+    await _select_vertical(db_session, tenant, MerchantVertical.RESTAURANT)
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
@@ -141,6 +155,7 @@ async def test_catalog_ready_and_live_cascade_once_gate_is_met(db_session: Async
 
 async def test_catalog_ready_gate_ignores_unavailable_items(db_session: AsyncSession) -> None:
     tenant = await _make_tenant(db_session)
+    await _select_vertical(db_session, tenant, MerchantVertical.RESTAURANT)
     await advance_after_whatsapp_connected(db_session, tenant)
     merchant = await MerchantRepository(db_session).get(tenant.merchant_id)
     assert merchant is not None
@@ -186,13 +201,67 @@ async def test_onboarding_status_endpoint_reflects_progress(client: AsyncClient)
     assert response.status_code == 200
     body = response.json()
     assert body["onboarding_status"] == "registered"
+    assert body["vertical"] is None
     assert body["whatsapp_connected"] is False
     assert body["profile_completed"] is False
     assert body["has_available_item"] is False
+    assert body["has_available_service"] is False
+
+
+async def _select_vertical_api(client: AsyncClient, tokens: dict, vertical: str = "restaurant") -> None:
+    response = await client.put(
+        "/api/v1/onboarding/vertical",
+        json={"vertical": vertical},
+        headers=_auth_headers(tokens),
+    )
+    assert response.status_code == 200, response.text
+
+
+async def test_select_vertical_endpoint_advances_status(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    response = await client.put(
+        "/api/v1/onboarding/vertical",
+        json={"vertical": "appointment"},
+        headers=_auth_headers(tokens),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["vertical"] == "appointment"
+
+    status_response = await client.get("/api/v1/onboarding/status", headers=_auth_headers(tokens))
+    assert status_response.json()["onboarding_status"] == "vertical_selected"
+    assert status_response.json()["vertical"] == "appointment"
+
+
+async def test_select_vertical_endpoint_is_immutable(client: AsyncClient) -> None:
+    tokens = await _register(client)
+    await _select_vertical_api(client, tokens, "restaurant")
+
+    response = await client.put(
+        "/api/v1/onboarding/vertical",
+        json={"vertical": "appointment"},
+        headers=_auth_headers(tokens),
+    )
+    assert response.status_code == 409
+
+    status_response = await client.get("/api/v1/onboarding/status", headers=_auth_headers(tokens))
+    assert status_response.json()["vertical"] == "restaurant"
+
+
+async def test_select_vertical_endpoint_rejects_unknown_value(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    response = await client.put(
+        "/api/v1/onboarding/vertical",
+        json={"vertical": "retail"},
+        headers=_auth_headers(tokens),
+    )
+    assert response.status_code == 422
 
 
 async def test_connect_whatsapp_endpoint_advances_status(client: AsyncClient) -> None:
     tokens = await _register(client)
+    await _select_vertical_api(client, tokens)
 
     await client.put(
         "/api/v1/onboarding/whatsapp",
@@ -206,6 +275,7 @@ async def test_connect_whatsapp_endpoint_advances_status(client: AsyncClient) ->
 
 async def test_save_profile_endpoint_advances_status(client: AsyncClient) -> None:
     tokens = await _register(client)
+    await _select_vertical_api(client, tokens)
     await client.put(
         "/api/v1/onboarding/whatsapp",
         json={"phone_number_id": "1234567890", "access_token": "dummy-meta-access-token"},
@@ -233,6 +303,7 @@ async def test_save_profile_endpoint_advances_status(client: AsyncClient) -> Non
 async def test_full_wizard_reaches_live(client: AsyncClient) -> None:
     tokens = await _register(client)
     headers = _auth_headers(tokens)
+    await _select_vertical_api(client, tokens, "restaurant")
 
     await client.put(
         "/api/v1/onboarding/whatsapp",
@@ -260,6 +331,37 @@ async def test_full_wizard_reaches_live(client: AsyncClient) -> None:
 
     assert response.json()["onboarding_status"] == "live"
     assert response.json()["has_available_item"] is True
+
+
+async def test_appointment_vertical_reaches_live_without_a_service(client: AsyncClient) -> None:
+    """MULTI_VERTICAL_PLAN.md Decision 5: AppointmentService rows are
+    optional, so the appointment vertical cascades profile_completed ->
+    live directly, unlike the restaurant vertical's item gate above."""
+    tokens = await _register(client)
+    headers = _auth_headers(tokens)
+    await _select_vertical_api(client, tokens, "appointment")
+
+    await client.put(
+        "/api/v1/onboarding/whatsapp",
+        json={"phone_number_id": "1234567890", "access_token": "dummy-meta-access-token"},
+        headers=headers,
+    )
+    await client.put(
+        "/api/v1/onboarding/profile",
+        json={
+            "address_line1": "1 MG Road",
+            "city": "Bangalore",
+            "pincode": "560001",
+            "business_category": "Salon",
+        },
+        headers=headers,
+    )
+
+    response = await client.get("/api/v1/onboarding/status", headers=headers)
+
+    assert response.json()["onboarding_status"] == "live"
+    assert response.json()["has_available_item"] is False
+    assert response.json()["has_available_service"] is False
 
 
 # --- conversation handler guard ---------------------------------------------

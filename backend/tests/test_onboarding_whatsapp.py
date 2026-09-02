@@ -51,7 +51,16 @@ async def _register(client: AsyncClient, owner_contact: str = "owner@example.com
         },
     )
     assert response.status_code == 201, response.text
-    return response.json()
+    tokens = response.json()
+    # New first wizard step (MULTI_VERTICAL_PLAN.md Phase M1) -- must
+    # happen before WhatsApp connection, same as production onboarding.
+    vertical_response = await client.put(
+        "/api/v1/onboarding/vertical",
+        json={"vertical": "restaurant"},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert vertical_response.status_code == 200, vertical_response.text
+    return tokens
 
 
 def _auth_headers(tokens: dict) -> dict:
