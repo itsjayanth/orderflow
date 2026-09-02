@@ -197,10 +197,15 @@ describe('OrderingPage', () => {
       'href',
       checkoutResponse.payment_link_url,
     )
-    expect(screen.getByRole('link', { name: 'Return to WhatsApp chat' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Tap here to return to WhatsApp' })).toHaveAttribute(
       'href',
-      'https://wa.me/919000000000',
+      'https://wa.me/919000000000?text=Thanks!',
     )
+    // This order still owes payment, so the confirmation must sit still
+    // rather than pulling the customer off the payment link above --
+    // and its WhatsApp confirmation only goes out once Razorpay's
+    // webhook lands, so there is nothing in the chat yet either.
+    expect(screen.queryByText(/redirecting you back to whatsapp/i)).not.toBeInTheDocument()
   })
 
   it('shows a validation error when the name is left blank', async () => {

@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/shared/api/client'
 import type { AppointmentFlowSlotOut } from '@/shared/api/types'
+import { WhatsAppReturn } from '@/shared/components/WhatsAppReturn'
 import { formatAppointmentNumber } from '@/shared/lib/appointmentNumber'
 
 import { useAppointmentBooking } from './useAppointmentBooking'
@@ -262,6 +263,20 @@ export function BookingPage() {
               </span>
             </div>
           </div>
+
+          {/* Unlike an online-payment order, a booking is fully recorded
+              and its "request received" WhatsApp message already sent by
+              the time this renders, so there is nothing left to do here
+              and the return can be automatic. */}
+          <WhatsAppReturn
+            phoneNumber={info.merchant_whatsapp_number}
+            flow="appointment"
+            text="Thanks!"
+            analyticsProps={{
+              appointment_number: booking.data.appointment_number,
+              status: booking.data.status,
+            }}
+          />
         </Card>
       </div>
     )

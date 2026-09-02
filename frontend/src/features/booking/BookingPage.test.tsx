@@ -28,6 +28,9 @@ const bookPath = `/api/v1/appointment-flow/${merchantId}/book`
 
 const sampleInfo: AppointmentFlowInfoOut = {
   business_name: 'Test Business',
+  // Null keeps the WhatsApp return block (and its auto-redirect) out of
+  // these tests -- it has its own coverage in WhatsAppReturn.test.tsx.
+  merchant_whatsapp_number: null,
 }
 
 const sampleSlots: AppointmentFlowSlotOut[] = [
@@ -167,6 +170,33 @@ describe('BookingPage', () => {
     expect(
       screen.getByText("We'll message you on WhatsApp once it's confirmed."),
     ).toBeInTheDocument()
+  })
+
+  it('offers a WhatsApp return link on the confirmation once the merchant has a number', async () => {
+    installApiMock({
+      info: { ...sampleInfo, merchant_whatsapp_number: '+91 90000 00000' },
+    })
+
+    renderPage()
+    await screen.findByText('Test Business')
+    await advanceToDetailsStep()
+
+    fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
+      target: { value: '9876543210' },
+    })
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Asha' } })
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'asha@example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm & book' }))
+
+    expect(await screen.findByText('Appointment #0005 requested!')).toBeInTheDocument()
+    // The booking is already persisted and its "request received" message
+    // already sent by now, so this screen has nothing left to hold the
+    // customer for -- unlike an order still awaiting payment.
+    expect(screen.getByText(/redirecting you back to whatsapp/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Tap here to return to WhatsApp' })).toHaveAttribute(
+      'href',
+      'https://wa.me/919000000000?text=Thanks!',
+    )
   })
 
   it('prefills the WhatsApp number from the `wa` query param and skips the manual entry field', async () => {

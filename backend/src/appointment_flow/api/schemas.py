@@ -7,6 +7,12 @@ from pydantic import BaseModel, EmailStr, Field
 
 class AppointmentFlowInfoOut(BaseModel):
     business_name: str
+    # Null until the merchant has connected WhatsApp (onboarding) -- the
+    # dialable display phone number, not Meta's opaque phone_number_id, so
+    # the booking webview's confirmation screen can send the customer back
+    # to the chat once the appointment is booked. Stored verbatim as Meta
+    # reports it ("+91 90000 00000"), so callers normalise it themselves.
+    merchant_whatsapp_number: str | None = None
 
 
 class AppointmentFlowServiceOut(BaseModel):
