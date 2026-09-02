@@ -582,7 +582,7 @@ async def _handle_appointment_flow_completion(
         )
 
     try:
-        result = await perform_booking(
+        await perform_booking(
             session,
             tenant,
             merchant,
@@ -612,20 +612,12 @@ async def _handle_appointment_flow_completion(
             "pick another.",
         )
 
-    # No confirmation event is published here -- matches perform_booking's
-    # existing, deliberate "silent on requested" design (only the
-    # confirmed/cancelled transitions, set later from the dashboard,
-    # notify the customer over WhatsApp per the product spec).
-    appointment = result.appointment
-    body = (
-        f"Appointment #{appointment.appointment_number:04d} requested for "
-        f"{appointment.appointment_date.strftime('%a, %d %b')} at "
-        f"{appointment.start_time.strftime('%I:%M %p').lstrip('0')}!\n\n"
-        "We'll message you here once it's confirmed."
-    )
-    return await sender.send_text(
-        phone_number_id=message.phone_number_id,
-        access_token=access_token,
-        to=message.from_phone,
-        body=body,
-    )
+    # perform_booking already published AppointmentRequested, which
+    # notifications/wiring.py turns into the merchant's own configured
+    # "appointment_requested" template (or the built-in default) over the
+    # same channel every other lifecycle notification uses. Sending our
+    # own confirmation text here duplicated it -- the event-driven one is
+    # the single source of truth for "request received" wording, exactly
+    # the same reasoning _handle_flow_completion's COD branch above
+    # already follows for orders.
+    return True

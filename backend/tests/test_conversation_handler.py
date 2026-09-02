@@ -121,16 +121,34 @@ class NoopNotificationChannel:
     async def notify_order_completed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         return True
 
+    async def notify_appointment_requested(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        return True
+
+    async def notify_appointment_confirmed(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        return True
+
+    async def notify_appointment_cancelled(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        return True
+
 
 class RecordingNotificationChannel:
     """Records every notify_* call instead of swallowing or actually
     sending it -- lets a test assert exactly one confirmation fired
     (proving the fix for the double-message bug: perform_checkout's
     OrderConfirmedCOD publish is the *only* thing that should confirm a
-    COD order, not also an explicit sender.send_text from the handler)."""
+    COD order, not also an explicit sender.send_text from the handler;
+    same story for perform_booking's AppointmentRequested publish vs. the
+    appointment Flow-completion handler's old hand-rolled send)."""
 
     def __init__(self) -> None:
         self.confirmed_calls: list[uuid.UUID] = []
+        self.requested_calls: list[uuid.UUID] = []
 
     async def notify_order_confirmed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
         self.confirmed_calls.append(order_id)
@@ -143,6 +161,22 @@ class RecordingNotificationChannel:
         return True
 
     async def notify_order_completed(self, *, merchant_id: uuid.UUID, order_id: uuid.UUID) -> bool:
+        return True
+
+    async def notify_appointment_requested(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        self.requested_calls.append(appointment_id)
+        return True
+
+    async def notify_appointment_confirmed(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
+        return True
+
+    async def notify_appointment_cancelled(
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+    ) -> bool:
         return True
 
 
@@ -951,6 +985,15 @@ async def test_book_appointment_uses_browser_link_when_interaction_mode_is_brows
 async def test_appointment_flow_completion_creates_appointment_not_order(
     db_session: AsyncSession,
 ) -> None:
+    """Also proves the fix for the appointment-Flow double-message bug:
+    perform_booking's AppointmentRequested publish is the *only* thing
+    that should send a "request received" WhatsApp message here, not also
+    an explicit sender.send_text from the handler -- see handler.py's
+    _handle_appointment_flow_completion, which used to hand-roll this
+    itself. Mirrors test_order_flow_completion_with_selected_items_still_
+    creates_order_not_appointment's pattern for the analogous Order case."""
+    from notifications import wiring
+
     merchant, tenant = await _seed_connected_merchant(db_session)
     merchant.appointment_booking_enabled = True
     await db_session.commit()
@@ -966,11 +1009,18 @@ async def test_appointment_flow_completion_creates_appointment_not_order(
         },
     )
 
-    result = await handle_inbound_message(db_session, sender, message)
+    recorder = RecordingNotificationChannel()
+    real_channel = wiring.get_notification_channel()
+    wiring.set_notification_channel(recorder)
+    try:
+        result = await handle_inbound_message(db_session, sender, message)
+    finally:
+        wiring.set_notification_channel(real_channel)
 
     assert result.intent == Intent.FLOW_APPOINTMENT_COMPLETED
     assert result.reply_sent is True
-    assert "Appointment #" in sender.text_calls[0]["body"]
+    assert sender.text_calls == []
+    assert len(recorder.requested_calls) == 1
 
     customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
     appointments = await AppointmentRepository(db_session).list(
