@@ -195,7 +195,7 @@ describe('BookingPage', () => {
     expect(screen.getByText(/redirecting you back to whatsapp/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Tap here to return to WhatsApp' })).toHaveAttribute(
       'href',
-      'https://wa.me/919000000000?text=Thanks!',
+      'https://wa.me/919000000000',
     )
   })
 

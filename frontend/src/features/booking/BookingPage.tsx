@@ -271,7 +271,6 @@ export function BookingPage() {
           <WhatsAppReturn
             phoneNumber={info.merchant_whatsapp_number}
             flow="appointment"
-            text="Thanks!"
             analyticsProps={{
               appointment_number: booking.data.appointment_number,
               status: booking.data.status,

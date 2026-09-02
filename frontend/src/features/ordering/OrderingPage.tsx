@@ -476,7 +476,6 @@ export function OrderingPage() {
             phoneNumber={catalog.merchant_whatsapp_number}
             flow="order"
             autoRedirect={!paymentOutstanding}
-            text="Thanks!"
             analyticsProps={{
               order_number: checkout.data.order_number,
               payment_status: checkout.data.payment_status,
