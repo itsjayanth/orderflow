@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import JSON, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.db import Base
@@ -41,6 +41,23 @@ class Merchant(Base):
     # existing merchant behavior is byte-for-byte unchanged until a
     # merchant opts in from the dashboard Settings page.
     appointment_booking_enabled: Mapped[bool] = mapped_column(default=False)
+
+    # IANA timezone name -- appointment_flow/domain/booking.py's past-date
+    # check and appointment_flow/domain/availability.py's slot computation
+    # both need "today"/"now" in the merchant's own local time, not UTC (a
+    # merchant near UTC midnight would otherwise see slots wrongly
+    # accepted/rejected). Defaults to India since that's this product's
+    # primary market today; not auto-detected from anything.
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata")
+
+    # Hours-before-appointment offsets the reminder scan
+    # (shared/scheduler.py's send_due_appointment_reminders) sends a
+    # WhatsApp reminder at, e.g. [24, 2] for "a day before and two hours
+    # before". Empty list = reminders off for this merchant. Defaults to a
+    # single 24h reminder, not an empty list, so a merchant who never
+    # visits the reminder settings still gets the baseline behavior the
+    # product spec calls for.
+    reminder_offsets_hours: Mapped[list[int]] = mapped_column(JSON, default=lambda: [24])
 
     created_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC)

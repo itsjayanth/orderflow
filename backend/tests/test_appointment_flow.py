@@ -8,18 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from appointment_flow.domain.booking import PastDateError, perform_booking
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
+from identity.domain.models import Merchant
 from shared.tenant import TenantContext
+
+# A fixed calendar date goes stale the moment the wall clock crosses it --
+# perform_booking's past-date check would then reject every test in this
+# file. Compute a date that's always safely in the future instead.
+_FUTURE_DATE = datetime.date.today() + datetime.timedelta(days=30)
+_FUTURE_DATE_ISO = _FUTURE_DATE.isoformat()
 
 
 async def _make_tenant(
     db_session: AsyncSession, *, appointment_booking_enabled: bool = True
-) -> TenantContext:
+) -> tuple[Merchant, TenantContext]:
     merchant = await MerchantRepository(db_session).create(
         business_name="Public Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
     merchant.appointment_booking_enabled = appointment_booking_enabled
     await db_session.commit()
-    return TenantContext(merchant_id=merchant.merchant_id)
+    return merchant, TenantContext(merchant_id=merchant.merchant_id)
 
 
 async def _register(client: AsyncClient, owner_contact: str = "owner@example.com") -> dict:
@@ -59,17 +66,18 @@ async def _enable_appointment_booking(client: AsyncClient, tokens: dict) -> None
 async def test_perform_booking_creates_customer_and_appointment(
     db_session: AsyncSession,
 ) -> None:
-    tenant = await _make_tenant(db_session)
+    merchant, tenant = await _make_tenant(db_session)
 
     result = await perform_booking(
         db_session,
         tenant,
+        merchant,
         customer_whatsapp_number="+919876543210",
         customer_display_name="Asha",
         name="Asha Rao",
         email="asha@example.com",
-        appointment_date=datetime.date(2026, 9, 1),
-        appointment_time=datetime.time(18, 0),
+        appointment_date=_FUTURE_DATE,
+        start_time=datetime.time(18, 0),
     )
 
     assert result.appointment.status == "requested"
@@ -84,7 +92,7 @@ async def test_perform_booking_creates_customer_and_appointment(
 
 
 async def test_perform_booking_reuses_existing_customer(db_session: AsyncSession) -> None:
-    tenant = await _make_tenant(db_session)
+    merchant, tenant = await _make_tenant(db_session)
     existing = await CustomerRepository(db_session).find_or_create(
         tenant, "+919876543210", display_name="Asha"
     )
@@ -93,30 +101,32 @@ async def test_perform_booking_reuses_existing_customer(db_session: AsyncSession
     result = await perform_booking(
         db_session,
         tenant,
+        merchant,
         customer_whatsapp_number="+919876543210",
         customer_display_name="Asha",
         name="Asha Rao",
         email="asha@example.com",
-        appointment_date=datetime.date(2026, 9, 1),
-        appointment_time=datetime.time(18, 0),
+        appointment_date=_FUTURE_DATE,
+        start_time=datetime.time(18, 0),
     )
 
     assert result.appointment.customer_id == existing.customer_id
 
 
 async def test_perform_booking_rejects_past_date(db_session: AsyncSession) -> None:
-    tenant = await _make_tenant(db_session)
+    merchant, tenant = await _make_tenant(db_session)
 
     with pytest.raises(PastDateError):
         await perform_booking(
             db_session,
             tenant,
+            merchant,
             customer_whatsapp_number="+919876543210",
             customer_display_name="Asha",
             name="Asha Rao",
             email="asha@example.com",
             appointment_date=datetime.date(2020, 1, 1),
-            appointment_time=datetime.time(18, 0),
+            start_time=datetime.time(18, 0),
         )
 
 
@@ -165,8 +175,8 @@ async def test_book_appointment_happy_path(client: AsyncClient, db_session: Asyn
             "customer_display_name": "Asha",
             "name": "Asha Rao",
             "email": "asha@example.com",
-            "appointment_date": "2026-09-01",
-            "appointment_time": "18:00:00",
+            "appointment_date": _FUTURE_DATE_ISO,
+            "start_time": "18:00:00",
         },
     )
 
@@ -194,8 +204,8 @@ async def test_book_appointment_404_when_toggle_off(
             "customer_whatsapp_number": "+919876543210",
             "name": "Asha Rao",
             "email": "asha@example.com",
-            "appointment_date": "2026-09-01",
-            "appointment_time": "18:00:00",
+            "appointment_date": _FUTURE_DATE_ISO,
+            "start_time": "18:00:00",
         },
     )
 
@@ -209,8 +219,8 @@ async def test_book_appointment_404_for_unknown_merchant(client: AsyncClient) ->
             "customer_whatsapp_number": "+919876543210",
             "name": "Asha Rao",
             "email": "asha@example.com",
-            "appointment_date": "2026-09-01",
-            "appointment_time": "18:00:00",
+            "appointment_date": _FUTURE_DATE_ISO,
+            "start_time": "18:00:00",
         },
     )
 
@@ -231,7 +241,7 @@ async def test_book_appointment_past_date_returns_400(
             "name": "Asha Rao",
             "email": "asha@example.com",
             "appointment_date": "2020-01-01",
-            "appointment_time": "18:00:00",
+            "start_time": "18:00:00",
         },
     )
 
@@ -251,8 +261,8 @@ async def test_book_appointment_invalid_email_returns_422(
             "customer_whatsapp_number": "+919876543210",
             "name": "Asha Rao",
             "email": "not-an-email",
-            "appointment_date": "2026-09-01",
-            "appointment_time": "18:00:00",
+            "appointment_date": _FUTURE_DATE_ISO,
+            "start_time": "18:00:00",
         },
     )
 
@@ -274,8 +284,8 @@ async def test_appointment_flow_isolated_between_merchants(
             "customer_whatsapp_number": "+919876543210",
             "name": "Asha Rao",
             "email": "asha@example.com",
-            "appointment_date": "2026-09-01",
-            "appointment_time": "18:00:00",
+            "appointment_date": _FUTURE_DATE_ISO,
+            "start_time": "18:00:00",
         },
     )
     assert response.status_code == 201, response.text

@@ -20,11 +20,11 @@ class DummyPaymentGateway:
     def __init__(self, key_secret: str) -> None:
         self._key_secret = key_secret
 
-    def create_link(self, *, order_id: uuid.UUID, amount: Decimal, currency: str) -> PaymentLink:
+    def create_link(self, *, entity_id: uuid.UUID, amount: Decimal, currency: str) -> PaymentLink:
         provider_order_id = f"dummy_order_{uuid.uuid4().hex[:16]}"
         return PaymentLink(
             url=f"https://dummy-checkout.orderflow.local/pay/{provider_order_id}"
-            f"?order_id={order_id}&amount={amount}&currency={currency}",
+            f"?entity_id={entity_id}&amount={amount}&currency={currency}",
             provider_order_id=provider_order_id,
         )
 

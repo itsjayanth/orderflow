@@ -1,0 +1,85 @@
+/* Restyles react-big-calendar's default (Bootstrap-era) look to sit
+   inside this app's Tailwind v4 + shadcn theme tokens, defined in
+   src/index.css. Scoped under .rbc-theme-wrapper so it only affects the
+   calendar, never other `.rbc-*`-free parts of the app. */
+
+.rbc-theme-wrapper {
+  --rbc-border: var(--border);
+  --rbc-today-bg: color-mix(in oklch, var(--primary) 8%, transparent);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+}
+
+.rbc-theme-wrapper .rbc-calendar {
+  color: inherit;
+}
+
+.rbc-theme-wrapper .rbc-off-range-bg {
+  background: var(--muted);
+}
+
+.rbc-theme-wrapper .rbc-today {
+  background-color: var(--rbc-today-bg);
+}
+
+.rbc-theme-wrapper .rbc-header,
+.rbc-theme-wrapper .rbc-time-header-content,
+.rbc-theme-wrapper .rbc-time-content,
+.rbc-theme-wrapper .rbc-month-view,
+.rbc-theme-wrapper .rbc-time-view,
+.rbc-theme-wrapper .rbc-agenda-view table.rbc-agenda-table,
+.rbc-theme-wrapper .rbc-day-bg + .rbc-day-bg,
+.rbc-theme-wrapper .rbc-month-row + .rbc-month-row,
+.rbc-theme-wrapper .rbc-header + .rbc-header,
+.rbc-theme-wrapper .rbc-timeslot-group {
+  border-color: var(--rbc-border);
+}
+
+.rbc-theme-wrapper .rbc-header {
+  padding: 0.5rem 0.25rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.rbc-theme-wrapper .rbc-toolbar button {
+  color: var(--foreground);
+  border-color: var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.rbc-theme-wrapper .rbc-toolbar button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.rbc-theme-wrapper .rbc-toolbar button.rbc-active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.rbc-theme-wrapper .rbc-toolbar-label {
+  font-weight: 600;
+}
+
+.rbc-theme-wrapper .rbc-event {
+  border: none;
+  border-radius: 0.375rem;
+  padding: 1px 6px;
+  box-shadow: none;
+}
+
+.rbc-theme-wrapper .rbc-event.rbc-selected {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.rbc-theme-wrapper .rbc-slot-selection {
+  background: color-mix(in oklch, var(--primary) 20%, transparent);
+}
+
+.rbc-theme-wrapper .rbc-current-time-indicator {
+  background-color: var(--destructive);
+}

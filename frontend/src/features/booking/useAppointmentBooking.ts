@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 
-import { apiFetch } from '@/shared/api/client'
+import { type ApiError, apiFetch } from '@/shared/api/client'
 import type { AppointmentFlowBookingResponse } from '@/shared/api/types'
 
 interface AppointmentBookingInput {
@@ -9,12 +9,13 @@ interface AppointmentBookingInput {
   name: string
   email: string
   appointment_date: string
-  appointment_time: string
+  start_time: string
+  service_id?: string
   notes?: string
 }
 
 export function useAppointmentBooking(merchantId: string) {
-  return useMutation({
+  return useMutation<AppointmentFlowBookingResponse, ApiError, AppointmentBookingInput>({
     mutationFn: (input: AppointmentBookingInput) =>
       apiFetch<AppointmentFlowBookingResponse>(`/api/v1/appointment-flow/${merchantId}/book`, {
         method: 'POST',

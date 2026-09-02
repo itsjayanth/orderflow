@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base
@@ -28,12 +28,27 @@ class MerchantPaymentCredentials(Base):
 
 class PaymentEvent(Base):
     """Append-only -- the source of truth for payment state. Order.payment_status
-    is a derived/materialized view over this, per ARCHITECTURE.md Section 1."""
+    is a derived/materialized view over this, per ARCHITECTURE.md Section 1.
+    Appointment.payment_status (placeholder payment-link work) is the same
+    pattern -- one shared table/repository, entity type inferred from
+    which of order_id/appointment_id is set, rather than a parallel
+    AppointmentPaymentEvent table duplicating this whole class."""
 
     __tablename__ = "payment_events"
+    __table_args__ = (
+        CheckConstraint(
+            "(order_id IS NOT NULL) != (appointment_id IS NOT NULL)",
+            name="ck_payment_events_exactly_one_entity",
+        ),
+    )
 
     payment_event_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.order_id"), index=True)
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("orders.order_id"), index=True, default=None
+    )
+    appointment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("appointments.appointment_id"), index=True, default=None
+    )
 
     provider: Mapped[str] = mapped_column(String(32))  # "razorpay" | "dummy" | "cod"
     provider_payment_id: Mapped[str | None] = mapped_column(String(255), default=None, index=True)

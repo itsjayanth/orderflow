@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from appointment_flow.domain.booking import PastDateError, perform_booking
+from appointments.adapters.repository import SlotConflictError
 from catalog.adapters.repository import ItemRepository
 from conversation.adapters.repository import MessageDedupeRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
@@ -24,6 +25,7 @@ from flows.domain.order_builder import (
     resolve_contact_phone,
 )
 from identity.adapters.repository import MerchantRepository
+from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.domain.models import WhatsAppBusinessAccount
 from ordering_flow.domain.checkout import perform_checkout
@@ -120,7 +122,7 @@ async def handle_inbound_message(
         # marker through the payload.
         if "appointment_date" in message.flow_response:
             appointment_reply_sent = await _handle_appointment_flow_completion(
-                session, sender, waba, tenant, message
+                session, sender, waba, tenant, message, merchant
             )
             return HandledMessage(
                 intent=Intent.FLOW_APPOINTMENT_COMPLETED, reply_sent=appointment_reply_sent
@@ -556,6 +558,7 @@ async def _handle_appointment_flow_completion(
     waba: WhatsAppBusinessAccount,
     tenant: TenantContext,
     message: InboundMessage,
+    merchant: Merchant,
 ) -> bool:
     """The customer tapped "Request appointment" on the appointment Flow's
     single terminal BOOKING screen -- delivered here the same way a
@@ -582,12 +585,14 @@ async def _handle_appointment_flow_completion(
         result = await perform_booking(
             session,
             tenant,
+            merchant,
             customer_whatsapp_number=message.from_phone,
             customer_display_name=submission.customer_name or message.from_name,
             name=submission.customer_name or message.from_name or "",
             email=submission.customer_email or "",
             appointment_date=submission.appointment_date,
-            appointment_time=submission.appointment_time,
+            start_time=submission.appointment_time,
+            created_via="flow",
             notes=submission.notes,
             whatsapp_conversation_ref=message.whatsapp_message_id,
         )
@@ -598,6 +603,14 @@ async def _handle_appointment_flow_completion(
             to=message.from_phone,
             body='That date has already passed -- send "book appointment" to pick a new one.',
         )
+    except SlotConflictError:
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body='That time was just booked by someone else -- send "book appointment" to '
+            "pick another.",
+        )
 
     # No confirmation event is published here -- matches perform_booking's
     # existing, deliberate "silent on requested" design (only the
@@ -607,7 +620,7 @@ async def _handle_appointment_flow_completion(
     body = (
         f"Appointment #{appointment.appointment_number:04d} requested for "
         f"{appointment.appointment_date.strftime('%a, %d %b')} at "
-        f"{appointment.appointment_time.strftime('%I:%M %p').lstrip('0')}!\n\n"
+        f"{appointment.start_time.strftime('%I:%M %p').lstrip('0')}!\n\n"
         "We'll message you here once it's confirmed."
     )
     return await sender.send_text(

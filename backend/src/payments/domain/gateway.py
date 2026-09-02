@@ -30,10 +30,16 @@ class VerifiedPaymentEvent:
 class PaymentGateway(Protocol):
     """The port ARCHITECTURE.md Section 4 calls for -- swapping providers
     (or, right now, swapping in a dummy implementation while waiting on
-    real Razorpay credentials) is an adapter change, not a domain change."""
+    real Razorpay credentials) is an adapter change, not a domain change.
+
+    entity_id is opaque to the gateway -- just something to embed in the
+    checkout URL/reference so a later webhook can be traced back to
+    whatever domain object paid for it (an Order today, an Appointment as
+    of the payment-link-placeholder work). The gateway itself has no
+    concept of "order" vs "appointment"."""
 
     def create_link(
-        self, *, order_id: uuid.UUID, amount: Decimal, currency: str
+        self, *, entity_id: uuid.UUID, amount: Decimal, currency: str
     ) -> PaymentLink: ...
 
     def verify_webhook(self, *, payload: bytes, signature: str) -> VerifiedPaymentEvent: ...

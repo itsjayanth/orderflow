@@ -89,6 +89,17 @@ class Settings(BaseSettings):
 
     abandoned_order_timeout_minutes: int = 30
 
+    # Appointment reminders (shared/scheduler.py's
+    # send_due_appointment_reminders) -- unlike the BROWSER_LINK CTA-URL
+    # button (interaction_mode.py), a reminder is sent hours after the
+    # triggering action, genuinely outside the customer's 24h WhatsApp
+    # session window, so it must be a Meta-approved `type: template` send
+    # (send_template_message), not a freeform interactive one. Unset by
+    # default: the reminder scan no-ops rather than attempting a send that
+    # would just fail at Meta with no approved template on file.
+    whatsapp_appointment_reminder_template_name: str | None = None
+    whatsapp_appointment_reminder_language_code: str = "en_US"
+
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
 

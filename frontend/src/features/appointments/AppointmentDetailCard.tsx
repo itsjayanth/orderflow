@@ -147,7 +147,7 @@ export function AppointmentDetailCard({
             </TableRow>
             <TableRow>
               <FieldLabel>Time</FieldLabel>
-              <TableCell className="text-sm">{formatTime(appointment.appointment_time)}</TableCell>
+              <TableCell className="text-sm">{formatTime(appointment.start_time)}</TableCell>
             </TableRow>
             <TableRow>
               <FieldLabel>Name</FieldLabel>

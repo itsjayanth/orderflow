@@ -3,9 +3,19 @@ import uuid
 import jwt
 from fastapi import APIRouter, Cookie, HTTPException, Response, status
 
+from appointments.adapters.scheduling_repository import (
+    AppointmentServiceRepository,
+    MerchantAvailabilityRepository,
+)
 from identity.adapters.repository import MerchantRepository, StaffUserRepository
 from identity.api.schemas import (
     AccessTokenResponse,
+    AppointmentAvailabilitySettingsOut,
+    AppointmentAvailabilitySettingsUpdate,
+    AppointmentAvailabilityWindow,
+    AppointmentServiceCreateRequest,
+    AppointmentServiceOut,
+    AppointmentServiceUpdateRequest,
     AppointmentSettingsOut,
     AppointmentSettingsUpdate,
     LoginRequest,
@@ -149,3 +159,94 @@ async def update_appointment_settings(
     )
     await session.commit()
     return AppointmentSettingsOut.model_validate(merchant)
+
+
+@router.get("/appointment-availability", response_model=AppointmentAvailabilitySettingsOut)
+async def get_appointment_availability_settings(
+    tenant: CurrentTenant, session: DbSession
+) -> AppointmentAvailabilitySettingsOut:
+    merchant = await MerchantRepository(session).get(tenant.merchant_id)
+    if merchant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
+    windows = await MerchantAvailabilityRepository(session).list(tenant)
+    return AppointmentAvailabilitySettingsOut(
+        timezone=merchant.timezone,
+        windows=[AppointmentAvailabilityWindow.model_validate(w) for w in windows],
+        reminder_offsets_hours=merchant.reminder_offsets_hours,
+    )
+
+
+@router.put("/appointment-availability", response_model=AppointmentAvailabilitySettingsOut)
+async def update_appointment_availability_settings(
+    body: AppointmentAvailabilitySettingsUpdate, tenant: CurrentTenant, session: DbSession
+) -> AppointmentAvailabilitySettingsOut:
+    """Full replace, not per-day patch -- see
+    MerchantAvailabilityRepository.replace_all's docstring. The dashboard
+    settings form always submits the complete weekly schedule; a weekday
+    simply absent from `body.windows` means "closed that day"."""
+    merchant = await MerchantRepository(session).get(tenant.merchant_id)
+    if merchant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
+
+    await MerchantRepository(session).update_timezone(tenant.merchant_id, body.timezone)
+    await MerchantRepository(session).update_reminder_offsets_hours(
+        tenant.merchant_id, body.reminder_offsets_hours
+    )
+    windows = await MerchantAvailabilityRepository(session).replace_all(
+        tenant, windows=[w.model_dump() for w in body.windows]
+    )
+    await session.commit()
+    return AppointmentAvailabilitySettingsOut(
+        timezone=body.timezone,
+        windows=[AppointmentAvailabilityWindow.model_validate(w) for w in windows],
+        reminder_offsets_hours=body.reminder_offsets_hours,
+    )
+
+
+@router.get("/appointment-services", response_model=list[AppointmentServiceOut])
+async def list_appointment_services(
+    tenant: CurrentTenant, session: DbSession
+) -> list[AppointmentServiceOut]:
+    services = await AppointmentServiceRepository(session).list(tenant, include_inactive=True)
+    return [AppointmentServiceOut.model_validate(s) for s in services]
+
+
+@router.post(
+    "/appointment-services",
+    response_model=AppointmentServiceOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_appointment_service(
+    body: AppointmentServiceCreateRequest, tenant: CurrentTenant, session: DbSession
+) -> AppointmentServiceOut:
+    service = await AppointmentServiceRepository(session).create(
+        tenant, name=body.name, duration_minutes=body.duration_minutes, price=body.price
+    )
+    await session.commit()
+    return AppointmentServiceOut.model_validate(service)
+
+
+@router.patch("/appointment-services/{service_id}", response_model=AppointmentServiceOut)
+async def update_appointment_service(
+    service_id: uuid.UUID,
+    body: AppointmentServiceUpdateRequest,
+    tenant: CurrentTenant,
+    session: DbSession,
+) -> AppointmentServiceOut:
+    service = await AppointmentServiceRepository(session).update(
+        tenant, service_id, **body.model_dump(exclude_unset=True)
+    )
+    if service is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")
+    await session.commit()
+    return AppointmentServiceOut.model_validate(service)
+
+
+@router.delete("/appointment-services/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_appointment_service(
+    service_id: uuid.UUID, tenant: CurrentTenant, session: DbSession
+) -> None:
+    deleted = await AppointmentServiceRepository(session).delete(tenant, service_id)
+    if not deleted:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")
+    await session.commit()

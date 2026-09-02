@@ -34,6 +34,38 @@ class MerchantRepository:
         await self._session.flush()
         return merchant
 
+    async def update_timezone(self, merchant_id: uuid.UUID, timezone: str) -> Merchant:
+        """Dashboard availability-settings save -- see
+        AppointmentAvailabilitySettingsUpdate. Same no-None-guard rationale
+        as update_appointment_booking_enabled above."""
+        merchant = await self._session.get(Merchant, merchant_id)
+        assert merchant is not None
+        merchant.timezone = timezone
+        await self._session.flush()
+        return merchant
+
+    async def update_reminder_offsets_hours(
+        self, merchant_id: uuid.UUID, reminder_offsets_hours: list[int]
+    ) -> Merchant:
+        """Same dashboard availability-settings save as update_timezone --
+        both are set together by the one PUT
+        /appointment-availability endpoint."""
+        merchant = await self._session.get(Merchant, merchant_id)
+        assert merchant is not None
+        merchant.reminder_offsets_hours = reminder_offsets_hours
+        await self._session.flush()
+        return merchant
+
+    async def list_appointment_booking_enabled(self) -> list[Merchant]:
+        """Every merchant the reminder scan (shared/scheduler.py's
+        send_due_appointment_reminders) needs to check -- not tenant-scoped
+        by design, same rationale as StaffUserRepository below: this runs
+        from the scheduler, not a per-request tenant context."""
+        result = await self._session.execute(
+            select(Merchant).where(Merchant.appointment_booking_enabled.is_(True))
+        )
+        return list(result.scalars().all())
+
 
 class StaffUserRepository:
     """Not tenant-scoped by TenantContext: login/registration precede tenant
