@@ -10,7 +10,7 @@ from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
 from conversation.domain.webhook_parser import InboundMessage
-from identity.adapters.repository import MerchantRepository, VerticalAlreadySetError
+from identity.adapters.repository import MerchantRepository
 from identity.domain.models import ONBOARDING_STATUSES, Merchant, MerchantVertical
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.domain.onboarding_service import (
@@ -208,7 +208,9 @@ async def test_onboarding_status_endpoint_reflects_progress(client: AsyncClient)
     assert body["has_available_service"] is False
 
 
-async def _select_vertical_api(client: AsyncClient, tokens: dict, vertical: str = "restaurant") -> None:
+async def _select_vertical_api(
+    client: AsyncClient, tokens: dict, vertical: str = "restaurant"
+) -> None:
     response = await client.put(
         "/api/v1/onboarding/vertical",
         json={"vertical": vertical},

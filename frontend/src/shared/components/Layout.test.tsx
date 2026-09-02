@@ -34,7 +34,6 @@ function meResponse(vertical: MerchantVertical | null): MeResponse {
       business_name: 'Test Business',
       onboarding_status: 'live',
       vertical,
-      appointment_booking_enabled: false,
     },
   }
 }

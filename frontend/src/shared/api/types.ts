@@ -10,7 +10,6 @@ export interface Merchant {
   business_name: string
   onboarding_status: string
   vertical: MerchantVertical | null
-  appointment_booking_enabled: boolean
 }
 
 export interface StaffUser {
@@ -263,10 +262,6 @@ export interface OrderingFlowCustomerLookupOut {
   display_name: string | null
   address: OrderingFlowAddressOut | null
   default_contact_phone: string | null
-}
-
-export interface AppointmentSettingsOut {
-  appointment_booking_enabled: boolean
 }
 
 export interface AppointmentAvailabilityWindow {

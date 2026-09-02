@@ -35,25 +35,14 @@ class MerchantRepository:
         await self._session.flush()
         return merchant
 
-    async def update_appointment_booking_enabled(
-        self, merchant_id: uuid.UUID, enabled: bool
-    ) -> Merchant:
-        """Dashboard Settings page toggle for the Appointment Booking
-        feature. A missing merchant here is a caller bug (the API layer
-        resolves merchant_id from an authenticated TenantContext, which
-        can't name a merchant that doesn't exist) -- so this doesn't guard
-        against None, matching the simplicity of MerchantRepository.get's
-        contract elsewhere in this class."""
-        merchant = await self._session.get(Merchant, merchant_id)
-        assert merchant is not None
-        merchant.appointment_booking_enabled = enabled
-        await self._session.flush()
-        return merchant
-
     async def update_timezone(self, merchant_id: uuid.UUID, timezone: str) -> Merchant:
         """Dashboard availability-settings save -- see
-        AppointmentAvailabilitySettingsUpdate. Same no-None-guard rationale
-        as update_appointment_booking_enabled above."""
+        AppointmentAvailabilitySettingsUpdate. A missing merchant here is a
+        caller bug (the API layer resolves merchant_id from an
+        authenticated TenantContext, which can't name a merchant that
+        doesn't exist) -- so this doesn't guard against None, matching the
+        simplicity of MerchantRepository.get's contract elsewhere in this
+        class."""
         merchant = await self._session.get(Merchant, merchant_id)
         assert merchant is not None
         merchant.timezone = timezone
@@ -72,13 +61,14 @@ class MerchantRepository:
         await self._session.flush()
         return merchant
 
-    async def list_appointment_booking_enabled(self) -> list[Merchant]:
-        """Every merchant the reminder scan (shared/scheduler.py's
-        send_due_appointment_reminders) needs to check -- not tenant-scoped
-        by design, same rationale as StaffUserRepository below: this runs
-        from the scheduler, not a per-request tenant context."""
+    async def list_by_vertical(self, vertical: MerchantVertical) -> list[Merchant]:
+        """Every merchant of a given vertical -- used by the reminder scan
+        (shared/scheduler.py's send_due_appointment_reminders) to find
+        appointment-vertical merchants to check. Not tenant-scoped by
+        design, same rationale as StaffUserRepository below: this runs from
+        the scheduler, not a per-request tenant context."""
         result = await self._session.execute(
-            select(Merchant).where(Merchant.appointment_booking_enabled.is_(True))
+            select(Merchant).where(Merchant.vertical == vertical.value)
         )
         return list(result.scalars().all())
 

@@ -59,12 +59,6 @@ class Merchant(Base):
     business_category: Mapped[str | None] = mapped_column(String(120), default=None)
     license_no: Mapped[str | None] = mapped_column(String(64), default=None)
 
-    # Per-merchant toggle for the Appointment Booking feature
-    # (appointments/, appointment_flow/) -- default OFF so existing
-    # existing merchant behavior is byte-for-byte unchanged until a
-    # merchant opts in from the dashboard Settings page.
-    appointment_booking_enabled: Mapped[bool] = mapped_column(default=False)
-
     # IANA timezone name -- appointment_flow/domain/booking.py's past-date
     # check and appointment_flow/domain/availability.py's slot computation
     # both need "today"/"now" in the merchant's own local time, not UTC (a

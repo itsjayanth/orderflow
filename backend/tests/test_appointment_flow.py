@@ -21,12 +21,12 @@ _FUTURE_DATE_ISO = _FUTURE_DATE.isoformat()
 
 
 async def _make_tenant(
-    db_session: AsyncSession, *, appointment_booking_enabled: bool = True
+    db_session: AsyncSession, *, vertical: str | None = "appointment"
 ) -> tuple[Merchant, TenantContext]:
     merchant = await MerchantRepository(db_session).create(
         business_name="Public Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
-    merchant.appointment_booking_enabled = appointment_booking_enabled
+    merchant.vertical = vertical
     await db_session.commit()
     return merchant, TenantContext(merchant_id=merchant.merchant_id)
 
@@ -67,9 +67,11 @@ async def _connect_whatsapp(
     await db_session.commit()
 
 
-async def _enable_appointment_booking(client: AsyncClient, tokens: dict) -> None:
-    response = await client.patch(
-        "/api/v1/auth/appointment-settings", json={"enabled": True}, headers=_auth_headers(tokens)
+async def _select_appointment_vertical(client: AsyncClient, tokens: dict) -> None:
+    response = await client.put(
+        "/api/v1/onboarding/vertical",
+        json={"vertical": "appointment"},
+        headers=_auth_headers(tokens),
     )
     assert response.status_code == 200
 
@@ -152,7 +154,7 @@ async def test_appointment_flow_info_requires_no_auth(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await _enable_appointment_booking(client, tokens)
+    await _select_appointment_vertical(client, tokens)
 
     response = await client.get(f"/api/v1/appointment-flow/{tenant.merchant_id}/info")
 
@@ -165,7 +167,7 @@ async def test_appointment_flow_info_exposes_merchant_whatsapp_number(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await _enable_appointment_booking(client, tokens)
+    await _select_appointment_vertical(client, tokens)
     await _connect_whatsapp(db_session, tenant, "+91 90000 00000")
 
     response = await client.get(f"/api/v1/appointment-flow/{tenant.merchant_id}/info")
@@ -182,7 +184,7 @@ async def test_appointment_flow_info_whatsapp_number_null_without_waba(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await _enable_appointment_booking(client, tokens)
+    await _select_appointment_vertical(client, tokens)
 
     response = await client.get(f"/api/v1/appointment-flow/{tenant.merchant_id}/info")
 
@@ -190,7 +192,7 @@ async def test_appointment_flow_info_whatsapp_number_null_without_waba(
     assert response.json()["merchant_whatsapp_number"] is None
 
 
-async def test_appointment_flow_info_404_when_toggle_off(
+async def test_appointment_flow_info_404_when_not_appointment_vertical(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
@@ -210,7 +212,7 @@ async def test_appointment_flow_info_404_for_unknown_merchant(client: AsyncClien
 async def test_book_appointment_happy_path(client: AsyncClient, db_session: AsyncSession) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await _enable_appointment_booking(client, tokens)
+    await _select_appointment_vertical(client, tokens)
 
     response = await client.post(
         f"/api/v1/appointment-flow/{tenant.merchant_id}/book",
@@ -236,7 +238,7 @@ async def test_book_appointment_happy_path(client: AsyncClient, db_session: Asyn
     assert len(appointments_response.json()) == 1
 
 
-async def test_book_appointment_404_when_toggle_off(
+async def test_book_appointment_404_when_not_appointment_vertical(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     tokens = await _register(client)
@@ -276,7 +278,7 @@ async def test_book_appointment_past_date_returns_400(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await _enable_appointment_booking(client, tokens)
+    await _select_appointment_vertical(client, tokens)
 
     response = await client.post(
         f"/api/v1/appointment-flow/{tenant.merchant_id}/book",
@@ -297,7 +299,7 @@ async def test_book_appointment_invalid_email_returns_422(
 ) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
-    await _enable_appointment_booking(client, tokens)
+    await _select_appointment_vertical(client, tokens)
 
     response = await client.post(
         f"/api/v1/appointment-flow/{tenant.merchant_id}/book",
@@ -318,7 +320,7 @@ async def test_appointment_flow_isolated_between_merchants(
 ) -> None:
     tokens_a = await _register(client, owner_contact="owner-a@example.com")
     tenant_a = await _tenant_for(client, tokens_a)
-    await _enable_appointment_booking(client, tokens_a)
+    await _select_appointment_vertical(client, tokens_a)
 
     tokens_b = await _register(client, owner_contact="owner-b@example.com")
 

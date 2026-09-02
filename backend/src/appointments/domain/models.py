@@ -68,8 +68,9 @@ class MerchantAvailability(Base):
     ranges (padded by buffer_minutes) to compute open slots. No row for a
     given day means the merchant hasn't configured hours for that day --
     get_available_slots() returns an empty list rather than guessing at
-    default hours, matching this codebase's "opt-in feature, safe default"
-    convention (see Merchant.appointment_booking_enabled)."""
+    default hours, matching this codebase's "safe default over guessing"
+    convention (see Merchant.vertical -- the appointment vertical's own
+    gate for whether this feature applies to a merchant at all)."""
 
     __tablename__ = "merchant_availability"
 

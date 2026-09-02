@@ -32,7 +32,6 @@ const meResponse: MeResponse = {
     business_name: 'Test Business',
     onboarding_status: 'live',
     vertical: 'restaurant',
-    appointment_booking_enabled: false,
   },
 }
 

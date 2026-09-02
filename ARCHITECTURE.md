@@ -3,6 +3,8 @@
 This document describes the system architecture for the WhatsApp Commerce Platform MVP, as scoped in `docs/project-brief.txt`. It is stack-agnostic — no language, framework, or vendor SDK is prescribed. The goal is a design simple enough to build and pilot with 1-2 real restaurants, while staying multi-tenant-safe from day one and keeping the Order model open to a Phase 2 POS sync (Petpooja) without restructuring.
 
 > **Update note (this revision):** adds full merchant onboarding (register → login → Meta/WhatsApp connection → kitchen details → menu), a concrete customer ordering experience (in-chat structured "mini UI" browse/cart/checkout, WhatsApp-Flow-style — the Bangalore Metro-ticket-booking pattern), Cash-on-Delivery as a second payment path alongside the online payment link, and a first-class Customer/Address record. These go beyond what `docs/project-brief.txt` spells out line-by-line — see **Section 11: Deviations from the original brief** for exactly what's new vs. what's just detail added to something the brief left vague.
+>
+> **Update note (multi-vertical revision):** a merchant now belongs to exactly one of two verticals — `restaurant` (this document's original subject) or `appointment` (general-purpose service booking: salons, clinics, consultants) — chosen once at onboarding and immutable after (`Merchant.vertical`, Section 1). Every merchant-facing surface branches on it: the WhatsApp intent menu (Section 6, Section 9c), the dashboard nav and catalog-equivalent page, and the onboarding wizard (Section 5, Section 9b). The "Talk to us" / "Talk to restaurant" handoff intent is removed entirely, for both verticals, not conditionally. See `MULTI_VERTICAL_PLAN.md` for the phased implementation this shipped under.
 
 ---
 
@@ -13,6 +15,7 @@ Every other tenant-scoped table traces back to a `merchant_id`. This is the tena
 - `merchant_id` (PK)
 - `business_name`, `legal_name` (optional)
 - `owner_contact` (phone/email used at registration)
+- `vertical` (`restaurant` | `appointment`) — set once, at onboarding, via the wizard's first step; immutable afterwards (no admin path to change it). Gates every merchant-facing surface: the WhatsApp intent menu (Section 6/9c), the dashboard nav and its catalog-equivalent page (Menu for restaurant, Services for appointment), and which onboarding steps appear (Section 5/9b).
 - `onboarding_status` — see Section 5 state machine
 - business details: `business_address_line1`/`business_address_line2`/`business_city`/`business_pincode`, `business_category`, `license_no` (optional)
 - `status` (active / inactive / suspended)
@@ -147,18 +150,19 @@ Stack-agnostic, but these are the structural patterns any implementation should 
 
 ## 5. Merchant onboarding — flow & state machine
 
-`Merchant.onboarding_status` values, strictly linear for MVP (no step-skipping):
+`Merchant.onboarding_status` values, strictly linear for MVP (no step-skipping) — same table for both verticals, since `catalog_ready`'s *gate condition* (not the status itself) is what differs between them:
 
-`registered → meta_connected → whatsapp_verified → profile_completed → catalog_ready → live`
+`registered → vertical_selected → meta_connected → whatsapp_verified → profile_completed → catalog_ready → live`
 
 | Status | Reached when | Owned by |
 |---|---|---|
 | `registered` | Owner submits business name + contact + password; Identity & Access Service creates `Merchant` + owner `StaffUser` | Identity & Access Service |
+| `vertical_selected` | Owner picks `restaurant` or `appointment` (the wizard's new first step) — one-time, immutable afterwards | Onboarding Service (writes `Merchant.vertical`) |
 | `meta_connected` | Meta embedded signup / token exchange completes; `WhatsAppBusinessAccount` row created with encrypted token | Onboarding Service |
 | `whatsapp_verified` | Phone number verified and webhook subscription confirmed (`connection_status = connected`) | Onboarding Service |
-| `profile_completed` | Business details saved (address, business category, license number optional) on `Merchant` | Onboarding Service (writes to Merchant) |
-| `catalog_ready` | At least one category and one available `Item` exist | Catalog Service (Onboarding Service checks the gate) |
-| `live` | All above complete | Onboarding Service — this is the gate the Conversation Handler checks before treating inbound chats as order-capable |
+| `profile_completed` | Business details saved (address, business/service category, license number optional) on `Merchant` — the category options and field labels shown to the owner branch by vertical, though the columns themselves are vertical-neutral | Onboarding Service (writes to Merchant) |
+| `catalog_ready` | Restaurant vertical: at least one category and one available `Item` exist. Appointment vertical: no condition — `AppointmentService` rows are optional by design (a merchant with zero rows just offers one generic appointment type), so this status is reached unconditionally the moment `profile_completed` is | Catalog Service for restaurant (Onboarding Service checks the gate); Onboarding Service alone for appointment |
+| `live` | All above complete | Onboarding Service — this is the gate the Conversation Handler checks before treating inbound chats as order-/booking-capable |
 
 See the flow diagram in Section 9.
 
@@ -166,12 +170,14 @@ See the flow diagram in Section 9.
 
 ## 6. Customer WhatsApp ordering — flow & sequence
 
+This section documents the **restaurant vertical's** flow in detail (it predates the appointment vertical). The **appointment vertical** follows the same shape — greet → vertical-exclusive intent menu → structured in-chat Flow → confirmation → status lookup — via the `appointment_flow`/`flows` modules' `AppointmentService`/`Appointment`/`MerchantAvailability` entities instead of `Item`/`Order`; see Section 9c's diagram for both branches side by side. Whichever vertical a merchant is, the intent menu it sees contains only that vertical's two options (plus FAQs, if configured) — never the other vertical's options, and never a "Talk to us" handoff, which was removed for both.
+
 ### The "mini UI inside the chat"
 The Bangalore-Metro-ticket-booking-style experience you referenced is best implemented as a **WhatsApp Flow** — Meta's native structured, multi-screen in-chat UI (JSON-driven forms/screens rendered inside WhatsApp itself, no app-switch, higher completion rates than a link-out). The architecture treats this as one implementation of the `OrderingSurface` strategy interface (Section 4); an external webview link is the fallback strategy if the chosen BSP doesn't support Flows well. Either way, Order Service and Catalog Service are unaware which surface is in use — they just receive a cart/checkout payload.
 
 ### Sequence (happy path, both payment methods)
 1. **Customer** messages the merchant's WhatsApp number — first contact or "hi".
-2. **Conversation Handler** resolves tenant via `phone_number_id`, resolves/creates the `Customer` record (via Customer Service), greets, and presents an intent menu (Place order / Track order / Talk to restaurant).
+2. **Conversation Handler** resolves tenant via `phone_number_id`, resolves/creates the `Customer` record (via Customer Service), greets, and presents an intent menu -- for the restaurant vertical, exactly Place order / Track order (plus FAQs, if the merchant has configured any); never the appointment vertical's options, never a "Talk to us" handoff (removed for both verticals).
 3. Customer picks **Place order** → Handler launches the **Ordering Flow UI**.
 4. Ordering Flow UI calls **Catalog Service** for categories/items (`is_available = true`), customer browses and builds a cart client-side within the Flow.
 5. Customer reviews cart + total, picks **order type**: pickup, or delivery (if delivery: select a saved **Address** via Customer Service, or add a new one).
@@ -312,32 +318,40 @@ flowchart TB
 flowchart TD
     A[Owner visits signup] --> B[Register: business name + owner contact + password]
     B --> D[Login]
-    D --> E[Wizard Step 1: Connect Meta / WhatsApp Business]
+    D --> V[Wizard Step 1: Choose vertical<br/>restaurant or appointment -- one-time, immutable]
+    V --> E[Step 2: Connect Meta / WhatsApp Business]
     E --> F[Meta embedded signup / token exchange]
     F --> G{Token + WABA received?}
     G -- No --> F
     G -- Yes --> H[Store WhatsAppBusinessAccount<br/>access_token encrypted]
-    H --> I[Step 2: Verify WhatsApp number<br/>+ subscribe webhook]
+    H --> I[Step 3: Verify WhatsApp number<br/>+ subscribe webhook]
     I --> J{Verified?}
     J -- No --> I
-    J -- Yes --> K[Step 3: Business details<br/>address, business category, license optional]
-    K --> L[Step 4: Menu and pricing<br/>add categories + items]
-    L --> M{At least 1 category<br/>and 1 available item?}
-    M -- No --> L
+    J -- Yes --> K[Step 4: Business details<br/>address, category, license optional --<br/>labels branch by vertical]
+    K --> L{Vertical?}
+    L -- restaurant --> L1[Step 5: Menu and pricing<br/>add categories + items]
+    L -- appointment --> L2[Step 5: Services -- optional<br/>add a bookable service type]
+    L1 --> M{At least 1 category<br/>and 1 available item?}
+    M -- No --> L1
     M -- Yes --> N[Merchant.onboarding_status = live]
+    L2 --> N2[Merchant.onboarding_status = live<br/>no gate -- services are optional]
     N --> O[Dashboard fully unlocked,<br/>ready to receive customer orders]
+    N2 --> O
 ```
 
 ### 9c. Customer order-placement flow (WhatsApp)
 
+Two branches from the intent-menu node, one per `Merchant.vertical` -- a customer only ever sees the branch matching the merchant they're messaging (never both, and never a "Talk to us" handoff, removed from both):
+
 ```mermaid
 flowchart TD
     A[Customer messages<br/>merchant WhatsApp number] --> B["'Hi' / any greeting"]
-    B --> C[Bot: welcome + intent menu]
-    C --> D{Customer intent}
-    D -- Place an order --> E[Bot launches Ordering Flow<br/>in-chat structured UI]
-    D -- Track existing order --> T[Order status lookup<br/>by phone number]
-    D -- Talk to us --> H[Hand off / show contact info]
+    B --> C[Bot: welcome + intent menu<br/>-- exclusive on Merchant.vertical]
+    C --> D{Merchant.vertical}
+
+    D -- restaurant --> D1{Customer intent}
+    D1 -- Place an order --> E[Bot launches Ordering Flow<br/>in-chat structured UI]
+    D1 -- Track order --> T[Order status lookup<br/>by phone number]
     E --> F[Browse menu, add items to cart]
     F --> G[Review cart + total]
     G --> I{Order type}
@@ -355,6 +369,18 @@ flowchart TD
     N --> R
     R --> S[Customer + Address<br/>saved in Customer DB]
     R --> U["Bot sends: 'Order confirmed!'"]
+
+    D -- appointment --> D2{Customer intent}
+    D2 -- Book appointment --> E2[Bot launches Booking Flow<br/>in-chat structured UI]
+    D2 -- Appointment status --> T2[Appointment status lookup<br/>by phone number -- soonest upcoming]
+    E2 --> F2[Browse services -- optional,<br/>skipped if merchant has none]
+    F2 --> G2[Pick an available time slot<br/>-- AppointmentService.get_available_slots]
+    G2 --> I2[Confirm details]
+    I2 --> P2["Appointment created<br/>status = requested"]
+    P2 --> R2[Appointment visible in<br/>Merchant Dashboard]
+    R2 --> S2[Customer saved in Customer DB]
+    R2 --> U2["Bot sends: 'Request received!'"]
+    R2 --> W2[Reminder sent before<br/>appointment time, per merchant's<br/>reminder_offsets_hours]
 ```
 
 ---
@@ -387,6 +413,7 @@ flowchart TD
 2. **Delivery + Address is new.** The brief's flows describe pickup-style fulfillment only ("order ready," staff hands it over) with no mention of delivery logistics. This design adds `order_type` and `Address` for **data capture only** — it does **not** add rider assignment, delivery tracking, or route/logistics management, which stay out of scope per the brief's spirit. If delivery logistics are actually needed for the pilot, that's a bigger scope conversation.
 3. **Merchant onboarding (register → login → Meta token → WhatsApp setup → kitchen details → menu) is newly detailed**, not a deviation — the brief only had one line ("Restaurant sets up their menu/catalog once... inside our merchant app"). This fills in an area the brief left unspecified.
 4. **The in-chat "mini UI" (WhatsApp Flow) is a concrete choice**, not a deviation — the brief already allowed "WhatsApp catalog/cart or a simple guided chat flow." Worth confirming the chosen BSP actually supports WhatsApp Flows well before committing, since not all do equally (fallback: webview link, per Section 6).
+5. **The appointment-booking vertical is realizing an explicit brief statement**, not a deviation — Section 7's exclusions list names "a specific non-restaurant vertical" as out of scope for the pilot while adding "the underlying platform is vertical-agnostic by design, not restaurant-locked." `Merchant.vertical` (Section 1) is that design intent made concrete: exactly two verticals for now (a third would be a visible schema/enum change, not silently supported), one per merchant, fixed at onboarding.
 
 **Assumptions:**
 5. Customers are scoped per-merchant (`merchant_id` + `whatsapp_number` unique), not a global identity across restaurants.
