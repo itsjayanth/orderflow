@@ -36,6 +36,24 @@ def test_build_booking_screen_data_returns_30_minute_slots_9am_to_730pm() -> Non
         assert set(option.keys()) == {"id", "title"}
 
 
+def test_build_booking_screen_data_defaults_saved_fields_to_blank() -> None:
+    data = build_booking_screen_data(business_name="Varkey's")
+
+    assert data["saved_customer_name"] == ""
+    assert data["saved_customer_email"] == ""
+
+
+def test_build_booking_screen_data_includes_saved_customer_name_and_email() -> None:
+    data = build_booking_screen_data(
+        business_name="Varkey's",
+        saved_customer_name="Asha",
+        saved_customer_email="asha@example.com",
+    )
+
+    assert data["saved_customer_name"] == "Asha"
+    assert data["saved_customer_email"] == "asha@example.com"
+
+
 def test_build_booking_screen_data_time_titles_are_12_hour_no_leading_zero() -> None:
     data = build_booking_screen_data(business_name="Varkey's")
 
