@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { usePrefersReducedMotion } from '@/shared/hooks/usePrefersReducedMotion'
@@ -27,7 +27,7 @@ export function CrossfadeStage({
   const [displayedKey, setDisplayedKey] = useState(stageKey)
   const [displayedChildren, setDisplayedChildren] = useState(children)
   const [entering, setEntering] = useState(false)
-  const frameRef = useRef<number>()
+  const frameRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     if (stageKey === displayedKey) {
@@ -50,8 +50,7 @@ export function CrossfadeStage({
       frameRef.current = requestAnimationFrame(() => setEntering(false))
     })
     return () => cancelAnimationFrame(frameRef.current ?? 0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageKey])
+  }, [stageKey, children, displayedKey, reducedMotion])
 
   useEffect(() => () => cancelAnimationFrame(frameRef.current ?? 0), [])
 
