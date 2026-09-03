@@ -61,7 +61,9 @@ async def send_due_appointment_reminders() -> None:
     channel = WhatsAppNotificationChannel(get_whatsapp_sender())
 
     async with SessionFactory() as session:
-        merchants = await MerchantRepository(session).list_by_vertical(MerchantVertical.APPOINTMENT)
+        merchants = await MerchantRepository(session).list_enabled_for_vertical(
+            MerchantVertical.APPOINTMENT
+        )
 
     sent_count = 0
     for merchant in merchants:

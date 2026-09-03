@@ -3,14 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from identity.domain.models import Merchant, MerchantVertical, StaffUser
-
-
-class VerticalAlreadySetError(Exception):
-    """Raised by set_vertical when a merchant's vertical was already chosen
-    -- MULTI_VERTICAL_PLAN.md's explicit-out-of-scope item: no admin ability
-    to switch a merchant's vertical after onboarding, enforced here rather
-    than left as merely absent from the UI."""
+from identity.domain.models import Merchant, MerchantVertical, StaffUser, validate_vertical_flags
 
 
 class MerchantRepository:
@@ -26,12 +19,23 @@ class MerchantRepository:
     async def get(self, merchant_id: uuid.UUID) -> Merchant | None:
         return await self._session.get(Merchant, merchant_id)
 
-    async def set_vertical(self, merchant_id: uuid.UUID, vertical: MerchantVertical) -> Merchant:
+    async def set_vertical_flags(
+        self, merchant_id: uuid.UUID, *, restaurant_enabled: bool, appointment_enabled: bool
+    ) -> Merchant:
+        """The only writer for both flags -- called from the onboarding
+        wizard's first step and, later, from Settings' "Business types"
+        section, both through the same PUT /api/v1/onboarding/verticals
+        endpoint. No one-time/immutability guard (VERTICAL_TOGGLE_PLAN.md
+        deliberately retires Phase 10's "exactly one, forever" rule) -- just
+        the shared invariant validator, so both entry points get identical
+        behavior."""
+        validate_vertical_flags(
+            restaurant_enabled=restaurant_enabled, appointment_enabled=appointment_enabled
+        )
         merchant = await self._session.get(Merchant, merchant_id)
         assert merchant is not None
-        if merchant.vertical is not None:
-            raise VerticalAlreadySetError(str(merchant_id))
-        merchant.vertical = vertical.value
+        merchant.restaurant_enabled = restaurant_enabled
+        merchant.appointment_enabled = appointment_enabled
         await self._session.flush()
         return merchant
 
@@ -61,15 +65,18 @@ class MerchantRepository:
         await self._session.flush()
         return merchant
 
-    async def list_by_vertical(self, vertical: MerchantVertical) -> list[Merchant]:
-        """Every merchant of a given vertical -- used by the reminder scan
-        (shared/scheduler.py's send_due_appointment_reminders) to find
-        appointment-vertical merchants to check. Not tenant-scoped by
+    async def list_enabled_for_vertical(self, vertical: MerchantVertical) -> list[Merchant]:
+        """Every merchant with the given vertical's flag on -- used by the
+        reminder scan (shared/scheduler.py's send_due_appointment_reminders)
+        to find appointment-enabled merchants to check. Not tenant-scoped by
         design, same rationale as StaffUserRepository below: this runs from
         the scheduler, not a per-request tenant context."""
-        result = await self._session.execute(
-            select(Merchant).where(Merchant.vertical == vertical.value)
+        column = (
+            Merchant.appointment_enabled
+            if vertical == MerchantVertical.APPOINTMENT
+            else Merchant.restaurant_enabled
         )
+        result = await self._session.execute(select(Merchant).where(column.is_(True)))
         return list(result.scalars().all())
 
 

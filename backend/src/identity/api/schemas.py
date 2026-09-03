@@ -26,7 +26,8 @@ class MerchantOut(BaseModel):
     merchant_id: uuid.UUID
     business_name: str
     onboarding_status: str
-    vertical: str | None
+    restaurant_enabled: bool
+    appointment_enabled: bool
 
     model_config = {"from_attributes": True}
 

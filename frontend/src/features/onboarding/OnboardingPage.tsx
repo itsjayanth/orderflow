@@ -24,7 +24,7 @@ import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButt
 import {
   useBusinessProfile,
   useOnboardingStatus,
-  useSelectVertical,
+  useSelectVerticals,
   useUpdateBusinessProfile,
 } from '@/features/onboarding/useOnboarding'
 import { TestWhatsAppMessageCard } from '@/features/settings/TestWhatsAppMessageCard'
@@ -34,39 +34,59 @@ import {
 } from '@/features/settings/useAppointmentServices'
 import { useWhatsAppSettings } from '@/features/settings/useWhatsAppSettings'
 import { cn } from '@/lib/utils'
-import type { MerchantVertical, OnboardingStatus } from '@/shared/api/types'
+import type { OnboardingStatusOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
 import { useOnboardingWizardStore } from './onboardingWizardStore'
 
-const STEP_LABELS = [
-  'Business type',
-  'Connect WhatsApp',
-  'Business details',
-  'Add an item',
-  'FAQs (optional)',
-  'Go live',
-] as const
+// One entry per selected vertical's setup step, restaurant-then-appointment
+// always (VERTICAL_TOGGLE_PLAN.md's order decision -- simpler and more
+// robust than tracking which checkbox was clicked first across a wizard
+// that already supports navigating away and back mid-flow). `ready` mirrors
+// the backend's own gate (has_available_item / has_available_service) --
+// there's no separate per-vertical onboarding_status value, so this is the
+// only signal for "which of these am I still missing."
+interface VerticalStep {
+  key: 'item' | 'service'
+  label: string
+  ready: boolean
+}
 
-const APPOINTMENT_STEP_LABELS = [
-  'Business type',
-  'Connect WhatsApp',
-  'Business details',
-  'Add a service',
-  'FAQs (optional)',
-  'Go live',
-] as const
+function verticalStepsFor(status: OnboardingStatusOut): VerticalStep[] {
+  const steps: VerticalStep[] = []
+  if (status.restaurant_enabled) {
+    steps.push({ key: 'item', label: 'Add an item', ready: status.has_available_item })
+  }
+  if (status.appointment_enabled) {
+    steps.push({ key: 'service', label: 'Add a service', ready: status.has_available_service })
+  }
+  return steps
+}
+
+function stepLabelsFor(verticalSteps: VerticalStep[]): string[] {
+  return [
+    'Business type',
+    'Connect WhatsApp',
+    'Business details',
+    ...verticalSteps.map((s) => s.label),
+    'FAQs (optional)',
+    'Go live',
+  ]
+}
 
 // The wizard's displayed step is driven by Merchant.onboarding_status (the
-// server-side source of truth, per IMPLEMENTATION_PLAN.md's Phase 8 note),
-// not derived independently client-side. FAQs are a purely optional add-on
-// with no server-side gate of their own (unlike every other step here) --
-// `catalog_ready` still lands on it, but `live` skips straight past it (both
-// verticals -- see onboarding_service.py's try_advance_for_catalog_ready),
-// so nothing about reaching "live" ever depends on visiting this step.
-function stepForStatus(status: OnboardingStatus): number {
-  switch (status) {
+// server-side source of truth, per IMPLEMENTATION_PLAN.md's Phase 8 note)
+// plus, while still mid-setup, which of the selected verticals' readiness
+// gates are met -- there's no separate onboarding_status per vertical, so
+// `profile_completed` covers everything from "just answered business
+// details" through "every selected vertical but one is ready." FAQs are a
+// purely optional add-on with no server-side gate of their own (unlike
+// every other step here) -- `catalog_ready` still lands on it, but `live`
+// skips straight past it, so nothing about reaching "live" ever depends on
+// visiting this step.
+function furthestStepFor(status: OnboardingStatusOut, verticalSteps: VerticalStep[]): number {
+  switch (status.onboarding_status) {
     case 'registered':
       return 0
     case 'vertical_selected':
@@ -74,12 +94,14 @@ function stepForStatus(status: OnboardingStatus): number {
       return 1
     case 'whatsapp_verified':
       return 2
-    case 'profile_completed':
-      return 3
+    case 'profile_completed': {
+      const firstNotReady = verticalSteps.findIndex((s) => !s.ready)
+      return firstNotReady === -1 ? 3 + verticalSteps.length : 3 + firstNotReady
+    }
     case 'catalog_ready':
-      return 4
+      return 3 + verticalSteps.length
     case 'live':
-      return 5
+      return 3 + verticalSteps.length + 1
   }
 }
 
@@ -157,7 +179,7 @@ function Stepper({
 }
 
 const VERTICAL_OPTIONS: {
-  value: MerchantVertical
+  value: 'restaurant' | 'appointment'
   icon: typeof UtensilsCrossed
   title: string
   description: string
@@ -165,7 +187,7 @@ const VERTICAL_OPTIONS: {
   {
     value: 'restaurant',
     icon: UtensilsCrossed,
-    title: 'Restaurant',
+    title: 'Restaurant / Orders',
     description: 'Customers browse a menu and place food orders over WhatsApp.',
   },
   {
@@ -177,58 +199,83 @@ const VERTICAL_OPTIONS: {
   },
 ]
 
-// The first wizard step (MULTI_VERTICAL_PLAN.md Phase M2) -- unlike every
-// other step, this one is never editable once answered: the backend
-// (MerchantRepository.set_vertical) 409s a second PUT, and a merchant's
-// vertical is fixed at registration by product design (no "switch vertical
-// later" path). So once `vertical` is set, this renders read-only instead
-// of the usual clickable form.
-function VerticalSelectStep({ vertical }: { vertical: MerchantVertical | null }) {
-  const selectVertical = useSelectVertical()
+// The first wizard step -- multi-select (VERTICAL_TOGGLE_PLAN.md): pick one
+// or both upfront, at least one required to continue. Unlike Phase 10's
+// single-choice version, this stays editable like every other step -- the
+// backend has no immutability guard any more (adding a vertical later from
+// Settings uses this exact same endpoint), so there's no reason for the
+// wizard to pretend otherwise.
+function VerticalSelectStep({
+  restaurantEnabled,
+  appointmentEnabled,
+}: {
+  restaurantEnabled: boolean
+  appointmentEnabled: boolean
+}) {
+  const selectVerticals = useSelectVerticals()
+  const [restaurant, setRestaurant] = useState(restaurantEnabled)
+  const [appointment, setAppointment] = useState(appointmentEnabled)
 
-  if (vertical) {
-    const chosen = VERTICAL_OPTIONS.find((option) => option.value === vertical)
-    return (
-      <div className="max-w-md space-y-3">
-        <p className="text-muted-foreground text-sm">
-          Business type is set for this account and can't be changed.
-        </p>
-        {chosen && (
-          <div className="flex items-center gap-3 rounded-lg border p-4">
-            <chosen.icon className="text-primary size-6 shrink-0" aria-hidden />
-            <div>
-              <p className="font-medium">{chosen.title}</p>
-              <p className="text-muted-foreground text-sm">{chosen.description}</p>
-            </div>
-          </div>
-        )}
-      </div>
-    )
+  useEffect(() => {
+    setRestaurant(restaurantEnabled)
+    setAppointment(appointmentEnabled)
+  }, [restaurantEnabled, appointmentEnabled])
+
+  const bothOff = !restaurant && !appointment
+  const selected: Record<'restaurant' | 'appointment', boolean> = { restaurant, appointment }
+  const setters: Record<'restaurant' | 'appointment', (value: boolean) => void> = {
+    restaurant: setRestaurant,
+    appointment: setAppointment,
   }
 
   return (
     <div className="max-w-md space-y-4">
       <p className="text-muted-foreground text-sm">
-        What kind of business is this? This can't be changed later, so pick carefully.
+        What does your business do? Pick one or both -- you can turn on the other any time later
+        from Settings.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        {VERTICAL_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            disabled={selectVertical.isPending}
-            onClick={() => selectVertical.mutate(option.value)}
-            className="hover:border-primary hover:bg-secondary/40 focus-visible:ring-ring/30 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors duration-150 focus-visible:ring-4 disabled:opacity-60"
-          >
-            <option.icon className="text-primary size-6" aria-hidden />
-            <span className="font-medium">{option.title}</span>
-            <span className="text-muted-foreground text-sm">{option.description}</span>
-          </button>
-        ))}
+        {VERTICAL_OPTIONS.map((option) => {
+          const checked = selected[option.value]
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={checked}
+              onClick={() => setters[option.value](!checked)}
+              className={cn(
+                'focus-visible:ring-ring/30 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors duration-150 focus-visible:ring-4',
+                checked
+                  ? 'border-primary bg-secondary/40'
+                  : 'hover:border-primary hover:bg-secondary/40',
+              )}
+            >
+              <div className="flex w-full items-center justify-between">
+                <option.icon className="text-primary size-6" aria-hidden />
+                {checked && <Check className="text-primary size-4" aria-hidden />}
+              </div>
+              <span className="font-medium">{option.title}</span>
+              <span className="text-muted-foreground text-sm">{option.description}</span>
+            </button>
+          )
+        })}
       </div>
-      {selectVertical.isError && (
+      {bothOff && <p className="text-destructive text-sm">Select at least one to continue.</p>}
+      {selectVerticals.isError && (
         <p className="text-destructive text-sm">Failed to save. Please try again.</p>
       )}
+      <Button
+        type="button"
+        disabled={bothOff || selectVerticals.isPending}
+        onClick={() =>
+          selectVerticals.mutate({
+            restaurant_enabled: restaurant,
+            appointment_enabled: appointment,
+          })
+        }
+      >
+        {selectVerticals.isPending ? 'Saving…' : 'Continue'}
+      </Button>
     </div>
   )
 }
@@ -267,6 +314,14 @@ const APPOINTMENT_CATEGORY_OPTIONS = [
   'Other',
 ] as const
 
+// Both enabled at once gets a merged, vertical-neutral option list rather
+// than picking one vertical's copy arbitrarily -- 'Other' only needs to
+// appear once.
+const BOTH_CATEGORY_OPTIONS = [
+  ...RESTAURANT_CATEGORY_OPTIONS.filter((option) => option !== 'Other'),
+  ...APPOINTMENT_CATEGORY_OPTIONS,
+] as const
+
 const profileSchema = z.object({
   address_line1: z.string().min(1, 'Required'),
   address_line2: z.string().optional(),
@@ -277,14 +332,34 @@ const profileSchema = z.object({
 })
 type ProfileForm = z.infer<typeof profileSchema>
 
-function BusinessDetailsStep({ vertical }: { vertical: MerchantVertical | null }) {
-  const isAppointment = vertical === 'appointment'
-  const addressLabel = isAppointment ? 'Business/practice address' : 'Kitchen/restaurant address'
-  const categoryLabel = isAppointment ? 'Service category' : 'Cuisine type'
-  const categoryOptions = isAppointment ? APPOINTMENT_CATEGORY_OPTIONS : RESTAURANT_CATEGORY_OPTIONS
-  const licenseLabel = isAppointment
-    ? 'License/registration number (optional)'
-    : 'FSSAI license number (optional)'
+function BusinessDetailsStep({
+  restaurantEnabled,
+  appointmentEnabled,
+}: {
+  restaurantEnabled: boolean
+  appointmentEnabled: boolean
+}) {
+  const both = restaurantEnabled && appointmentEnabled
+  const appointmentOnly = appointmentEnabled && !restaurantEnabled
+  const addressLabel = appointmentOnly
+    ? 'Business/practice address'
+    : both
+      ? 'Business address'
+      : 'Kitchen/restaurant address'
+  const categoryLabel = appointmentOnly
+    ? 'Service category'
+    : both
+      ? 'Business category'
+      : 'Cuisine type'
+  const categoryOptions = appointmentOnly
+    ? APPOINTMENT_CATEGORY_OPTIONS
+    : both
+      ? BOTH_CATEGORY_OPTIONS
+      : RESTAURANT_CATEGORY_OPTIONS
+  const licenseLabel =
+    appointmentOnly || both
+      ? 'License/registration number (optional)'
+      : 'FSSAI license number (optional)'
   const { data } = useBusinessProfile()
   const update = useUpdateBusinessProfile()
   const {
@@ -601,11 +676,22 @@ function AddFAQStep() {
   )
 }
 
-function LiveStep({ vertical }: { vertical: MerchantVertical | null }) {
-  const description =
-    vertical === 'appointment'
-      ? 'Customers can now message your WhatsApp number to book an appointment. Incoming bookings will show up on the Appointments page.'
-      : 'Customers can now message your WhatsApp number to browse the catalog and place orders. Incoming orders will show up on the Orders page.'
+function LiveStep({
+  restaurantEnabled,
+  appointmentEnabled,
+}: {
+  restaurantEnabled: boolean
+  appointmentEnabled: boolean
+}) {
+  const capabilities: string[] = []
+  if (restaurantEnabled) capabilities.push('browse the catalog and place orders')
+  if (appointmentEnabled) capabilities.push('book an appointment')
+  const pages: string[] = []
+  if (restaurantEnabled) pages.push('Orders')
+  if (appointmentEnabled) pages.push('Appointments')
+  const description = `Customers can now message your WhatsApp number to ${capabilities.join(
+    ' or ',
+  )}. Incoming activity will show up on the ${pages.join('/')} page${pages.length > 1 ? 's' : ''}.`
   return (
     <div className="max-w-md space-y-3">
       <span className="bg-primary text-primary-foreground flex size-10 items-center justify-center rounded-full text-lg">
@@ -622,9 +708,11 @@ export function OnboardingPage() {
   const currentStep = useOnboardingWizardStore((s) => s.currentStep)
   const setStep = useOnboardingWizardStore((s) => s.setStep)
 
-  const serverStep = status ? stepForStatus(status.onboarding_status) : 0
-  const vertical = status?.vertical ?? null
-  const stepLabels = vertical === 'appointment' ? APPOINTMENT_STEP_LABELS : STEP_LABELS
+  const verticalSteps = status ? verticalStepsFor(status) : []
+  const serverStep = status ? furthestStepFor(status, verticalSteps) : 0
+  const stepLabels = stepLabelsFor(verticalSteps)
+  const restaurantEnabled = status?.restaurant_enabled ?? false
+  const appointmentEnabled = status?.appointment_enabled ?? false
 
   // Auto-advance the displayed step whenever server progress newly moves
   // past where it was last seen -- but only fire once per such change (keyed
@@ -643,11 +731,14 @@ export function OnboardingPage() {
     return <p className="text-muted-foreground text-sm">Loading…</p>
   }
 
+  const faqStep = 3 + verticalSteps.length
+  const liveStep = faqStep + 1
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Onboarding"
-        description="Pick a business type, connect WhatsApp, add your business details, and go live. Adding an item/service and FAQs are optional."
+        description="Pick your business type(s), connect WhatsApp, add your business details, and go live. Adding an item/service and FAQs are optional."
       />
 
       <Stepper
@@ -658,7 +749,7 @@ export function OnboardingPage() {
       />
 
       <Card className="p-6">
-        {currentStep < serverStep && currentStep !== 0 && (
+        {currentStep < serverStep && (
           <div className="bg-muted mb-4 flex items-center justify-between rounded-lg p-3 text-sm">
             <span>This step is already done -- you're editing it.</span>
             <Button variant="ghost" size="sm" onClick={() => setStep(serverStep)}>
@@ -666,12 +757,28 @@ export function OnboardingPage() {
             </Button>
           </div>
         )}
-        {currentStep === 0 && <VerticalSelectStep vertical={vertical} />}
+        {currentStep === 0 && (
+          <VerticalSelectStep
+            restaurantEnabled={restaurantEnabled}
+            appointmentEnabled={appointmentEnabled}
+          />
+        )}
         {currentStep === 1 && <ConnectWhatsAppStep />}
-        {currentStep === 2 && <BusinessDetailsStep vertical={vertical} />}
-        {currentStep === 3 && (vertical === 'appointment' ? <AddServiceStep /> : <AddItemStep />)}
-        {currentStep === 4 && <AddFAQStep />}
-        {currentStep === 5 && <LiveStep vertical={vertical} />}
+        {currentStep === 2 && (
+          <BusinessDetailsStep
+            restaurantEnabled={restaurantEnabled}
+            appointmentEnabled={appointmentEnabled}
+          />
+        )}
+        {verticalSteps.map(
+          (step, index) =>
+            currentStep === 3 + index &&
+            (step.key === 'item' ? <AddItemStep key="item" /> : <AddServiceStep key="service" />),
+        )}
+        {currentStep === faqStep && <AddFAQStep />}
+        {currentStep === liveStep && (
+          <LiveStep restaurantEnabled={restaurantEnabled} appointmentEnabled={appointmentEnabled} />
+        )}
       </Card>
     </div>
   )

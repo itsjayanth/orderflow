@@ -24,14 +24,28 @@ ONBOARDING_STATUSES = (
 
 
 class MerchantVertical(StrEnum):
-    """A merchant is exactly one of these, chosen once at onboarding and
-    never changed afterwards (MerchantRepository.set_vertical raises if
-    called a second time) -- MULTI_VERTICAL_PLAN.md's Decision 6: an enum,
-    not a free string, so adding a third vertical is a visible migration,
-    not a silent typo."""
+    """Not a stored single value -- see Merchant.restaurant_enabled /
+    Merchant.appointment_enabled below (VERTICAL_TOGGLE_PLAN.md: a merchant
+    can run either or both, and can add the other later from Settings, not
+    just once at registration). This enum is still useful as a typed "which
+    vertical" parameter (e.g. MerchantRepository.list_enabled_for_vertical),
+    matching MULTI_VERTICAL_PLAN.md's Decision 6 that adding a third
+    vertical should be a visible migration, not a silent string typo."""
 
     RESTAURANT = "restaurant"
     APPOINTMENT = "appointment"
+
+
+class NoVerticalSelectedError(Exception):
+    """restaurant_enabled and appointment_enabled can't both be False -- the
+    one domain invariant both the onboarding entry point and the Settings
+    add-on entry point validate through, per VERTICAL_TOGGLE_PLAN.md's "no
+    separate code path or weaker validation just because it's onboarding.\""""
+
+
+def validate_vertical_flags(*, restaurant_enabled: bool, appointment_enabled: bool) -> None:
+    if not restaurant_enabled and not appointment_enabled:
+        raise NoVerticalSelectedError("At least one of restaurant/appointment must be enabled")
 
 
 class Merchant(Base):
@@ -43,11 +57,13 @@ class Merchant(Base):
     onboarding_status: Mapped[str] = mapped_column(String(32), default="registered")
     status: Mapped[str] = mapped_column(String(16), default="active")
 
-    # Set once via PUT /api/v1/onboarding/vertical (the new first wizard
-    # step) and never changed after -- nullable because it's unset for the
-    # brief window between registration and that step. MerchantRepository
-    # .set_vertical() is the only writer and enforces the immutability.
-    vertical: Mapped[str | None] = mapped_column(String(16), default=None)
+    # Set via PUT /api/v1/onboarding/verticals -- the onboarding wizard's
+    # first step, and (unlike Phase 10's single `vertical` enum) freely
+    # editable again later from Settings to add a second vertical. At least
+    # one must always be True (validate_vertical_flags, enforced by
+    # MerchantRepository.set_vertical_flags, the only writer for both).
+    restaurant_enabled: Mapped[bool] = mapped_column(default=False)
+    appointment_enabled: Mapped[bool] = mapped_column(default=False)
 
     # Business details (ARCHITECTURE.md Section 1's "business details"), all
     # nullable until the onboarding wizard's "business details" step is

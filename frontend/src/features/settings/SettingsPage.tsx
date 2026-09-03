@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useMe } from '@/features/auth/useAuth'
 import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButton'
+import { useSelectVerticals } from '@/features/onboarding/useOnboarding'
 import type { NotificationTemplateOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
@@ -34,6 +35,88 @@ const paymentSchema = z.object({
   razorpay_key_secret: z.string().min(1, 'Required'),
 })
 type PaymentForm = z.infer<typeof paymentSchema>
+
+// The Settings add-on-later entry point (VERTICAL_TOGGLE_PLAN.md) -- the
+// exact same PUT /api/v1/onboarding/verticals the onboarding wizard's first
+// step uses, so a merchant can turn on a second business type any time
+// after going live, not just at registration. Turning one on doesn't force
+// the merchant back into the wizard: its Catalog/Services page and nav tab
+// appear immediately (Layout.tsx reads the same flags), while the
+// WhatsApp menu stays silent about it until the readiness gate (>=1
+// available item/active service) is met -- enforced server-side, not here.
+function BusinessTypesSettingsSection() {
+  const { data: me } = useMe()
+  const selectVerticals = useSelectVerticals()
+  const [restaurantEnabled, setRestaurantEnabled] = useState(false)
+  const [appointmentEnabled, setAppointmentEnabled] = useState(false)
+  const [justSaved, setJustSaved] = useState(false)
+
+  useEffect(() => {
+    if (!me) return
+    setRestaurantEnabled(me.merchant.restaurant_enabled)
+    setAppointmentEnabled(me.merchant.appointment_enabled)
+  }, [me])
+
+  const bothDisabled = !restaurantEnabled && !appointmentEnabled
+
+  function onSave() {
+    if (bothDisabled) return
+    selectVerticals.mutate(
+      { restaurant_enabled: restaurantEnabled, appointment_enabled: appointmentEnabled },
+      {
+        onSuccess: () => {
+          setJustSaved(true)
+          setTimeout(() => setJustSaved(false), 4000)
+        },
+      },
+    )
+  }
+
+  return (
+    <Card className="space-y-4 p-6">
+      <div>
+        <h2 className="text-lg font-medium">Business types</h2>
+        <p className="text-muted-foreground text-sm">
+          Turn on a second business type any time -- its Catalog/Services page and dashboard tab
+          appear right away, but WhatsApp customers won't see it until you've added at least one
+          available item or service.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <Switch
+            id="business_type_restaurant"
+            checked={restaurantEnabled}
+            onCheckedChange={setRestaurantEnabled}
+          />
+          <Label htmlFor="business_type_restaurant">Restaurant / Orders</Label>
+        </div>
+        <div className="flex items-center gap-3">
+          <Switch
+            id="business_type_appointment"
+            checked={appointmentEnabled}
+            onCheckedChange={setAppointmentEnabled}
+          />
+          <Label htmlFor="business_type_appointment">Appointments</Label>
+        </div>
+      </div>
+
+      {bothDisabled && (
+        <p className="text-destructive text-sm">At least one business type must stay on.</p>
+      )}
+      {selectVerticals.isError && (
+        <p className="text-destructive text-sm">Failed to save. Please try again.</p>
+      )}
+      <div className="flex items-center gap-3">
+        <Button type="button" onClick={onSave} disabled={selectVerticals.isPending || bothDisabled}>
+          {selectVerticals.isPending ? 'Saving…' : 'Save business types'}
+        </Button>
+        {justSaved && !selectVerticals.isPending && <SavedIndicator message="Saved" />}
+      </div>
+    </Card>
+  )
+}
 
 function PaymentSettingsSection() {
   const { data, isLoading } = usePaymentSettings()
@@ -165,13 +248,14 @@ function WhatsAppSettingsSection() {
       {justSaved && <SavedIndicator message="Saved and connected" />}
 
       <TestWhatsAppMessageCard disabled={!data?.access_token_set} />
-      {/* Vertical-gated (MULTI_VERTICAL_PLAN.md Phase M4): a merchant only
-          ever sends the Flow their own vertical's WhatsApp menu offers --
-          setting up the other one's Flow would be dead configuration. */}
-      {me?.merchant.vertical === 'restaurant' && (
+      {/* Additive, not exclusive (VERTICAL_TOGGLE_PLAN.md): a merchant only
+          ever sends the Flow(s) their enabled vertical's WhatsApp menu
+          offers -- setting up a disabled vertical's Flow would be dead
+          configuration, but both can show at once now. */}
+      {me?.merchant.restaurant_enabled && (
         <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />
       )}
-      {me?.merchant.vertical === 'appointment' && (
+      {me?.merchant.appointment_enabled && (
         <AppointmentFlowSetupCard disabled={!data?.access_token_set} />
       )}
     </Card>
@@ -524,12 +608,13 @@ export function SettingsPage() {
         title="Settings"
         description="Test/dummy values work fine for now -- switching to real credentials later doesn't require any code changes."
       />
+      <BusinessTypesSettingsSection />
       <PaymentSettingsSection />
       <WhatsAppSettingsSection />
-      {/* Appointment-vertical-only (MULTI_VERTICAL_PLAN.md Phase M5) --
-          a restaurant merchant never books appointments, so availability
-          hours have nothing to configure. */}
-      {me?.merchant.vertical === 'appointment' && <AppointmentAvailabilitySettingsSection />}
+      {/* Appointment-enabled-only -- a merchant with appointment booking off
+          never books appointments, so availability hours have nothing to
+          configure. */}
+      {me?.merchant.appointment_enabled && <AppointmentAvailabilitySettingsSection />}
       <TemplatesSettingsSection />
     </div>
   )

@@ -11,8 +11,8 @@ from flows.domain.setup import (
     update_appointment_flow_assets,
     update_flow_assets,
 )
-from identity.adapters.repository import MerchantRepository, VerticalAlreadySetError
-from identity.domain.models import Merchant, MerchantVertical
+from identity.adapters.repository import MerchantRepository
+from identity.domain.models import Merchant, NoVerticalSelectedError
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.api.schemas import (
     BusinessProfileOut,
@@ -20,8 +20,8 @@ from onboarding.api.schemas import (
     EmbeddedSignupRequest,
     EmbeddedSignupResult,
     OnboardingStatusOut,
-    VerticalSelectionOut,
-    VerticalSelectionRequest,
+    VerticalsSelectionOut,
+    VerticalsSelectionRequest,
     WhatsAppFlowSetupRequest,
     WhatsAppFlowSetupResult,
     WhatsAppSettingsOut,
@@ -76,33 +76,35 @@ def _profile_to_out(merchant: Merchant) -> BusinessProfileOut:
     )
 
 
-@router.put("/vertical", response_model=VerticalSelectionOut)
-async def select_vertical(
-    body: VerticalSelectionRequest, tenant: CurrentTenant, session: DbSession
-) -> VerticalSelectionOut:
-    """The new first wizard step (MULTI_VERTICAL_PLAN.md Phase M1/M2) --
-    one-time, immutable: a merchant that already has a vertical gets a 409,
-    never a silent overwrite (see identity/adapters/repository.py's
-    VerticalAlreadySetError, and the explicit-out-of-scope "no admin
-    ability to switch a merchant's vertical after onboarding")."""
+@router.put("/verticals", response_model=VerticalsSelectionOut)
+async def select_verticals(
+    body: VerticalsSelectionRequest, tenant: CurrentTenant, session: DbSession
+) -> VerticalsSelectionOut:
+    """Multi-select, and callable any number of times -- both the
+    onboarding wizard's first step and, later, Settings' "Business types"
+    section (to add a second vertical after going live) hit this same
+    endpoint (VERTICAL_TOGGLE_PLAN.md). No one-time/immutability guard
+    (that was Phase 10's rule for the old single `vertical` enum, now
+    retired); the only validation is the shared invariant -- at least one
+    of the two must be True."""
     try:
-        vertical = MerchantVertical(body.vertical)
-    except ValueError as exc:
+        merchant = await MerchantRepository(session).set_vertical_flags(
+            tenant.merchant_id,
+            restaurant_enabled=body.restaurant_enabled,
+            appointment_enabled=body.appointment_enabled,
+        )
+    except NoVerticalSelectedError as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Invalid vertical {body.vertical!r} -- must be one of "
-            f"{[v.value for v in MerchantVertical]}",
+            "Select at least one business type",
         ) from exc
-
-    try:
-        merchant = await MerchantRepository(session).set_vertical(tenant.merchant_id, vertical)
-    except VerticalAlreadySetError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Vertical already set") from exc
 
     await advance_after_vertical_selected(session, tenant)
     await session.commit()
-    assert merchant.vertical is not None
-    return VerticalSelectionOut(vertical=merchant.vertical)
+    return VerticalsSelectionOut(
+        restaurant_enabled=merchant.restaurant_enabled,
+        appointment_enabled=merchant.appointment_enabled,
+    )
 
 
 @router.get("/whatsapp", response_model=WhatsAppSettingsOut)
@@ -346,7 +348,8 @@ async def get_onboarding_status(tenant: CurrentTenant, session: DbSession) -> On
     await session.commit()
     return OnboardingStatusOut(
         onboarding_status=checklist.onboarding_status,
-        vertical=checklist.vertical,
+        restaurant_enabled=checklist.restaurant_enabled,
+        appointment_enabled=checklist.appointment_enabled,
         whatsapp_connected=checklist.whatsapp_connected,
         profile_completed=checklist.profile_completed,
         has_available_item=checklist.has_available_item,

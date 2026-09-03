@@ -2,8 +2,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useAuthStore } from '@/features/auth/authStore'
 import { apiFetch } from '@/shared/api/client'
 import type {
+  MeResponse,
   NotificationTemplateOut,
   PaymentSettingsOut,
   WhatsAppSettingsOut,
@@ -142,5 +144,97 @@ describe('SettingsPage templates section', () => {
       body: "Order confirmed! We'll let you know when it's ready.",
       is_active: true,
     })
+  })
+})
+
+function meResponse(restaurantEnabled: boolean, appointmentEnabled: boolean): MeResponse {
+  return {
+    staff_user: {
+      staff_user_id: '00000000-0000-0000-0000-000000000000',
+      name: 'Jane Owner',
+      email_or_phone: 'owner@example.com',
+      role: 'owner',
+      last_login_at: null,
+    },
+    merchant: {
+      merchant_id: '11111111-1111-1111-1111-111111111111',
+      business_name: 'Test Business',
+      onboarding_status: 'live',
+      restaurant_enabled: restaurantEnabled,
+      appointment_enabled: appointmentEnabled,
+    },
+  }
+}
+
+describe('SettingsPage business types section', () => {
+  beforeEach(() => {
+    mockedApiFetch.mockReset()
+    // useMe() only fires while authenticated -- BusinessTypesSettingsSection
+    // (unlike the templates-only tests above) depends on its data.
+    useAuthStore.setState({ accessToken: 'test-token', status: 'authenticated' })
+  })
+
+  function mockBaseRoutes(restaurantEnabled: boolean, appointmentEnabled: boolean) {
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path === '/api/v1/auth/me')
+        return Promise.resolve(meResponse(restaurantEnabled, appointmentEnabled))
+      if (path === '/api/v1/payments/settings') return Promise.resolve(paymentSettings)
+      if (path === '/api/v1/onboarding/whatsapp') return Promise.resolve(whatsappSettings)
+      if (path === '/api/v1/notifications/templates') return Promise.resolve(defaultTemplates)
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+  }
+
+  it('pre-checks the business types the merchant already has enabled', async () => {
+    mockBaseRoutes(true, false)
+
+    renderPage()
+
+    const restaurantSwitch = await screen.findByLabelText('Restaurant / Orders')
+    // The switches render immediately (local state defaults to unchecked)
+    // and only sync to the fetched Merchant flags once GET /me resolves --
+    // wait for that sync before asserting, so this isn't racing the query.
+    await waitFor(() => expect(restaurantSwitch).toHaveAttribute('aria-checked', 'true'))
+    expect(screen.getByLabelText('Appointments')).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('turning off the only enabled business type blocks saving', async () => {
+    mockBaseRoutes(true, false)
+
+    renderPage()
+
+    const restaurantSwitch = await screen.findByLabelText('Restaurant / Orders')
+    await waitFor(() => expect(restaurantSwitch).toHaveAttribute('aria-checked', 'true'))
+    fireEvent.click(restaurantSwitch)
+
+    expect(await screen.findByText(/at least one business type must stay on/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /save business types/i })).toBeDisabled()
+  })
+
+  it('turning on a second business type calls the same verticals endpoint the wizard uses', async () => {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/v1/auth/me') return Promise.resolve(meResponse(true, false))
+      if (path === '/api/v1/payments/settings') return Promise.resolve(paymentSettings)
+      if (path === '/api/v1/onboarding/whatsapp') return Promise.resolve(whatsappSettings)
+      if (path === '/api/v1/notifications/templates') return Promise.resolve(defaultTemplates)
+      if (path === '/api/v1/onboarding/verticals' && init?.method === 'PUT') {
+        return Promise.resolve({ restaurant_enabled: true, appointment_enabled: true })
+      }
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+
+    renderPage()
+
+    const restaurantSwitch = await screen.findByLabelText('Restaurant / Orders')
+    await waitFor(() => expect(restaurantSwitch).toHaveAttribute('aria-checked', 'true'))
+    fireEvent.click(screen.getByLabelText('Appointments'))
+    fireEvent.click(screen.getByRole('button', { name: /save business types/i }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/onboarding/verticals', {
+        method: 'PUT',
+        body: JSON.stringify({ restaurant_enabled: true, appointment_enabled: true }),
+      }),
+    )
   })
 })

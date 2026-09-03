@@ -26,9 +26,10 @@ from flows.domain.order_builder import (
     resolve_contact_phone,
 )
 from identity.adapters.repository import MerchantRepository
-from identity.domain.models import Merchant, MerchantVertical
+from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.domain.models import WhatsAppBusinessAccount
+from onboarding.domain.onboarding_service import appointment_ready, restaurant_ready
 from ordering_flow.domain.checkout import perform_checkout
 from orders.adapters.repository import OrderRepository
 from orders.domain.models import Order
@@ -48,37 +49,34 @@ _FAQ_MENU_MAX_ROWS = 10
 _FAQ_DISAMBIGUATION_MAX_ROWS = 3
 
 
-def _menu_options_for_vertical(vertical: str | None) -> list[tuple[str, str]]:
-    """MULTI_VERTICAL_PLAN.md Phase M4: exclusive on vertical, not additive
-    -- a restaurant merchant never sees "Book appointment", an appointment
-    merchant never sees "Place order", and neither ever sees "Talk to us"
-    (removed outright, not conditionally, per the same plan). `vertical`
-    should never actually be None here (handle_inbound_message's `live`
-    guard implies onboarding, including the vertical step, is complete),
-    but a merchant somehow reaching this without one gets an empty
-    vertical-specific menu rather than a crash -- FAQs (if any) still show."""
-    if vertical == MerchantVertical.APPOINTMENT.value:
-        return [
-            (Intent.BOOK_APPOINTMENT.value, "Book appointment"),
-            (Intent.TRACK_APPOINTMENT.value, "Appointment status"),
-        ]
-    if vertical == MerchantVertical.RESTAURANT.value:
-        return [
+async def _menu_options(
+    session: AsyncSession, tenant: TenantContext, merchant: Merchant
+) -> list[tuple[str, str]]:
+    """VERTICAL_TOGGLE_PLAN.md: additive, not exclusive -- a merchant with
+    both verticals enabled sees all four options, one with just one enabled
+    sees exactly that vertical's two, and "Talk to us" is gone entirely for
+    both (MULTI_VERTICAL_PLAN.md Phase M4, unchanged by this plan). Each
+    vertical's options are gated on *readiness* too (restaurant_ready /
+    appointment_ready), not just its enabled flag -- an enabled-but-empty
+    vertical (zero available items/active services) is never offered to a
+    customer, the "don't show an empty flow" guard this plan's whole point
+    is to enforce at exactly this single call site.
+
+    WhatsApp's interactive "button" message type is capped at 3 buttons by
+    Meta -- having at least one active FAQ, or both verticals enabled, is
+    what can push the menu past 3 options, which is why the final "show the
+    menu" branch below switches to send_list once len(options) > 3."""
+    options: list[tuple[str, str]] = []
+    if merchant.restaurant_enabled and await restaurant_ready(session, tenant):
+        options += [
             (Intent.PLACE_ORDER.value, "Place order"),
             (Intent.TRACK_ORDER.value, "Track order"),
         ]
-    return []
-
-
-async def _menu_options(
-    session: AsyncSession, tenant: TenantContext, vertical: str | None
-) -> list[tuple[str, str]]:
-    """WhatsApp's interactive "button" message type is capped at 3 buttons
-    by Meta -- having at least one active FAQ (opt-in -- a merchant who's
-    never added one sees nothing new) is what can push the menu past 3
-    options, which is why the final "show the menu" branch below switches
-    to send_list once len(options) > 3."""
-    options = _menu_options_for_vertical(vertical)
+    if merchant.appointment_enabled and await appointment_ready(session, tenant):
+        options += [
+            (Intent.BOOK_APPOINTMENT.value, "Book appointment"),
+            (Intent.TRACK_APPOINTMENT.value, "Appointment status"),
+        ]
     if await FAQItemRepository(session).list(tenant, include_inactive=False):
         options.append((Intent.FAQ_MENU.value, "FAQs"))
     return options
@@ -186,8 +184,7 @@ async def handle_inbound_message(
         message,
         intent,
         customer.customer_id,
-        merchant.business_name,
-        merchant.vertical,
+        merchant,
     )
 
     return HandledMessage(intent=intent, reply_sent=reply_sent)
@@ -245,12 +242,15 @@ async def _reply_for_intent(
     message: InboundMessage,
     intent: Intent,
     customer_id: uuid.UUID,
-    business_name: str,
-    vertical: str | None,
+    merchant: Merchant,
 ) -> bool:
     access_token = _access_token(waba)
 
-    if intent == Intent.PLACE_ORDER and vertical == MerchantVertical.RESTAURANT.value:
+    if (
+        intent == Intent.PLACE_ORDER
+        and merchant.restaurant_enabled
+        and await restaurant_ready(session, tenant)
+    ):
         if get_delivery_strategy(Feature.ORDER_PLACING) == InteractionMode.BROWSER_LINK:
             return await _send_browser_link_reply(
                 sender,
@@ -293,7 +293,7 @@ async def _reply_for_intent(
             body=f"Browse the menu and place your order here: {order_link}",
         )
 
-    if intent == Intent.TRACK_ORDER and vertical == MerchantVertical.RESTAURANT.value:
+    if intent == Intent.TRACK_ORDER and merchant.restaurant_enabled:
         recent_orders = await OrderRepository(session).list_for_customer(
             tenant, customer_id, limit=1
         )
@@ -304,7 +304,11 @@ async def _reply_for_intent(
             body=_track_order_reply(recent_orders),
         )
 
-    if intent == Intent.BOOK_APPOINTMENT and vertical == MerchantVertical.APPOINTMENT.value:
+    if (
+        intent == Intent.BOOK_APPOINTMENT
+        and merchant.appointment_enabled
+        and await appointment_ready(session, tenant)
+    ):
         if get_delivery_strategy(Feature.APPOINTMENT_BOOKING) == InteractionMode.BROWSER_LINK:
             return await _send_browser_link_reply(
                 sender,
@@ -342,7 +346,7 @@ async def _reply_for_intent(
             body=f"Book your appointment here: {booking_link}",
         )
 
-    if intent == Intent.TRACK_APPOINTMENT and vertical == MerchantVertical.APPOINTMENT.value:
+    if intent == Intent.TRACK_APPOINTMENT and merchant.appointment_enabled:
         recent_appointments = await AppointmentRepository(session).list(
             tenant, customer_id=customer_id
         )
@@ -354,13 +358,14 @@ async def _reply_for_intent(
         )
 
     # Reaches here for Intent.GREETING, plus any of the vertical-gated
-    # intents above when it doesn't match this merchant's vertical -- a
-    # restaurant customer typing "book appointment" (or vice versa) just
-    # sees the normal menu, same as any other unrecognized request. "Talk
-    # to us" is gone entirely (MULTI_VERTICAL_PLAN.md Phase M4), not
-    # conditionally, for both verticals.
-    options = await _menu_options(session, tenant, vertical)
-    body = f"Hi! Welcome to {business_name}. What would you like to do?"
+    # intents above when the merchant doesn't have that vertical enabled
+    # and ready -- a restaurant customer typing "book appointment" against
+    # a restaurant-only (or appointment-enabled-but-not-yet-ready) merchant
+    # just sees the normal menu, same as any other unrecognized request.
+    # "Talk to us" is gone entirely (MULTI_VERTICAL_PLAN.md Phase M4), not
+    # conditionally, for any vertical.
+    options = await _menu_options(session, tenant, merchant)
+    body = f"Hi! Welcome to {merchant.business_name}. What would you like to do?"
     if len(options) > 3:
         return await sender.send_list(
             phone_number_id=message.phone_number_id,

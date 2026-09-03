@@ -69,8 +69,9 @@ class MerchantAvailability(Base):
     given day means the merchant hasn't configured hours for that day --
     get_available_slots() returns an empty list rather than guessing at
     default hours, matching this codebase's "safe default over guessing"
-    convention (see Merchant.vertical -- the appointment vertical's own
-    gate for whether this feature applies to a merchant at all)."""
+    convention (see Merchant.appointment_enabled -- the appointment
+    vertical's own gate for whether this feature applies to a merchant at
+    all)."""
 
     __tablename__ = "merchant_availability"
 

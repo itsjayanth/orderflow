@@ -9,7 +9,8 @@ export interface Merchant {
   merchant_id: string
   business_name: string
   onboarding_status: string
-  vertical: MerchantVertical | null
+  restaurant_enabled: boolean
+  appointment_enabled: boolean
 }
 
 export interface StaffUser {
@@ -171,15 +172,17 @@ export type OnboardingStatus =
 
 export interface OnboardingStatusOut {
   onboarding_status: OnboardingStatus
-  vertical: MerchantVertical | null
+  restaurant_enabled: boolean
+  appointment_enabled: boolean
   whatsapp_connected: boolean
   profile_completed: boolean
   has_available_item: boolean
   has_available_service: boolean
 }
 
-export interface VerticalSelectionOut {
-  vertical: MerchantVertical
+export interface VerticalsSelectionOut {
+  restaurant_enabled: boolean
+  appointment_enabled: boolean
 }
 
 export interface BusinessProfileOut {

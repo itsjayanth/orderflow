@@ -9,6 +9,7 @@ from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_s
 from conversation.domain.models import ProcessedWhatsAppMessage
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
+from shared.config import get_settings
 from shared.encryption import encrypt
 from shared.tenant import TenantContext
 
@@ -104,7 +105,14 @@ def _webhook_body(*, phone_number_id: str, message_id: str, from_phone: str, tex
     }
 
 
-async def test_verify_webhook_with_correct_token(client: AsyncClient) -> None:
+async def test_verify_webhook_with_correct_token(client: AsyncClient, monkeypatch) -> None:
+    # Pin the app-wide verify token explicitly rather than relying on
+    # whatever a developer's local backend/.env happens to set
+    # WHATSAPP_WEBHOOK_VERIFY_TOKEN to (the same rationale conftest.py
+    # gives for pinning DATABASE_URL/INTERACTION_MODE there).
+    monkeypatch.setenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "dev-verify-token")
+    get_settings.cache_clear()
+
     response = await client.get(
         "/api/v1/whatsapp/webhook",
         params={
@@ -116,6 +124,7 @@ async def test_verify_webhook_with_correct_token(client: AsyncClient) -> None:
 
     assert response.status_code == 200
     assert response.text == "12345"
+    get_settings.cache_clear()
 
 
 async def test_verify_webhook_with_wrong_token_returns_403(client: AsyncClient) -> None:

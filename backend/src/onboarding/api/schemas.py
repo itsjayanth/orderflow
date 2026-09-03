@@ -97,16 +97,24 @@ class BusinessProfileUpdate(BaseModel):
 
 class OnboardingStatusOut(BaseModel):
     onboarding_status: str
-    vertical: str | None
+    restaurant_enabled: bool
+    appointment_enabled: bool
     whatsapp_connected: bool
     profile_completed: bool
     has_available_item: bool
     has_available_service: bool
 
 
-class VerticalSelectionRequest(BaseModel):
-    vertical: str = Field(..., description="'restaurant' or 'appointment' -- set once, immutable")
+class VerticalsSelectionRequest(BaseModel):
+    """Multi-select -- both can be true at once. Not a one-time choice: this
+    same request shape is submitted both by the onboarding wizard's first
+    step and, later, by Settings' "Business types" section to add a
+    vertical (VERTICAL_TOGGLE_PLAN.md)."""
+
+    restaurant_enabled: bool = False
+    appointment_enabled: bool = False
 
 
-class VerticalSelectionOut(BaseModel):
-    vertical: str
+class VerticalsSelectionOut(BaseModel):
+    restaurant_enabled: bool
+    appointment_enabled: bool
