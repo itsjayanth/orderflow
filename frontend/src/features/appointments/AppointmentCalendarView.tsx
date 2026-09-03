@@ -88,6 +88,71 @@ function defaultWeekRange(): CalendarRange {
 
 export { defaultWeekRange }
 
+// Fallback working-hours window for a day with no configured availability
+// window at all -- this is a "show something reasonable" default, not a
+// design choice about what hours restaurants should keep.
+const DEFAULT_WORKING_HOURS = { start: '09:00:00', end: '18:00:00' }
+
+/** Matches a displayed date against the merchant's configured availability
+ * windows (day_of_week: 0=Monday..6=Sunday) and returns that day's
+ * start/end times, or null if the day has no configured window at all. */
+export function getWorkingHoursForDate(
+  date: Date,
+  windows: AppointmentAvailabilityWindow[],
+): { start: string; end: string } | null {
+  const dayOfWeek = (date.getDay() + 6) % 7
+  const window = windows.find((w) => w.day_of_week === dayOfWeek)
+  if (!window) return null
+  return { start: window.start_time, end: window.end_time }
+}
+
+// Only the time-of-day components of these Date objects matter -- RBC's
+// TimeGrid min/max/slot comparisons only read getHours()/getMinutes(), any
+// year/month/day works as the base.
+function timeOfDay(time: string): Date {
+  const [hours, minutes] = time.split(':').map(Number)
+  return new Date(0, 0, 0, hours, minutes, 0)
+}
+
+const START_OF_DAY = new Date(0, 0, 0, 0, 0, 0)
+const END_OF_DAY = new Date(0, 0, 0, 23, 59, 59)
+
+// 23:59:59 is really "midnight, the next day" for display purposes.
+function formatDayBoundary(date: Date): string {
+  if (date.getHours() === 23 && date.getMinutes() === 59) return '12:00 AM'
+  return format(date, 'h:mm a')
+}
+
+function minutesSinceMidnight(date: Date): number {
+  return date.getHours() * 60 + date.getMinutes()
+}
+
+export function HourBand({
+  rangeLabel,
+  expanded,
+  onToggle,
+}: {
+  rangeLabel: string
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={onToggle}
+      className="text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring/30 flex w-full items-center gap-1.5 rounded-md border border-dashed px-3 py-1.5 text-xs transition-colors duration-150 outline-none focus-visible:ring-4"
+    >
+      <ChevronDown
+        className={`size-3.5 shrink-0 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}
+      />
+      <span>
+        {rangeLabel} · no bookings{expanded ? '' : ' (click to show)'}
+      </span>
+    </button>
+  )
+}
+
 export function AppointmentCalendarView({
   appointments,
   onRangeChange,
@@ -97,7 +162,50 @@ export function AppointmentCalendarView({
 }) {
   const [view, setView] = useState<View>(Views.WEEK)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [beforeExpanded, setBeforeExpanded] = useState(false)
+  const [afterExpanded, setAfterExpanded] = useState(false)
   const reschedule = useRescheduleAppointment()
+  const { data: availability } = useAppointmentAvailability()
+
+  // Re-collapse the dead-hour bands when the displayed day (or the view)
+  // changes, rather than carrying an expanded state from one day to the
+  // next as the user navigates.
+  useEffect(() => {
+    setBeforeExpanded(false)
+    setAfterExpanded(false)
+  }, [view, currentDate.toDateString()])
+
+  const isDayView = view === Views.DAY
+  const workingHours = isDayView
+    ? (getWorkingHoursForDate(currentDate, availability?.windows ?? []) ?? DEFAULT_WORKING_HOURS)
+    : null
+  const workingStart = workingHours ? timeOfDay(workingHours.start) : null
+  const workingEnd = workingHours ? timeOfDay(workingHours.end) : null
+
+  const hasBeforeBand = workingStart !== null && minutesSinceMidnight(workingStart) > 0
+  const hasAfterBand = workingEnd !== null && minutesSinceMidnight(workingEnd) < 24 * 60 - 1
+
+  const dayViewTimeProps =
+    isDayView && workingStart && workingEnd
+      ? {
+          min: beforeExpanded ? START_OF_DAY : workingStart,
+          max: afterExpanded ? END_OF_DAY : workingEnd,
+        }
+      : {}
+
+  const workingHoursSlotPropGetter: SlotPropGetter | undefined =
+    isDayView && workingStart && workingEnd
+      ? (date) => {
+          const minutes = minutesSinceMidnight(date)
+          const startMinutes = minutesSinceMidnight(workingStart)
+          const endMinutes = minutesSinceMidnight(workingEnd)
+          if (minutes >= startMinutes && minutes < endMinutes) {
+            return { className: 'appointment-working-hours-slot' }
+          }
+          return {}
+        }
+      : undefined
 
   const events = useMemo<CalendarEvent[]>(
     () =>
@@ -141,6 +249,14 @@ export function AppointmentCalendarView({
 
   return (
     <div className="space-y-2">
+      {isDayView && hasBeforeBand && workingStart && (
+        <HourBand
+          rangeLabel={`${formatDayBoundary(START_OF_DAY)} – ${formatDayBoundary(workingStart)}`}
+          expanded={beforeExpanded}
+          onToggle={() => setBeforeExpanded((prev) => !prev)}
+        />
+      )}
+
       <div className="rbc-theme-wrapper" style={{ height: '38rem' }}>
         <DragAndDropCalendar
           localizer={localizer}
@@ -148,7 +264,8 @@ export function AppointmentCalendarView({
           view={view}
           onView={setView}
           views={[Views.WEEK, Views.DAY, Views.MONTH]}
-          defaultDate={new Date()}
+          date={currentDate}
+          onNavigate={setCurrentDate}
           onRangeChange={handleRangeChange}
           onSelectEvent={(event) => setSelectedId(event.id)}
           onEventDrop={handleEventDrop}
@@ -160,9 +277,20 @@ export function AppointmentCalendarView({
           eventPropGetter={(event) => ({
             className: TONE_CLASSES[APPOINTMENT_STATUS_TONE[event.resource.status]],
           })}
+          components={{ toolbar: CalendarToolbar }}
+          {...dayViewTimeProps}
+          slotPropGetter={workingHoursSlotPropGetter}
           popup
         />
       </div>
+
+      {isDayView && hasAfterBand && workingEnd && (
+        <HourBand
+          rangeLabel={`${formatDayBoundary(workingEnd)} – ${formatDayBoundary(END_OF_DAY)}`}
+          expanded={afterExpanded}
+          onToggle={() => setAfterExpanded((prev) => !prev)}
+        />
+      )}
 
       <Sheet
         open={selected !== null}
