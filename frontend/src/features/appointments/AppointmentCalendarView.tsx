@@ -1,7 +1,14 @@
 import { endOfWeek, format, getDay, parse, startOfWeek } from 'date-fns'
 import { enUS } from 'date-fns/locale/en-US'
-import { useMemo, useState } from 'react'
-import { Calendar as BigCalendar, dateFnsLocalizer, type View, Views } from 'react-big-calendar'
+import { ChevronDown } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Calendar as BigCalendar,
+  dateFnsLocalizer,
+  type SlotPropGetter,
+  type View,
+  Views,
+} from 'react-big-calendar'
 import withDragAndDropImport, {
   type EventInteractionArgs,
 } from 'react-big-calendar/lib/addons/dragAndDrop'
@@ -11,12 +18,14 @@ import './appointmentCalendar.css'
 
 import { TONE_CLASSES } from '@/components/ui/badge'
 import { Sheet } from '@/components/ui/sheet'
-import type { AppointmentOut } from '@/shared/api/types'
+import type { AppointmentAvailabilityWindow, AppointmentOut } from '@/shared/api/types'
 import { formatAppointmentNumber } from '@/shared/lib/appointmentNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
 import { AppointmentDetailCard } from './AppointmentDetailCard'
 import { APPOINTMENT_STATUS_TONE } from './AppointmentStatusBadge'
+import { CalendarToolbar } from './CalendarToolbar'
+import { useAppointmentAvailability } from '../settings/useAppointmentAvailability'
 import { useRescheduleAppointment } from './useRescheduleAppointment'
 
 const locales = { 'en-US': enUS }

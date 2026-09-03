@@ -177,4 +177,61 @@ describe('AppointmentsPage', () => {
 
     expect(await screen.findByText('Appointment detail page')).toBeInTheDocument()
   })
+
+  it('preserves the selected status tab across a List -> Calendar -> List switch', async () => {
+    const confirmedAppointment: AppointmentOut = {
+      ...sampleAppointment,
+      appointment_id: '99999999-9999-9999-9999-999999999999',
+      appointment_number: 9,
+      name: 'Ravi Kumar',
+      status: 'confirmed',
+    }
+    renderPage([sampleAppointment, confirmedAppointment])
+    await screen.findByText('Asha Rao')
+
+    // Radix's Tabs Trigger selects on `mousedown`, not `click`.
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Confirmed/ }), { button: 0 })
+    expect(screen.getByRole('tab', { name: /Confirmed/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('Asha Rao')).not.toBeInTheDocument()
+    expect(screen.getByText('Ravi Kumar')).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Calendar' }), { button: 0 })
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      ),
+    )
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'List' }), { button: 0 })
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'List' })).toHaveAttribute('aria-selected', 'true'),
+    )
+
+    expect(screen.getByRole('tab', { name: /Confirmed/ })).toHaveAttribute('aria-selected', 'true')
+    await waitFor(() => expect(screen.getByText('Ravi Kumar')).toBeInTheDocument())
+    expect(screen.queryByText('Asha Rao')).not.toBeInTheDocument()
+  })
+
+  it('reflects the active view and status selections in ARIA state', async () => {
+    renderPage([sampleAppointment])
+    await screen.findByText('Asha Rao')
+
+    expect(screen.getByRole('tab', { name: 'List' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: /^All/ })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Requested/ }), { button: 0 })
+    expect(screen.getByRole('tab', { name: /Requested/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /^All/ })).toHaveAttribute('aria-selected', 'false')
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Calendar' }), { button: 0 })
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      ),
+    )
+    expect(screen.getByRole('tab', { name: 'List' })).toHaveAttribute('aria-selected', 'false')
+  })
 })
