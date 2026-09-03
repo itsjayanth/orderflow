@@ -21,11 +21,10 @@ import { Sheet } from '@/components/ui/sheet'
 import type { AppointmentAvailabilityWindow, AppointmentOut } from '@/shared/api/types'
 import { formatAppointmentNumber } from '@/shared/lib/appointmentNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
-
+import { useAppointmentAvailability } from '../settings/useAppointmentAvailability'
 import { AppointmentDetailCard } from './AppointmentDetailCard'
 import { APPOINTMENT_STATUS_TONE } from './AppointmentStatusBadge'
 import { CalendarToolbar } from './CalendarToolbar'
-import { useAppointmentAvailability } from '../settings/useAppointmentAvailability'
 import { useRescheduleAppointment } from './useRescheduleAppointment'
 
 const locales = { 'en-US': enUS }
@@ -171,6 +170,7 @@ export function AppointmentCalendarView({
   // Re-collapse the dead-hour bands when the displayed day (or the view)
   // changes, rather than carrying an expanded state from one day to the
   // next as the user navigates.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset trigger -- these values aren't read in the body, only watched
   useEffect(() => {
     setBeforeExpanded(false)
     setAfterExpanded(false)

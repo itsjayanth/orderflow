@@ -1,6 +1,6 @@
 import { format } from 'date-fns'
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import type { ToolbarProps, View } from 'react-big-calendar'
+import type { Event as RBCEvent, ToolbarProps, View } from 'react-big-calendar'
 import { Views } from 'react-big-calendar'
 
 import { Button } from '@/components/ui/button'
@@ -30,7 +30,9 @@ const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => format(new Date(2000, i
 const CURRENT_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 11 }, (_, i) => CURRENT_YEAR - 5 + i)
 
-function availableViewOptions(views: ToolbarProps['views']): typeof VIEW_OPTIONS {
+function availableViewOptions<TEvent extends object, TResource extends object>(
+  views: ToolbarProps<TEvent, TResource>['views'],
+): typeof VIEW_OPTIONS {
   if (Array.isArray(views)) {
     return VIEW_OPTIONS.filter((option) => views.includes(option.value))
   }
@@ -43,7 +45,14 @@ function availableViewOptions(views: ToolbarProps['views']): typeof VIEW_OPTIONS
  * switching the default toolbar provides, adds a sliding underline
  * indicator under the active view tab, and a month/year quick-jump popover.
  */
-export function CalendarToolbar({ date, label, view, views, onNavigate, onView }: ToolbarProps) {
+// Generic over TEvent/TResource (rather than fixed to this feature's
+// CalendarEvent) purely so this structurally matches whatever event/resource
+// type the caller's react-big-calendar instance uses -- the toolbar itself
+// never reads event or resource data.
+export function CalendarToolbar<
+  TEvent extends object = RBCEvent,
+  TResource extends object = object,
+>({ date, label, view, views, onNavigate, onView }: ToolbarProps<TEvent, TResource>) {
   const reducedMotion = usePrefersReducedMotion()
   const viewOptions = availableViewOptions(views)
 
@@ -62,6 +71,7 @@ export function CalendarToolbar({ date, label, view, views, onNavigate, onView }
     setIndicator({ left: activeRect.left - wrapperRect.left, width: activeRect.width })
   }, [])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset trigger -- `view` isn't read in the body, only watched so the indicator re-measures against the newly active tab
   useLayoutEffect(() => {
     measureIndicator()
   }, [measureIndicator, view])
