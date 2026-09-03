@@ -29,6 +29,24 @@ class AppointmentFlowSlotOut(BaseModel):
     end_time: datetime.time
 
 
+class AppointmentFlowCustomerLookupOut(BaseModel):
+    """Returned by GET /{merchant_id}/customer-lookup for a returning
+    customer so the booking webview can prefill name + email without
+    asking again -- mirrors ordering_flow's OrderingFlowCustomerLookupOut.
+    Deliberately carries no phone/whatsapp field: identity itself is never
+    round-tripped back to the client through this endpoint, only the
+    profile data that goes with it, since the appointment flow has no
+    "confirm your number" or "use a different number" step for a client
+    value to feed into in the first place."""
+
+    display_name: str | None
+    # None both for a customer who's genuinely never given an email (e.g.
+    # they've only ever ordered food, never booked before) and for a
+    # brand-new customer -- either way the webview just shows an empty,
+    # fillable email field, not an error state.
+    email: str | None
+
+
 class AppointmentFlowBookingRequest(BaseModel):
     customer_whatsapp_number: str
     customer_display_name: str | None = None

@@ -62,6 +62,14 @@
               "title": "9:30 AM"
             }
           ]
+        },
+        "saved_customer_name": {
+          "type": "string",
+          "__example__": "Asha"
+        },
+        "saved_customer_email": {
+          "type": "string",
+          "__example__": "asha@example.com"
         }
       },
       "layout": {
@@ -78,6 +86,10 @@
           {
             "type": "Form",
             "name": "booking_form",
+            "init-values": {
+              "customer_name": "${data.saved_customer_name}",
+              "customer_email": "${data.saved_customer_email}"
+            },
             "children": [
               {
                 "type": "Dropdown",

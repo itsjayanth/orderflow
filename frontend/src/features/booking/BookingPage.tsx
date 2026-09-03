@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Pencil } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useParams, useSearchParams } from 'react-router-dom'
@@ -17,8 +18,8 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { ApiError } from '@/shared/api/client'
-import type { AppointmentFlowSlotOut } from '@/shared/api/types'
+import { ApiError, apiFetch } from '@/shared/api/client'
+import type { AppointmentFlowCustomerLookupOut, AppointmentFlowSlotOut } from '@/shared/api/types'
 import { WhatsAppReturn } from '@/shared/components/WhatsAppReturn'
 import { formatAppointmentNumber } from '@/shared/lib/appointmentNumber'
 
@@ -52,6 +53,43 @@ function formatSlotTime(value: string): string {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+// A returning customer's saved name/email, shown read-only with a "looks
+// right" checkmark instead of an empty field to fill in again -- tapping
+// Edit swaps it for the normal editable input it stands in for. Kept as
+// its own small component (rather than sharing OrderingPage.tsx's
+// ConfirmedField) since the two flows' confirm/edit UX genuinely diverge
+// around it (a single top-level "Confirm & continue" here vs. per-field
+// confirmation there, no "different contact" case at all) -- see the
+// task's own note that these are two flows with a shared identity
+// mechanism, not one generic component forced onto both.
+function ConfirmedProfileField({
+  label,
+  value,
+  onEdit,
+}: {
+  label: string
+  value: string
+  onEdit: () => void
+}) {
+  return (
+    <div className="border-border bg-secondary/20 flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5">
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-muted-foreground text-xs">{label}</p>
+        <p className="truncate text-sm font-medium">{value}</p>
+        <p className="text-primary text-xs font-medium">✓ Looks right</p>
+      </div>
+      <button
+        type="button"
+        onClick={onEdit}
+        className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 py-0.5 text-xs font-medium transition-colors duration-150"
+      >
+        <Pencil className="size-3" />
+        Edit
+      </button>
+    </div>
+  )
 }
 
 type Step = 'service' | 'date' | 'slot' | 'details'
@@ -94,6 +132,13 @@ export function BookingPage() {
   const [stepIndex, setStepIndex] = useState(0)
   const [selectedSlot, setSelectedSlot] = useState<AppointmentFlowSlotOut | null>(null)
   const [conflictMessage, setConflictMessage] = useState<string | null>(null)
+  const [savedCustomer, setSavedCustomer] = useState<AppointmentFlowCustomerLookupOut | null>(null)
+  // Which confirmed fields the customer has tapped Edit on -- name and
+  // email only; there's no phone field here to ever add to this set (see
+  // the module docstring above).
+  const [editingFields, setEditingFields] = useState<Set<'name' | 'email'>>(new Set())
+  const startEditing = (field: 'name' | 'email') =>
+    setEditingFields((prev) => new Set(prev).add(field))
 
   const {
     register,
@@ -111,6 +156,42 @@ export function BookingPage() {
       appointment_date: todayISODate(),
     },
   })
+
+  // Looks up a returning customer's saved name/email and prefills the
+  // details step -- fires as soon as we know their WhatsApp id, well
+  // before the customer ever reaches that step. A brand-new number 404s,
+  // which is the normal case, not an error worth surfacing (this is a
+  // convenience prefill, never a required step, so any failure here just
+  // leaves the fields blank rather than blocking booking).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fires once per waPhone/merchantId
+  useEffect(() => {
+    if (!waPhone || !merchantId) {
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const result = await apiFetch<AppointmentFlowCustomerLookupOut>(
+          `/api/v1/appointment-flow/${merchantId}/customer-lookup?whatsapp_number=${encodeURIComponent(
+            waPhone,
+          )}`,
+        )
+        if (cancelled) return
+        setSavedCustomer(result)
+        if (result.display_name) {
+          setValue('name', result.display_name)
+        }
+        if (result.email) {
+          setValue('email', result.email)
+        }
+      } catch {
+        // New customer, or a transient lookup failure.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [waPhone, merchantId])
 
   const services = servicesQuery.data ?? []
   const showServiceStep = services.length >= 2
@@ -462,17 +543,35 @@ export function BookingPage() {
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="name">Your name</Label>
-                <Input id="name" {...register('name')} />
-                {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
-              </div>
+              {savedCustomer?.display_name && !editingFields.has('name') ? (
+                <ConfirmedProfileField
+                  label="Your name"
+                  value={savedCustomer.display_name}
+                  onEdit={() => startEditing('name')}
+                />
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="name">Your name</Label>
+                  <Input id="name" {...register('name')} />
+                  {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
+                </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...register('email')} />
-                {errors.email && <p className="text-destructive text-sm">{errors.email.message}</p>}
-              </div>
+              {savedCustomer?.email && !editingFields.has('email') ? (
+                <ConfirmedProfileField
+                  label="Email"
+                  value={savedCustomer.email}
+                  onEdit={() => startEditing('email')}
+                />
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" {...register('email')} />
+                  {errors.email && (
+                    <p className="text-destructive text-sm">{errors.email.message}</p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes (optional)</Label>
@@ -495,7 +594,11 @@ export function BookingPage() {
                   Back
                 </Button>
                 <Button type="submit" size="lg" className="flex-1" disabled={booking.isPending}>
-                  {booking.isPending ? 'Requesting…' : 'Confirm & book'}
+                  {booking.isPending
+                    ? 'Requesting…'
+                    : savedCustomer
+                      ? '✓ Confirm & continue'
+                      : 'Confirm & book'}
                 </Button>
               </div>
             </Card>

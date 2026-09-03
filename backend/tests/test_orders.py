@@ -201,7 +201,7 @@ async def test_list_orders_returns_seeded_order(
     assert body[0]["order_number"] == order.order_number
     assert body[0]["fulfillment_status"] == "new"
     assert body[0]["customer_name"] == "Asha Rao"
-    assert body[0]["customer_whatsapp_number"] == "+919876543210"
+    assert body[0]["customer_whatsapp_number"] == "919876543210"
     assert body[0]["customer_number"] == 1
 
 
@@ -218,7 +218,7 @@ async def test_list_orders_customer_name_null_when_no_display_name_set(
     body = response.json()
     assert len(body) == 1
     assert body[0]["customer_name"] is None
-    assert body[0]["customer_whatsapp_number"] == "+919876543210"
+    assert body[0]["customer_whatsapp_number"] == "919876543210"
 
 
 async def test_list_orders_filtered_by_fulfillment_status(
@@ -253,7 +253,7 @@ async def test_get_order_detail_includes_items(
     assert len(body["items"]) == 1
     assert body["items"][0]["name_snapshot"] == "Butter Chicken"
     assert body["customer_name"] == "Asha Rao"
-    assert body["customer_whatsapp_number"] == "+919876543210"
+    assert body["customer_whatsapp_number"] == "919876543210"
 
 
 async def test_get_order_detail_customer_name_null_when_no_display_name_set(
@@ -268,7 +268,7 @@ async def test_get_order_detail_customer_name_null_when_no_display_name_set(
     assert response.status_code == 200
     body = response.json()
     assert body["customer_name"] is None
-    assert body["customer_whatsapp_number"] == "+919876543210"
+    assert body["customer_whatsapp_number"] == "919876543210"
 
 
 async def test_get_order_not_found(client: AsyncClient) -> None:
