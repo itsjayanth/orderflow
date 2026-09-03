@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, ShoppingCart } from 'lucide-react'
+import { ArrowLeft, Pencil, ShoppingCart } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
@@ -43,11 +43,17 @@ const COUNTRY_CODES = [
 
 const checkoutSchema = z
   .object({
+    // Only used as a fallback when the page was opened without a `wa`
+    // query param (i.e. not from WhatsApp's own CTA link) -- see waPhone
+    // below. The normal path never shows or validates these.
     country_code: z.string().min(1, 'Required'),
     local_number: z
       .string()
-      .min(1, 'Required')
-      .regex(/^\d{6,12}$/, 'Enter a valid mobile number (digits only)'),
+      .optional()
+      .refine(
+        (value) => !value || /^\d{6,12}$/.test(value),
+        'Enter a valid mobile number (digits only)',
+      ),
     customer_display_name: z.string().trim().min(1, 'Please enter your name'),
     payment_method: z.enum(['online', 'cod']),
     order_type: z.enum(['pickup', 'delivery']),
@@ -182,6 +188,37 @@ function FormSectionHeading({ title }: { title: string }) {
   )
 }
 
+// A returning customer's saved value, shown read-only with a "looks
+// right" checkmark instead of an empty input to fill in again -- tapping
+// Edit swaps it for the normal editable field it stands in for.
+function ConfirmedField({
+  label,
+  value,
+  onEdit,
+}: {
+  label: string
+  value: string
+  onEdit: () => void
+}) {
+  return (
+    <div className="border-border bg-secondary/20 flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5">
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-muted-foreground text-xs">{label}</p>
+        <p className="truncate text-sm font-medium">{value}</p>
+        <p className="text-primary text-xs font-medium">✓ Looks right</p>
+      </div>
+      <button
+        type="button"
+        onClick={onEdit}
+        className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 py-0.5 text-xs font-medium transition-colors duration-150"
+      >
+        <Pencil className="size-3" />
+        Edit
+      </button>
+    </div>
+  )
+}
+
 function CartRow({
   item,
   quantity,
@@ -223,13 +260,36 @@ function CartRow({
   )
 }
 
+// Fields a returning customer's saved details prefill, each independently
+// switchable from "confirmed" (read-only, ✓ Looks right) to "editing" (a
+// normal input) -- see ConfirmedField-shaped rendering below. Contact
+// phone isn't here: "use a different number" is its own always-visible
+// choice, not a confirm/edit toggle (see the task's Feature A notes on why
+// order contact is legitimately different per order).
+type ConfirmableField = 'name' | 'address' | 'payment'
+
 export function OrderingPage() {
   const { merchantId } = useParams<{ merchantId: string }>()
+  const [searchParams] = useSearchParams()
+  // The WhatsApp CTA link this page is opened from carries the customer's
+  // own number as `?wa=...` (conversation/domain/handler.py's
+  // _send_browser_link_reply) -- when present, this is the *only* source
+  // of identity: no "Your WhatsApp number" field is ever shown. Only a
+  // page opened some other way (outside WhatsApp) falls back to asking,
+  // mirroring BookingPage.tsx's identical waPhone fallback.
+  const waPhone = searchParams.get('wa')
   const { data: catalog, isLoading, isError } = usePublicCatalog(merchantId ?? '')
   const checkout = useOrderingCheckout(merchantId ?? '')
   const [cart, setCart] = useState<Cart>(() => (merchantId ? loadStoredCart(merchantId) : {}))
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false)
+  const [savedCustomer, setSavedCustomer] = useState<OrderingFlowCustomerLookupOut | null>(null)
+  // Which confirmed fields the customer has tapped "Edit" on -- once
+  // edited, a field stays a normal input for the rest of this visit even
+  // if savedCustomer would otherwise mark it confirmed.
+  const [editingFields, setEditingFields] = useState<Set<ConfirmableField>>(new Set())
+  const startEditing = (field: ConfirmableField) =>
+    setEditingFields((prev) => new Set(prev).add(field))
   const formSectionRef = useRef<HTMLDivElement>(null)
   const catalogSectionRef = useRef<HTMLDivElement>(null)
   const keyboardInset = useKeyboardInset()
@@ -268,6 +328,7 @@ export function OrderingPage() {
     watch,
     setValue,
     getValues,
+    setError,
     control,
     formState: { errors },
   } = useForm<CheckoutForm>({
@@ -282,27 +343,25 @@ export function OrderingPage() {
 
   const orderType = watch('order_type')
   const contactChoice = watch('contact_choice')
-  const countryCode = watch('country_code')
-  const localNumber = watch('local_number')
   const localNumberField = register('local_number')
 
-  // Fires once the customer finishes entering their WhatsApp number --
-  // returning customers get their saved name/address prefilled (still
-  // editable) instead of typing it in again every order. A brand-new
-  // number 404s, which is the normal case, not an error worth surfacing.
-  const handlePhoneBlur = async () => {
-    const countryCode = getValues('country_code')
-    const localNumber = getValues('local_number')
-    if (!merchantId || !/^\d{6,12}$/.test(localNumber)) {
+  // Looks up a returning customer's saved name/address/contact/payment
+  // method and prefills the form -- a brand-new number 404s, which is the
+  // normal case, not an error worth surfacing (this is a convenience
+  // prefill, never a required step, so any failure here just leaves the
+  // form blank rather than blocking checkout).
+  const lookUpCustomer = async (whatsappNumber: string) => {
+    if (!merchantId) {
       return
     }
     setIsLookingUpCustomer(true)
     try {
       const result = await apiFetch<OrderingFlowCustomerLookupOut>(
         `/api/v1/ordering-flow/${merchantId}/customer-lookup?whatsapp_number=${encodeURIComponent(
-          `${countryCode}${localNumber}`,
+          whatsappNumber,
         )}`,
       )
+      setSavedCustomer(result)
       if (result.display_name) {
         setValue('customer_display_name', result.display_name)
       }
@@ -317,12 +376,36 @@ export function OrderingPage() {
         setValue('contact_choice', 'different')
         setValue('contact_phone', result.default_contact_phone)
       }
+      if (result.last_payment_method) {
+        setValue('payment_method', result.last_payment_method)
+      }
     } catch {
-      // New customer, or a transient lookup failure -- this is a
-      // convenience prefill, not a required step, so fail silently.
+      // New customer, or a transient lookup failure.
     } finally {
       setIsLookingUpCustomer(false)
     }
+  }
+
+  // The normal path: identity comes from the WhatsApp CTA link's `wa`
+  // param, so the lookup fires as soon as the page loads -- no field for
+  // the customer to finish entering first.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fires once per waPhone/merchantId, lookUpCustomer intentionally excluded
+  useEffect(() => {
+    if (waPhone) {
+      void lookUpCustomer(waPhone)
+    }
+  }, [waPhone, merchantId])
+
+  // Fallback path only: fires once the customer finishes typing their
+  // WhatsApp number into the manual-entry field shown when the page was
+  // opened without a `wa` param.
+  const handlePhoneBlur = async () => {
+    const countryCode = getValues('country_code')
+    const localNumber = getValues('local_number')
+    if (!localNumber || !/^\d{6,12}$/.test(localNumber)) {
+      return
+    }
+    await lookUpCustomer(`${countryCode}${localNumber}`)
   }
 
   // The cart sheet and the "back to catalog" link both need a way back up to
@@ -395,8 +478,13 @@ export function OrderingPage() {
   }
 
   const onSubmit = (values: CheckoutForm) => {
+    if (!waPhone && !values.local_number) {
+      setError('local_number', { message: 'Required' })
+      return
+    }
+    const customerWhatsappNumber = waPhone ?? `${values.country_code}${values.local_number ?? ''}`
     checkout.mutate({
-      customer_whatsapp_number: `${values.country_code}${values.local_number}`,
+      customer_whatsapp_number: customerWhatsappNumber,
       customer_display_name: values.customer_display_name,
       payment_method: values.payment_method,
       order_type: values.order_type,
@@ -600,106 +688,129 @@ export function OrderingPage() {
                 </div>
 
                 <FormSectionHeading title="Your details" />
-                <div className="space-y-2">
-                  <Label htmlFor="local_number">Your WhatsApp number</Label>
-                  <div className="flex gap-2">
-                    <Controller
-                      name="country_code"
-                      control={control}
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger
-                            id="country_code"
-                            aria-label="Country code"
-                            onBlur={field.onBlur}
-                            className="w-36 shrink-0"
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {COUNTRY_CODES.map(({ code, label }) => (
-                              <SelectItem key={code} value={code}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    <Input
-                      id="local_number"
-                      inputMode="numeric"
-                      placeholder="9876543210"
-                      {...localNumberField}
-                      onBlur={(event) => {
-                        void localNumberField.onBlur(event)
-                        void handlePhoneBlur()
-                      }}
-                    />
-                  </div>
-                  {errors.local_number && (
-                    <p className="text-destructive text-sm">{errors.local_number.message}</p>
-                  )}
-                  {isLookingUpCustomer && (
-                    <p className="text-muted-foreground text-xs">Checking for saved details…</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="customer_display_name">Your name</Label>
-                  <Input id="customer_display_name" {...register('customer_display_name')} />
-                  {errors.customer_display_name && (
-                    <p className="text-destructive text-sm">
-                      {errors.customer_display_name.message}
-                    </p>
-                  )}
-                </div>
-
-                {orderType === 'delivery' && (
-                  <div className="border-border space-y-3 rounded-lg border border-dashed p-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="address_line1">Address line 1</Label>
-                      <Input
-                        id="address_line1"
-                        placeholder="House / flat no., building, street"
-                        {...register('address_line1')}
+                {/* Identity comes from the WhatsApp CTA link's `wa` param --
+                    no "Your WhatsApp number" field for the normal path. Only
+                    a page opened outside WhatsApp (no `wa`) falls back to
+                    asking, same as BookingPage.tsx. */}
+                {!waPhone && (
+                  <div className="space-y-2">
+                    <Label htmlFor="local_number">Your WhatsApp number</Label>
+                    <div className="flex gap-2">
+                      <Controller
+                        name="country_code"
+                        control={control}
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger
+                              id="country_code"
+                              aria-label="Country code"
+                              onBlur={field.onBlur}
+                              className="w-36 shrink-0"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {COUNTRY_CODES.map(({ code, label }) => (
+                                <SelectItem key={code} value={code}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       />
-                      {errors.address_line1 && (
-                        <p className="text-destructive text-sm">{errors.address_line1.message}</p>
-                      )}
+                      <Input
+                        id="local_number"
+                        inputMode="numeric"
+                        placeholder="9876543210"
+                        {...localNumberField}
+                        onBlur={(event) => {
+                          void localNumberField.onBlur(event)
+                          void handlePhoneBlur()
+                        }}
+                      />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="address_line2">Address line 2 (optional)</Label>
-                      <Input id="address_line2" {...register('address_line2')} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="address_landmark">Landmark (optional)</Label>
-                      <Input id="address_landmark" {...register('address_landmark')} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="address_city">City</Label>
-                        <Input id="address_city" {...register('address_city')} />
-                        {errors.address_city && (
-                          <p className="text-destructive text-sm">{errors.address_city.message}</p>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="address_pincode">Pincode</Label>
-                        <Input
-                          id="address_pincode"
-                          inputMode="numeric"
-                          {...register('address_pincode')}
-                        />
-                        {errors.address_pincode && (
-                          <p className="text-destructive text-sm">
-                            {errors.address_pincode.message}
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                    {errors.local_number && (
+                      <p className="text-destructive text-sm">{errors.local_number.message}</p>
+                    )}
                   </div>
                 )}
+                {isLookingUpCustomer && (
+                  <p className="text-muted-foreground text-xs">Checking for saved details…</p>
+                )}
+
+                {savedCustomer?.display_name && !editingFields.has('name') ? (
+                  <ConfirmedField
+                    label="Your name"
+                    value={savedCustomer.display_name}
+                    onEdit={() => startEditing('name')}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="customer_display_name">Your name</Label>
+                    <Input id="customer_display_name" {...register('customer_display_name')} />
+                    {errors.customer_display_name && (
+                      <p className="text-destructive text-sm">
+                        {errors.customer_display_name.message}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {orderType === 'delivery' &&
+                  (savedCustomer?.address && !editingFields.has('address') ? (
+                    <ConfirmedField
+                      label="Delivery address"
+                      value={`${savedCustomer.address.line1}, ${savedCustomer.address.city} - ${savedCustomer.address.pincode}`}
+                      onEdit={() => startEditing('address')}
+                    />
+                  ) : (
+                    <div className="border-border space-y-3 rounded-lg border border-dashed p-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="address_line1">Address line 1</Label>
+                        <Input
+                          id="address_line1"
+                          placeholder="House / flat no., building, street"
+                          {...register('address_line1')}
+                        />
+                        {errors.address_line1 && (
+                          <p className="text-destructive text-sm">{errors.address_line1.message}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="address_line2">Address line 2 (optional)</Label>
+                        <Input id="address_line2" {...register('address_line2')} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="address_landmark">Landmark (optional)</Label>
+                        <Input id="address_landmark" {...register('address_landmark')} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="address_city">City</Label>
+                          <Input id="address_city" {...register('address_city')} />
+                          {errors.address_city && (
+                            <p className="text-destructive text-sm">
+                              {errors.address_city.message}
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="address_pincode">Pincode</Label>
+                          <Input
+                            id="address_pincode"
+                            inputMode="numeric"
+                            {...register('address_pincode')}
+                          />
+                          {errors.address_pincode && (
+                            <p className="text-destructive text-sm">
+                              {errors.address_pincode.message}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
 
                 <FormSectionHeading title="Payment" />
                 <div className="space-y-2">
@@ -717,9 +828,7 @@ export function OrderingPage() {
                     >
                       <span className="block font-medium">Use my WhatsApp number</span>
                       <span className="block text-xs opacity-80">
-                        {countryCode && localNumber
-                          ? `+${countryCode} ${localNumber} as entered above`
-                          : 'As entered above'}
+                        The number you're messaging us from
                       </span>
                     </button>
                     <button
@@ -756,24 +865,40 @@ export function OrderingPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="payment_method">Payment method</Label>
-                  <Controller
-                    name="payment_method"
-                    control={control}
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger id="payment_method" onBlur={field.onBlur} className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="online">Pay online</SelectItem>
-                          <SelectItem value="cod">Cash on delivery/pickup</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
+                {savedCustomer?.last_payment_method && !editingFields.has('payment') ? (
+                  <ConfirmedField
+                    label="Payment method"
+                    value={
+                      savedCustomer.last_payment_method === 'cod'
+                        ? 'Cash on delivery/pickup'
+                        : 'Pay online'
+                    }
+                    onEdit={() => startEditing('payment')}
                   />
-                </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="payment_method">Payment method</Label>
+                    <Controller
+                      name="payment_method"
+                      control={control}
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger
+                            id="payment_method"
+                            onBlur={field.onBlur}
+                            className="w-full"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="online">Pay online</SelectItem>
+                            <SelectItem value="cod">Cash on delivery/pickup</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                )}
 
                 {checkout.isError && (
                   <p className="text-destructive text-sm">
