@@ -33,6 +33,7 @@ const meResponse: MeResponse = {
     onboarding_status: 'live',
     restaurant_enabled: true,
     appointment_enabled: false,
+    website_url: null,
   },
 }
 

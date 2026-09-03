@@ -1,13 +1,18 @@
+import datetime
 import uuid
 
 import jwt
-from fastapi import APIRouter, Cookie, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, HTTPException, Query, Response, status
 
 from appointments.adapters.scheduling_repository import (
     AppointmentServiceRepository,
     MerchantAvailabilityRepository,
 )
-from identity.adapters.repository import MerchantRepository, StaffUserRepository
+from identity.adapters.repository import (
+    MerchantRepository,
+    StaffUserRepository,
+    WebsiteLinkClickRepository,
+)
 from identity.api.schemas import (
     AccessTokenResponse,
     AppointmentAvailabilitySettingsOut,
@@ -21,6 +26,8 @@ from identity.api.schemas import (
     MeResponse,
     RegisterRequest,
     StaffUserOut,
+    WebsiteLinkClickStatsOut,
+    WebsiteLinkUpdate,
 )
 from identity.domain.auth import (
     EmailAlreadyRegisteredError,
@@ -30,6 +37,7 @@ from identity.domain.auth import (
     register_merchant,
     rotate_tokens,
 )
+from identity.domain.models import InvalidWebsiteUrlError, normalize_website_url
 from onboarding.domain.onboarding_service import try_advance_for_catalog_ready
 from shared.config import get_settings
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
@@ -134,6 +142,30 @@ async def me(
         staff_user=StaffUserOut.model_validate(staff_user),
         merchant=MerchantOut.model_validate(merchant),
     )
+
+
+@router.put("/website-link", response_model=MerchantOut)
+async def update_website_link(
+    body: WebsiteLinkUpdate, tenant: CurrentTenant, session: DbSession
+) -> MerchantOut:
+    try:
+        website_url = normalize_website_url(body.website_url)
+    except InvalidWebsiteUrlError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    merchant = await MerchantRepository(session).update_website_url(
+        tenant.merchant_id, website_url
+    )
+    await session.commit()
+    return MerchantOut.model_validate(merchant)
+
+
+@router.get("/website-link/clicks", response_model=WebsiteLinkClickStatsOut)
+async def get_website_link_click_stats(
+    tenant: CurrentTenant, session: DbSession, days: int = Query(default=7, ge=1, le=90)
+) -> WebsiteLinkClickStatsOut:
+    since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
+    count = await WebsiteLinkClickRepository(session).count_since(tenant.merchant_id, since)
+    return WebsiteLinkClickStatsOut(count=count, days=days)
 
 
 @router.get("/appointment-availability", response_model=AppointmentAvailabilitySettingsOut)

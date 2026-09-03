@@ -35,6 +35,7 @@ function meResponse(restaurantEnabled: boolean, appointmentEnabled: boolean): Me
       onboarding_status: 'live',
       restaurant_enabled: restaurantEnabled,
       appointment_enabled: appointmentEnabled,
+      website_url: null,
     },
   }
 }

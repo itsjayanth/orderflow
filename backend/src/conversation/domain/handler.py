@@ -25,7 +25,7 @@ from flows.domain.order_builder import (
     resolve_cart,
     resolve_contact_phone,
 )
-from identity.adapters.repository import MerchantRepository
+from identity.adapters.repository import MerchantRepository, WebsiteLinkClickRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from onboarding.domain.models import WhatsAppBusinessAccount
@@ -65,7 +65,15 @@ async def _menu_options(
     WhatsApp's interactive "button" message type is capped at 3 buttons by
     Meta -- having at least one active FAQ, or both verticals enabled, is
     what can push the menu past 3 options, which is why the final "show the
-    menu" branch below switches to send_list once len(options) > 3."""
+    menu" branch below switches to send_list once len(options) > 3.
+
+    Invariant: this function must always read merchant settings live, off
+    the `merchant` passed in by the caller, never from a cached/precomputed
+    copy -- handle_inbound_message() re-fetches `merchant` fresh from the DB
+    on every single inbound message (no caching anywhere in this path), so
+    every field this menu depends on (restaurant_enabled, appointment_enabled,
+    website_url, ...) reflects whatever a dashboard save set most recently,
+    with zero extra invalidation work needed here or anywhere else."""
     options: list[tuple[str, str]] = []
     if merchant.restaurant_enabled and await restaurant_ready(session, tenant):
         options += [
@@ -77,6 +85,8 @@ async def _menu_options(
             (Intent.BOOK_APPOINTMENT.value, "Book appointment"),
             (Intent.TRACK_APPOINTMENT.value, "Appointment status"),
         ]
+    if merchant.website_url:
+        options.append((Intent.VISIT_WEBSITE.value, "Visit website"))
     if await FAQItemRepository(session).list(tenant, include_inactive=False):
         options.append((Intent.FAQ_MENU.value, "FAQs"))
     return options
@@ -355,6 +365,29 @@ async def _reply_for_intent(
             access_token=access_token,
             to=message.from_phone,
             body=_track_appointment_reply(recent_appointments),
+        )
+
+    if intent == Intent.VISIT_WEBSITE and merchant.website_url:
+        # Re-checked here, not just relying on the menu having offered it:
+        # guards against a race where the link was cleared between the menu
+        # being sent and the customer tapping it -- falls through to the
+        # normal greeting-menu reply below, same pattern the other
+        # vertical-gated intents above already use.
+        #
+        # This send doubles as click tracking -- a tap on the "Visit
+        # website" menu option is a real inbound webhook message (button
+        # reply) that reaches this branch before the outbound link is sent,
+        # so recording it here really does capture "customer tapped Visit
+        # website", not just "menu was shown".
+        await WebsiteLinkClickRepository(session).record(tenant.merchant_id)
+        await session.commit()
+        return await sender.send_cta_url_button(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body="Tap below to visit our website.",
+            display_text="Visit website",
+            url=merchant.website_url,
         )
 
     # Reaches here for Intent.GREETING, plus any of the vertical-gated

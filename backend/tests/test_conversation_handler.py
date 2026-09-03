@@ -13,7 +13,7 @@ from conversation.domain.intents import Intent
 from conversation.domain.webhook_parser import InboundMessage
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from faq.adapters.repository import FAQItemRepository
-from identity.adapters.repository import MerchantRepository
+from identity.adapters.repository import MerchantRepository, WebsiteLinkClickRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.domain.checkout import CheckoutItem, perform_checkout
 from orders.adapters.repository import OrderRepository
@@ -1192,6 +1192,86 @@ async def test_appointment_flow_completion_malformed_payload_sends_error(
         tenant, customer_id=customer.customer_id
     )
     assert appointments == []
+
+
+async def test_greeting_includes_visit_website_when_website_url_set(
+    db_session: AsyncSession,
+) -> None:
+    merchant, _ = await _seed_connected_merchant(db_session)
+    await MerchantRepository(db_session).update_website_url(
+        merchant.merchant_id, "https://example.com"
+    )
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order", "visit_website"}
+
+
+async def test_greeting_omits_visit_website_when_website_url_unset(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order"}
+
+
+async def test_visit_website_sends_cta_button_and_records_click(
+    db_session: AsyncSession,
+) -> None:
+    merchant, _ = await _seed_connected_merchant(db_session)
+    await MerchantRepository(db_session).update_website_url(
+        merchant.merchant_id, "https://example.com"
+    )
+    await db_session.commit()
+    sender = FakeSender()
+    message = _inbound(button_id="visit_website")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.VISIT_WEBSITE
+    assert result.reply_sent is True
+    assert len(sender.cta_url_calls) == 1
+    assert sender.cta_url_calls[0]["url"] == "https://example.com"
+    assert sender.text_calls == []
+    assert sender.button_calls == []
+
+    since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=5)
+    count = await WebsiteLinkClickRepository(db_session).count_since(merchant.merchant_id, since)
+    assert count == 1
+
+
+async def test_visit_website_falls_back_to_menu_when_website_url_unset(
+    db_session: AsyncSession,
+) -> None:
+    """The re-check inside _reply_for_intent's VISIT_WEBSITE branch guards
+    against the link having been cleared between the menu being sent and
+    the customer tapping it -- even though classify() maps the button id
+    straight to Intent.VISIT_WEBSITE, an unset website_url falls through to
+    the normal greeting menu instead of sending a broken CTA button."""
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(button_id="visit_website")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.VISIT_WEBSITE
+    assert sender.cta_url_calls == []
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order"}
 
 
 async def test_order_flow_completion_with_selected_items_still_creates_order_not_appointment(

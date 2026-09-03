@@ -28,6 +28,7 @@ class MerchantOut(BaseModel):
     onboarding_status: str
     restaurant_enabled: bool
     appointment_enabled: bool
+    website_url: str | None
 
     model_config = {"from_attributes": True}
 
@@ -105,3 +106,12 @@ class AppointmentServiceUpdateRequest(BaseModel):
     duration_minutes: int | None = Field(default=None, gt=0)
     price: Decimal | None = None
     is_active: bool | None = None
+
+
+class WebsiteLinkUpdate(BaseModel):
+    website_url: str | None = None
+
+
+class WebsiteLinkClickStatsOut(BaseModel):
+    count: int
+    days: int
