@@ -26,7 +26,17 @@ class AppointmentStatusEventOut(BaseModel):
     to_appointment_date: datetime.date | None
     to_start_time: datetime.time | None
     offset_minutes: int | None
+    # Raw actor value stored on the row -- a staff_user_id (str(UUID)),
+    # "system" (the reminder scan), or a creation surface ("flow"/
+    # "browser") for the initial request. Never shown directly in the
+    # dashboard; changed_by_name below is what the UI renders.
     changed_by: str
+    # Resolved staff display name when changed_by is a staff_user_id that
+    # still exists (looked up by the API layer, not stored on the row --
+    # a staff member's name can change after the fact, and this always
+    # reflects their current one). Null for "system"/"flow"/"browser", or
+    # if the staff account was somehow deleted.
+    changed_by_name: str | None
     changed_at: datetime.datetime
 
     model_config = {"from_attributes": True}

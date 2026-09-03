@@ -332,7 +332,13 @@ export interface AppointmentStatusEventOut {
   to_appointment_date: string | null // "YYYY-MM-DD"
   to_start_time: string | null // "HH:MM:SS"
   offset_minutes: number | null
+  // Raw actor value -- a staff_user_id, "system", or a creation surface
+  // ("flow"/"browser"). Prefer changed_by_name for display.
   changed_by: string
+  // Resolved staff display name when changed_by is a staff_user_id that
+  // still exists; null for "system"/"flow"/"browser" or a deleted staff
+  // account.
+  changed_by_name: string | null
   changed_at: string
 }
 

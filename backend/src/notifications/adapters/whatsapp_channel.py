@@ -160,7 +160,7 @@ class WhatsAppNotificationChannel:
         )
 
     async def notify_appointment_reminder(
-        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID, kind: str
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID, kind: str | None
     ) -> bool:
         """Distinct from _send_appointment above -- a reminder fires
         minutes/hours after the triggering (confirmed) transition,
@@ -171,14 +171,19 @@ class WhatsAppNotificationChannel:
         uses for the immediate confirmed/cancelled notifications.
 
         `kind` is "appointment_reminder_60m" or "appointment_reminder_30m"
-        (shared/scheduler.py picks which, per offset). Which Meta template
-        actually gets sent: the merchant's own NotificationTemplate row
-        for that kind if they've configured and activated one (its
-        template_name/language_code -- NOT its body, which for these two
-        kinds is preview-only, see notifications/domain/models.py), else
-        the single global env-configured reminder template
-        (whatsapp_appointment_reminder_template_name) as the out-of-the-box
-        default every merchant starts with. Returns False (no send
+        for a merchant's two named offsets, or None for any other minute
+        offset a merchant configures (shared/scheduler.py's
+        _REMINDER_KIND_BY_OFFSET_MINUTES only names those two -- there's
+        no bespoke per-offset template for an arbitrary value, so it
+        isn't one of NOTIFICATION_KINDS at all). Which Meta template
+        actually gets sent: when `kind` is given, the merchant's own
+        NotificationTemplate row for that kind if they've configured and
+        activated one (its template_name/language_code -- NOT its body,
+        which for these two kinds is preview-only, see
+        notifications/domain/models.py); otherwise (kind is None, or no
+        such row/it's inactive) the single global env-configured reminder
+        template (whatsapp_appointment_reminder_template_name) as the
+        shared default every offset falls back to. Returns False (no send
         attempted) when neither resolves to a template name -- same
         "unset = safe no-op" convention as every other optional Meta
         config in this codebase."""
@@ -193,7 +198,11 @@ class WhatsAppNotificationChannel:
                 return False
 
             settings = get_settings()
-            template = await NotificationTemplateRepository(session).get(tenant, kind)
+            template = (
+                await NotificationTemplateRepository(session).get(tenant, kind)
+                if kind is not None
+                else None
+            )
             template_name: str | None
             if template is not None and template.is_active:
                 template_name = template.template_name

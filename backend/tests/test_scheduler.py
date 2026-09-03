@@ -105,7 +105,11 @@ class FakeReminderSender:
 
 
 async def _seed_confirmed_appointment(
-    db_session: AsyncSession, *, appointment_date: datetime.date, start_time: datetime.time
+    db_session: AsyncSession,
+    *,
+    appointment_date: datetime.date,
+    start_time: datetime.time,
+    reminder_offsets_minutes: list[int] | None = None,
 ):
     merchant = await MerchantRepository(db_session).create(
         business_name="Reminder Business", owner_contact=f"{uuid.uuid4()}@example.com"
@@ -113,6 +117,10 @@ async def _seed_confirmed_appointment(
     await MerchantRepository(db_session).set_vertical_flags(
         merchant.merchant_id, restaurant_enabled=False, appointment_enabled=True
     )
+    if reminder_offsets_minutes is not None:
+        await MerchantRepository(db_session).update_reminder_offsets_minutes(
+            merchant.merchant_id, reminder_offsets_minutes
+        )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     await WhatsAppBusinessAccountRepository(db_session).upsert(
         tenant, phone_number_id="PNID1", access_token_encrypted=encrypt("dummy-token")
@@ -186,6 +194,35 @@ async def test_reminder_scan_sends_60m_reminder_not_30m_at_45_minutes_out(
     # 30m reminder fires; the 60m one does not re-fire.
     await send_due_appointment_reminders(appointment_utc - datetime.timedelta(minutes=20))
     assert len(fake.calls) == 2
+
+
+async def test_reminder_scan_sends_custom_offset_via_shared_default_template(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    """A merchant-configured offset that isn't 60 or 30 (no bespoke
+    per-offset template exists for it) still gets a reminder sent -- via
+    the shared default template, not silently skipped."""
+    settings = get_settings()
+    monkeypatch.setattr(
+        settings, "whatsapp_appointment_reminder_template_name", "appointment_reminder"
+    )
+    fake = FakeReminderSender()
+    monkeypatch.setattr(scheduler_module, "get_whatsapp_sender", lambda: fake)
+
+    now_utc = datetime.datetime.now(datetime.UTC)
+    appointment_utc = now_utc + datetime.timedelta(minutes=90)
+    local_ist = appointment_utc + datetime.timedelta(hours=5, minutes=30)
+    await _seed_confirmed_appointment(
+        db_session,
+        appointment_date=local_ist.date(),
+        start_time=local_ist.time(),
+        reminder_offsets_minutes=[120],
+    )
+
+    await send_due_appointment_reminders(now_utc)
+
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["template_name"] == "appointment_reminder"
 
 
 async def test_reminder_scan_skips_cancelled_appointments(

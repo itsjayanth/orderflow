@@ -132,6 +132,18 @@ class StaffUserRepository:
     async def get(self, staff_user_id: uuid.UUID) -> StaffUser | None:
         return await self._session.get(StaffUser, staff_user_id)
 
+    async def get_many(self, staff_user_ids: list[uuid.UUID]) -> list[StaffUser]:
+        """Batch lookup for resolving several staff_user_ids in one query
+        -- used by appointments.api.router when rendering a whole history
+        timeline's worth of `changed_by` actors at once, rather than one
+        query per event row."""
+        if not staff_user_ids:
+            return []
+        result = await self._session.execute(
+            select(StaffUser).where(StaffUser.staff_user_id.in_(staff_user_ids))
+        )
+        return list(result.scalars().all())
+
 
 class WebsiteLinkClickRepository:
     """Append-only -- no update/delete, matching WebsiteLinkClick's

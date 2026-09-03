@@ -313,6 +313,37 @@ async def test_update_appointment_status_happy_path(
     assert body["confirmed_at"] is not None
 
 
+async def test_appointment_history_resolves_staff_name_for_status_changes(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """The history timeline shows the acting staff member's actual name,
+    not their raw staff_user_id -- resolved fresh on read (not stored on
+    the event row), same as any other current-state lookup in this app."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    appointment = await _seed_appointment(db_session, tenant, status="requested")
+
+    await client.patch(
+        f"/api/v1/appointments/{appointment.appointment_id}/status",
+        json={"to_status": "confirmed"},
+        headers=_auth_headers(tokens),
+    )
+
+    response = await client.get(
+        f"/api/v1/appointments/{appointment.appointment_id}", headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 200
+    events = response.json()["status_events"]
+    confirmed_event = next(e for e in events if e["event_type"] == "confirmed")
+    assert confirmed_event["changed_by_name"] == "Jane Owner"
+
+    requested_event = next(e for e in events if e["event_type"] == "requested")
+    # The initial request has no staff actor -- created_via ("browser" by
+    # default, see _seed_appointment), not a resolvable name.
+    assert requested_event["changed_by_name"] is None
+
+
 async def test_update_appointment_status_illegal_transition_returns_409(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:

@@ -114,20 +114,20 @@ function formatSlot(date: string, time: string): string {
   return `${formatDate(date)} at ${formatTime(time)}`
 }
 
-const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 // changed_by is a raw staff_user_id (UUID), "system" (the reminder scan),
 // or a creation surface ("flow"/"browser") for the initial request -- see
-// appointments/domain/models.py's AppointmentStatusEvent docstring. This
-// app has no staff-name lookup wired into this endpoint yet, so a UUID
-// renders as a generic "Staff member" rather than the raw id, which would
-// just look broken to a reader.
-function formatActor(changedBy: string): string {
-  if (changedBy === 'system') return 'Automatically'
-  if (changedBy === 'flow') return 'Customer, via WhatsApp'
-  if (changedBy === 'browser') return 'Customer, via the booking page'
-  if (_UUID_RE.test(changedBy)) return 'Staff member'
-  return changedBy
+// appointments/domain/models.py's AppointmentStatusEvent docstring.
+// changed_by_name is the backend's resolved staff display name for the
+// UUID case (appointments/api/router.py's _staff_names_by_id) -- prefer
+// it, and fall back to a generic "Staff member" only if that staff
+// account no longer exists (changed_by_name null but changed_by is still
+// a staff_user_id, not one of the known non-staff markers).
+function formatActor(event: AppointmentStatusEventOut): string {
+  if (event.changed_by_name) return event.changed_by_name
+  if (event.changed_by === 'system') return 'Automatically'
+  if (event.changed_by === 'flow') return 'Customer, via WhatsApp'
+  if (event.changed_by === 'browser') return 'Customer, via the booking page'
+  return 'Staff member'
 }
 
 const EVENT_TITLES: Record<AppointmentEventType, string> = {
@@ -164,7 +164,7 @@ function HistoryEventRow({ event }: { event: AppointmentStatusEventOut }) {
             {event.offset_minutes}-minute-before reminder
           </p>
         )}
-        <p className="text-muted-foreground text-xs">{formatActor(event.changed_by)}</p>
+        <p className="text-muted-foreground text-xs">{formatActor(event)}</p>
       </div>
       <p className="text-muted-foreground shrink-0 text-xs">
         {new Date(event.changed_at).toLocaleString()}

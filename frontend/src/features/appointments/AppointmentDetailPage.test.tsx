@@ -154,6 +154,7 @@ describe('AppointmentDetailPage', () => {
           to_start_time: '10:00:00',
           offset_minutes: null,
           changed_by: 'browser',
+          changed_by_name: null,
           changed_at: '2026-08-26T12:00:00Z',
         },
         {
@@ -166,6 +167,7 @@ describe('AppointmentDetailPage', () => {
           to_start_time: '14:30:00',
           offset_minutes: null,
           changed_by: '33333333-3333-3333-3333-333333333333',
+          changed_by_name: 'Priya Staff',
           changed_at: '2026-08-27T09:00:00Z',
         },
       ],
@@ -179,6 +181,34 @@ describe('AppointmentDetailPage', () => {
     expect(screen.getByText(/Slot requested/)).toBeInTheDocument()
     expect(screen.getByText('Rescheduled')).toBeInTheDocument()
     expect(screen.getByText('Customer, via the booking page')).toBeInTheDocument()
+    expect(screen.getByText('Priya Staff')).toBeInTheDocument()
+  })
+
+  it('falls back to a generic label when a staff actor has no resolved name', async () => {
+    mockedApiFetch.mockResolvedValueOnce({
+      ...sampleAppointment,
+      status_events: [
+        {
+          event_type: 'confirmed',
+          from_status: 'requested',
+          to_status: 'confirmed',
+          from_appointment_date: null,
+          from_start_time: null,
+          to_appointment_date: null,
+          to_start_time: null,
+          offset_minutes: null,
+          changed_by: '44444444-4444-4444-4444-444444444444',
+          changed_by_name: null,
+          changed_at: '2026-08-27T09:00:00Z',
+        },
+      ],
+    })
+
+    renderPage()
+    await screen.findByText('Asha Rao')
+
+    fireEvent.click(screen.getByText('History (1)'))
+
     expect(screen.getByText('Staff member')).toBeInTheDocument()
   })
 })

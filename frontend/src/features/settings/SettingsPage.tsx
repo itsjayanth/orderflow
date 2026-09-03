@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Info } from 'lucide-react'
+import { Info, Plus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -292,6 +292,8 @@ function AppointmentAvailabilitySettingsSection() {
   const update = useUpdateAppointmentAvailability()
   const [timezone, setTimezone] = useState('Asia/Kolkata')
   const [days, setDays] = useState<DayRow[]>(() => Array.from({ length: 7 }, defaultDayRow))
+  const [reminderOffsets, setReminderOffsets] = useState<number[]>([60, 30])
+  const [newOffsetDraft, setNewOffsetDraft] = useState('')
   const [justSaved, setJustSaved] = useState(false)
 
   useEffect(() => {
@@ -310,10 +312,24 @@ function AppointmentAvailabilitySettingsSection() {
         }
       }),
     )
+    setReminderOffsets(data.reminder_offsets_minutes)
   }, [data])
 
   function updateDay(index: number, patch: Partial<DayRow>) {
     setDays((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  function removeReminderOffset(value: number) {
+    setReminderOffsets((prev) => prev.filter((v) => v !== value))
+  }
+
+  function addReminderOffset() {
+    const value = Number(newOffsetDraft)
+    if (!Number.isInteger(value) || value <= 0) return
+    setReminderOffsets((prev) =>
+      prev.includes(value) ? prev : [...prev, value].sort((a, b) => b - a),
+    )
+    setNewOffsetDraft('')
   }
 
   function onSave() {
@@ -330,11 +346,7 @@ function AppointmentAvailabilitySettingsSection() {
             slot_duration_minutes: row.slot_duration_minutes,
             buffer_minutes: row.buffer_minutes,
           })),
-        // Round-tripped unmodified -- this form has no UI for editing
-        // reminder timing yet, and the PUT is a full replace, so omitting
-        // this field would silently reset it to the server default on
-        // every hours-only save.
-        reminder_offsets_minutes: data?.reminder_offsets_minutes ?? [60, 30],
+        reminder_offsets_minutes: reminderOffsets,
       },
       {
         onSuccess: () => {
@@ -429,6 +441,57 @@ function AppointmentAvailabilitySettingsSection() {
                 )}
               </div>
             ))}
+          </div>
+
+          <div className="space-y-2 border-t pt-4">
+            <Label>Reminders (minutes before appointment)</Label>
+            <p className="text-muted-foreground text-sm">
+              Confirmed appointments get an automatic WhatsApp reminder at each offset below. 60 and
+              30 minutes each get their own customizable message in Message templates below; any
+              other value uses the shared default reminder message.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {reminderOffsets.map((offset) => (
+                <span
+                  key={offset}
+                  className="bg-secondary/60 inline-flex items-center gap-1.5 rounded-full py-1 pr-1.5 pl-3 text-sm"
+                >
+                  {offset} min
+                  <button
+                    type="button"
+                    aria-label={`Remove ${offset}-minute reminder`}
+                    onClick={() => removeReminderOffset(offset)}
+                    className="hover:bg-secondary text-muted-foreground hover:text-foreground rounded-full p-0.5 transition-colors duration-150"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </span>
+              ))}
+              {reminderOffsets.length === 0 && (
+                <span className="text-muted-foreground text-sm">No reminders configured.</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                placeholder="e.g. 120"
+                aria-label="Add a reminder offset in minutes"
+                value={newOffsetDraft}
+                onChange={(e) => setNewOffsetDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addReminderOffset()
+                  }
+                }}
+                className="h-8 w-28"
+              />
+              <Button type="button" variant="outline" size="sm" onClick={addReminderOffset}>
+                <Plus className="size-3.5" />
+                Add
+              </Button>
+            </div>
           </div>
 
           {update.isError && (

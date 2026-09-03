@@ -3,6 +3,7 @@ import uuid
 from typing import cast
 
 from fastapi import APIRouter, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from appointments.adapters.repository import (
     AppointmentNotFoundError,
@@ -11,6 +12,7 @@ from appointments.adapters.repository import (
 )
 from appointments.adapters.scheduling_repository import AppointmentServiceRepository
 from appointments.api.schemas import (
+    AppointmentEventType,
     AppointmentOut,
     AppointmentPaymentLinkOut,
     AppointmentRescheduleRequest,
@@ -27,8 +29,9 @@ from appointments.domain.events import (
     AppointmentConfirmed,
     publish,
 )
-from appointments.domain.models import Appointment
+from appointments.domain.models import Appointment, AppointmentStatusEvent
 from appointments.domain.state_machine import IllegalTransitionError
+from identity.adapters.repository import StaffUserRepository
 from payments.adapters.gateway_selector import get_payment_gateway, resolve_credentials
 from payments.adapters.repository import (
     MerchantPaymentCredentialsRepository,
@@ -45,8 +48,54 @@ _EVENT_BY_STATUS = {
 }
 
 
-def _to_appointment_out(
-    appointment: Appointment, *, include_events: bool = False
+def _is_uuid(value: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        return None
+
+
+async def _staff_names_by_id(
+    session: AsyncSession, events: list[AppointmentStatusEvent]
+) -> dict[uuid.UUID, str]:
+    """Batch-resolves every staff_user_id referenced in `changed_by`
+    across one appointment's whole history in a single query, rather than
+    one lookup per event row. `changed_by` also holds non-UUID markers
+    ("system", "flow", "browser") for events with no staff actor -- those
+    are simply not staff_user_ids and get filtered out here before the
+    query, not passed through."""
+    staff_ids = {
+        staff_id
+        for event in events
+        if (staff_id := _is_uuid(event.changed_by)) is not None
+    }
+    if not staff_ids:
+        return {}
+    staff_users = await StaffUserRepository(session).get_many(list(staff_ids))
+    return {staff_user.staff_user_id: staff_user.name for staff_user in staff_users}
+
+
+def _to_status_event_out(
+    event: AppointmentStatusEvent, staff_names: dict[uuid.UUID, str]
+) -> AppointmentStatusEventOut:
+    staff_id = _is_uuid(event.changed_by)
+    return AppointmentStatusEventOut(
+        event_type=cast(AppointmentEventType, event.event_type),
+        from_status=cast("AppointmentStatus | None", event.from_status),
+        to_status=cast("AppointmentStatus | None", event.to_status),
+        from_appointment_date=event.from_appointment_date,
+        from_start_time=event.from_start_time,
+        to_appointment_date=event.to_appointment_date,
+        to_start_time=event.to_start_time,
+        offset_minutes=event.offset_minutes,
+        changed_by=event.changed_by,
+        changed_by_name=staff_names.get(staff_id) if staff_id is not None else None,
+        changed_at=event.changed_at,
+    )
+
+
+async def _to_appointment_out(
+    appointment: Appointment, session: AsyncSession, *, include_events: bool = False
 ) -> AppointmentOut:
     """Built manually (rather than pure `AppointmentOut.model_validate`)
     because customer_number/customer_whatsapp_number/customer_name are
@@ -63,7 +112,14 @@ def _to_appointment_out(
     Every other endpoint here passes include_events=True -- each one's
     own repository call (get/transition_status/update_notes/reschedule)
     routes through AppointmentRepository.get internally first, which does
-    load them, so it's free."""
+    load them, so it's free.
+
+    Async (and takes `session`) purely to resolve changed_by staff names
+    for the history timeline in one batched query -- see
+    _staff_names_by_id."""
+    staff_names = (
+        await _staff_names_by_id(session, appointment.status_events) if include_events else {}
+    )
     return AppointmentOut(
         appointment_id=appointment.appointment_id,
         appointment_number=appointment.appointment_number,
@@ -87,7 +143,7 @@ def _to_appointment_out(
         completed_at=appointment.completed_at,
         cancelled_at=appointment.cancelled_at,
         status_events=(
-            [AppointmentStatusEventOut.model_validate(e) for e in appointment.status_events]
+            [_to_status_event_out(e, staff_names) for e in appointment.status_events]
             if include_events
             else []
         ),
@@ -110,7 +166,7 @@ async def list_appointments(
         to_date=to_date,
         customer_id=customer_id,
     )
-    return [_to_appointment_out(appointment) for appointment in appointments]
+    return [await _to_appointment_out(appointment, session) for appointment in appointments]
 
 
 @router.get("/{appointment_id}", response_model=AppointmentOut)
@@ -120,7 +176,7 @@ async def get_appointment(
     appointment = await AppointmentRepository(session).get(tenant, appointment_id)
     if appointment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Appointment not found")
-    return _to_appointment_out(appointment, include_events=True)
+    return await _to_appointment_out(appointment, session, include_events=True)
 
 
 @router.patch("/{appointment_id}/status", response_model=AppointmentOut)
@@ -149,7 +205,7 @@ async def update_appointment_status(
             event_cls(appointment_id=appointment.appointment_id, merchant_id=tenant.merchant_id)
         )
 
-    return _to_appointment_out(appointment, include_events=True)
+    return await _to_appointment_out(appointment, session, include_events=True)
 
 
 @router.patch("/{appointment_id}", response_model=AppointmentOut)
@@ -162,7 +218,7 @@ async def update_appointment(
     if appointment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Appointment not found")
     await session.commit()
-    return _to_appointment_out(appointment, include_events=True)
+    return await _to_appointment_out(appointment, session, include_events=True)
 
 
 @router.patch("/{appointment_id}/reschedule", response_model=AppointmentOut)
@@ -206,7 +262,7 @@ async def reschedule_appointment(
     if appointment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Appointment not found")
     await session.commit()
-    return _to_appointment_out(appointment, include_events=True)
+    return await _to_appointment_out(appointment, session, include_events=True)
 
 
 @router.post(

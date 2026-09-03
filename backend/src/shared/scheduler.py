@@ -18,14 +18,15 @@ from shared.tenant import TenantContext
 
 logger = logging.getLogger(__name__)
 
-# Only these two offsets (Task 4 of the appointment scheduling plan: "1hr
-# and 30min before") map to an actual notification kind/template today --
-# see identity/domain/models.py's Merchant.reminder_offsets_minutes and
-# notifications/domain/models.py's NOTIFICATION_KINDS docstring. A
-# merchant with some other offset configured (no UI sets one today) gets
-# no reminder for it -- silently skipped below, not an error, same
-# "unrecognized/unconfigured = no-op" convention the rest of this scan
-# already follows for a merchant with no reminder template at all.
+# The two offsets (Task 4 of the appointment scheduling plan: "1hr and
+# 30min before") that get their own customizable notification kind/
+# template -- see identity/domain/models.py's
+# Merchant.reminder_offsets_minutes and notifications/domain/models.py's
+# NOTIFICATION_KINDS docstring. A merchant can configure any other offset
+# too (Settings' Appointment reminders editor); those still get a
+# reminder sent, just via the one shared default template
+# (whatsapp_appointment_reminder_template_name) rather than a bespoke
+# per-offset one -- see notify_appointment_reminder's `kind=None` case.
 _REMINDER_KIND_BY_OFFSET_MINUTES = {
     60: "appointment_reminder_60m",
     30: "appointment_reminder_30m",
@@ -87,11 +88,7 @@ async def send_due_appointment_reminders(now_utc: datetime.datetime | None = Non
 
     sent_count = 0
     for merchant in merchants:
-        offsets = [
-            offset
-            for offset in merchant.reminder_offsets_minutes
-            if offset in _REMINDER_KIND_BY_OFFSET_MINUTES
-        ]
+        offsets = merchant.reminder_offsets_minutes
         if not offsets:
             continue
 
@@ -121,7 +118,11 @@ async def send_due_appointment_reminders(now_utc: datetime.datetime | None = Non
                     sent = await channel.notify_appointment_reminder(
                         merchant_id=merchant.merchant_id,
                         appointment_id=appointment.appointment_id,
-                        kind=_REMINDER_KIND_BY_OFFSET_MINUTES[offset_minutes],
+                        # None for any offset besides the two named ones --
+                        # notify_appointment_reminder falls back to the
+                        # shared default template in that case rather than
+                        # skipping the send outright.
+                        kind=_REMINDER_KIND_BY_OFFSET_MINUTES.get(offset_minutes),
                     )
                     if sent:
                         await reminder_repo.mark_sent(appointment.appointment_id, offset_minutes)
