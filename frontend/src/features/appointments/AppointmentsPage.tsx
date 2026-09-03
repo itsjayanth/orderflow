@@ -15,6 +15,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { AppointmentOut, AppointmentStatus } from '@/shared/api/types'
+import { CrossfadeStage } from '@/shared/components/CrossfadeStage'
 import { DateRangeFilter, type DateRangeValue } from '@/shared/components/DateRangeFilter'
 import { EmptyState } from '@/shared/components/EmptyState'
 import { PageHeader } from '@/shared/components/PageHeader'
@@ -136,14 +137,22 @@ export function AppointmentsPage() {
         title="Appointments"
         description="Requested time slots from WhatsApp -- confirm, complete, or cancel right here."
         actions={
+          // The List/Calendar toggle sits first and stays put regardless of
+          // which view is active; the view-specific range control follows in
+          // a trailing slot that only List currently fills (Calendar's own
+          // navigation lives inside AppointmentCalendarView's own toolbar).
+          // Ordering it this way -- rather than the reverse -- keeps the
+          // toggle from sliding sideways when that slot's content
+          // appears/disappears, which is most of what made the view switch
+          // read as a reload.
           <div className="flex flex-wrap items-center gap-2">
-            {viewMode === 'list' && <DateRangeFilter value={listRange} onChange={selectRange} />}
             <Tabs value={viewMode} onValueChange={(value) => selectViewMode(value as ViewMode)}>
               <TabsList>
                 <TabsTrigger value="list">List</TabsTrigger>
                 <TabsTrigger value="calendar">Calendar</TabsTrigger>
               </TabsList>
             </Tabs>
+            {viewMode === 'list' && <DateRangeFilter value={listRange} onChange={selectRange} />}
           </div>
         }
       />
@@ -166,123 +175,123 @@ export function AppointmentsPage() {
         </TabsList>
       </Tabs>
 
-      {viewMode === 'calendar' && (
-        <>
-          <AppointmentQuickStats appointments={appointments ?? []} />
-          <AppointmentCalendarView
-            appointments={visibleAppointments ?? []}
-            onRangeChange={setCalendarRange}
-          />
-        </>
-      )}
-
-      {viewMode === 'list' && (
-        <Card className="overflow-hidden py-0">
-          <div className="max-h-[32rem] overflow-auto [&>div]:overflow-visible">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                    Appointment
-                  </TableHead>
-                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                    Customer
-                  </TableHead>
-                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                    Date
-                  </TableHead>
-                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                    Time
-                  </TableHead>
-                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                    Name
-                  </TableHead>
-                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                    Email
-                  </TableHead>
-                  <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
-                    Status
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading &&
-                  Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable identity
-                    <TableRow key={`appointments-skeleton-${i}`} className="hover:bg-transparent">
-                      <TableCell className="py-2.5">
-                        <Skeleton className="h-4 w-14" />
+      <CrossfadeStage stageKey={viewMode}>
+        {viewMode === 'calendar' ? (
+          <div className="space-y-6">
+            <AppointmentQuickStats appointments={appointments ?? []} />
+            <AppointmentCalendarView
+              appointments={visibleAppointments ?? []}
+              onRangeChange={setCalendarRange}
+            />
+          </div>
+        ) : (
+          <Card className="overflow-hidden py-0">
+            <div className="max-h-[32rem] overflow-auto [&>div]:overflow-visible">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                      Appointment
+                    </TableHead>
+                    <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                      Customer
+                    </TableHead>
+                    <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                      Date
+                    </TableHead>
+                    <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                      Time
+                    </TableHead>
+                    <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                      Name
+                    </TableHead>
+                    <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                      Email
+                    </TableHead>
+                    <TableHead className="bg-card border-border sticky top-0 z-10 border-b">
+                      Status
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isLoading &&
+                    Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable identity
+                      <TableRow key={`appointments-skeleton-${i}`} className="hover:bg-transparent">
+                        <TableCell className="py-2.5">
+                          <Skeleton className="h-4 w-14" />
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Skeleton className="h-4 w-32" />
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Skeleton className="h-4 w-24" />
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Skeleton className="h-4 w-16" />
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Skeleton className="h-4 w-24" />
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Skeleton className="h-4 w-32" />
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Skeleton className="h-5 w-20 rounded-full" />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  {!isLoading && visibleAppointments?.length === 0 && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={COLUMN_COUNT}>
+                        <EmptyState
+                          icon={CalendarDays}
+                          title={
+                            tab === 'all'
+                              ? 'No appointments yet.'
+                              : `No ${STATUS_LABELS[tab].toLowerCase()} appointments.`
+                          }
+                        />
                       </TableCell>
-                      <TableCell className="py-2.5">
-                        <Skeleton className="h-4 w-32" />
+                    </TableRow>
+                  )}
+                  {visibleAppointments?.map((appointment) => (
+                    <TableRow
+                      key={appointment.appointment_id}
+                      onClick={() => navigate(`/appointments/${appointment.appointment_id}`)}
+                      className="cursor-pointer"
+                    >
+                      <TableCell className="text-primary py-2.5 font-medium">
+                        {formatAppointmentNumber(appointment.appointment_number)}
                       </TableCell>
-                      <TableCell className="py-2.5">
-                        <Skeleton className="h-4 w-24" />
+                      <TableCell className="py-2.5 font-medium">
+                        {appointment.customer_name ??
+                          formatPhoneNumber(appointment.customer_whatsapp_number)}{' '}
+                        <span className="text-muted-foreground font-normal">
+                          ({formatCustomerNumber(appointment.customer_number)})
+                        </span>
                       </TableCell>
-                      <TableCell className="py-2.5">
-                        <Skeleton className="h-4 w-16" />
+                      <TableCell className="text-muted-foreground py-2.5">
+                        {formatDate(appointment.appointment_date)}
                       </TableCell>
-                      <TableCell className="py-2.5">
-                        <Skeleton className="h-4 w-24" />
+                      <TableCell className="text-muted-foreground py-2.5">
+                        {formatTime(appointment.start_time)}
                       </TableCell>
-                      <TableCell className="py-2.5">
-                        <Skeleton className="h-4 w-32" />
+                      <TableCell className="py-2.5">{appointment.name}</TableCell>
+                      <TableCell className="text-muted-foreground py-2.5">
+                        {appointment.email}
                       </TableCell>
-                      <TableCell className="py-2.5">
-                        <Skeleton className="h-5 w-20 rounded-full" />
+                      <TableCell className="py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <StatusActionsMenu appointment={appointment} />
                       </TableCell>
                     </TableRow>
                   ))}
-                {!isLoading && visibleAppointments?.length === 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={COLUMN_COUNT}>
-                      <EmptyState
-                        icon={CalendarDays}
-                        title={
-                          tab === 'all'
-                            ? 'No appointments yet.'
-                            : `No ${STATUS_LABELS[tab].toLowerCase()} appointments.`
-                        }
-                      />
-                    </TableCell>
-                  </TableRow>
-                )}
-                {visibleAppointments?.map((appointment) => (
-                  <TableRow
-                    key={appointment.appointment_id}
-                    onClick={() => navigate(`/appointments/${appointment.appointment_id}`)}
-                    className="cursor-pointer"
-                  >
-                    <TableCell className="text-primary py-2.5 font-medium">
-                      {formatAppointmentNumber(appointment.appointment_number)}
-                    </TableCell>
-                    <TableCell className="py-2.5 font-medium">
-                      {appointment.customer_name ??
-                        formatPhoneNumber(appointment.customer_whatsapp_number)}{' '}
-                      <span className="text-muted-foreground font-normal">
-                        ({formatCustomerNumber(appointment.customer_number)})
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground py-2.5">
-                      {formatDate(appointment.appointment_date)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground py-2.5">
-                      {formatTime(appointment.start_time)}
-                    </TableCell>
-                    <TableCell className="py-2.5">{appointment.name}</TableCell>
-                    <TableCell className="text-muted-foreground py-2.5">
-                      {appointment.email}
-                    </TableCell>
-                    <TableCell className="py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <StatusActionsMenu appointment={appointment} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      )}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        )}
+      </CrossfadeStage>
     </div>
   )
 }
