@@ -43,9 +43,20 @@ class Customer(Base):
     # choice doesn't need to be made every time; ordering_flow.domain.
     # checkout.perform_checkout is the only writer.
     default_contact_phone: Mapped[str | None] = mapped_column(String(32), default=None)
-    # Optional, dashboard-only -- never collected over WhatsApp, purely a
-    # manual reference field staff can fill in from the Customers tab.
+    # Historically dashboard-only ("never collected over WhatsApp") --
+    # since the appointment-booking Flow now legitimately collects an
+    # email from the customer themselves (see appointment_flow/domain/
+    # booking.py and flows/domain/appointment_booking.py), this can also
+    # be set from that flow's own submission, not just from staff.
     email: Mapped[str | None] = mapped_column(String(255), default=None)
+    # 'cod' | 'online' | None -- the payment method chosen on this
+    # customer's most recent order, remembered so checkout can prefill it
+    # next time instead of defaulting to "online" for everyone. Same
+    # "only a hint, never authoritative" role default_contact_phone plays:
+    # nothing downstream trusts this for anything but a form default.
+    # None for a customer who has never completed an order (or predates
+    # this column).
+    last_payment_method: Mapped[str | None] = mapped_column(String(16), default=None)
     first_seen_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC)
     )

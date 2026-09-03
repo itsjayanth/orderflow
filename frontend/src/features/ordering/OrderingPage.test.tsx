@@ -68,13 +68,13 @@ const multiCategoryCatalog: PublicCatalogOut = {
   merchant_whatsapp_number: '+91 90000 00000',
 }
 
-function renderPage() {
+function renderPage(search = '') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/order/${merchantId}`]}>
+      <MemoryRouter initialEntries={[`/order/${merchantId}${search}`]}>
         <Routes>
           <Route path="/order/:merchantId" element={<OrderingPage />} />
         </Routes>
@@ -301,6 +301,7 @@ describe('OrderingPage', () => {
         pincode: '560025',
       },
       default_contact_phone: null,
+      last_payment_method: null,
     }
     mockedApiFetch.mockResolvedValueOnce(lookupResponse)
 
@@ -320,13 +321,46 @@ describe('OrderingPage', () => {
       ),
     )
 
-    expect(await screen.findByDisplayValue('Priya')).toBeInTheDocument()
+    // Shown read-only with a "Looks right" confirmation, not as an empty
+    // input to retype.
+    expect(await screen.findByText('Priya')).toBeInTheDocument()
+    expect(screen.getByText('✓ Looks right')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Delivery' }))
-    expect(await screen.findByDisplayValue('12 MG Road')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Opposite the mall')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Bengaluru')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('560025')).toBeInTheDocument()
+    expect(await screen.findByText('12 MG Road, Bengaluru - 560025')).toBeInTheDocument()
+  })
+
+  it('lets a returning customer edit a confirmed field instead of accepting it', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
+    const lookupResponse: OrderingFlowCustomerLookupOut = {
+      display_name: 'Priya',
+      address: null,
+      default_contact_phone: null,
+      last_payment_method: null,
+    }
+    mockedApiFetch.mockResolvedValueOnce(lookupResponse)
+
+    renderPage()
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText(totalText('Total: INR 349.00'))
+
+    const phoneInput = screen.getByLabelText('Your WhatsApp number')
+    fireEvent.change(phoneInput, { target: { value: '9876543210' } })
+    fireEvent.blur(phoneInput)
+
+    expect(await screen.findByText('Priya')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+
+    // The confirmed row is gone, replaced by a normal editable input
+    // pre-filled with the same value.
+    expect(screen.queryByText('✓ Looks right')).not.toBeInTheDocument()
+    const nameInput = screen.getByLabelText('Your name')
+    expect(nameInput).toHaveValue('Priya')
+    fireEvent.change(nameInput, { target: { value: 'Priya Sharma' } })
+    expect(nameInput).toHaveValue('Priya Sharma')
   })
 
   it('does not error the page when customer-lookup finds no existing customer', async () => {
@@ -480,6 +514,7 @@ describe('OrderingPage', () => {
       display_name: 'Priya',
       address: null,
       default_contact_phone: '8000011111',
+      last_payment_method: null,
     }
     mockedApiFetch.mockResolvedValueOnce(lookupResponse)
 
@@ -501,5 +536,73 @@ describe('OrderingPage', () => {
 
     expect(await screen.findByDisplayValue('8000011111')).toBeInTheDocument()
     expect(screen.getByLabelText('Number to call')).toHaveValue('8000011111')
+  })
+
+  it('never shows a WhatsApp number field when opened from the WhatsApp CTA link', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
+    mockedApiFetch.mockRejectedValueOnce(new Error('not found'))
+
+    renderPage('?wa=919876543210')
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText(totalText('Total: INR 349.00'))
+
+    expect(screen.queryByLabelText('Your WhatsApp number')).not.toBeInTheDocument()
+    // The lookup fires on its own, with no field for the customer to
+    // finish entering first.
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        `/api/v1/ordering-flow/${merchantId}/customer-lookup?whatsapp_number=919876543210`,
+      ),
+    )
+  })
+
+  it('submits checkout using the wa param, and prefills/persists last_payment_method', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
+    const lookupResponse: OrderingFlowCustomerLookupOut = {
+      display_name: 'Priya',
+      address: null,
+      default_contact_phone: null,
+      last_payment_method: 'cod',
+    }
+    mockedApiFetch.mockResolvedValueOnce(lookupResponse)
+    const checkoutResponse: OrderingFlowCheckoutResponse = {
+      order_id: '33333333-3333-3333-3333-333333333333',
+      order_number: 5,
+      payment_status: 'cod_pending',
+      fulfillment_status: 'new',
+      total: '349.00',
+      payment_link_url: null,
+    }
+    mockedApiFetch.mockResolvedValueOnce(checkoutResponse)
+
+    renderPage('?wa=919876543210')
+    await screen.findByText('Butter Chicken')
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    await screen.findByText(totalText('Total: INR 349.00'))
+
+    // Payment method shows as a confirmed field (from last_payment_method),
+    // no dropdown to interact with.
+    expect(await screen.findByText('Cash on delivery/pickup')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Payment method')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Place order' }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        `/api/v1/ordering-flow/${merchantId}/checkout`,
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"customer_whatsapp_number":"919876543210"'),
+        }),
+      ),
+    )
+    const checkoutCall = mockedApiFetch.mock.calls.find(
+      ([path]) => path === `/api/v1/ordering-flow/${merchantId}/checkout`,
+    )
+    const requestBody = JSON.parse((checkoutCall?.[1]?.body as string) ?? '{}')
+    expect(requestBody.payment_method).toBe('cod')
   })
 })

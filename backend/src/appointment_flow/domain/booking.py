@@ -117,9 +117,18 @@ async def perform_booking(
         + datetime.timedelta(minutes=duration_minutes)
     ).time()
 
-    customer = await CustomerRepository(session).find_or_create(
+    customer_repo = CustomerRepository(session)
+    customer = await customer_repo.find_or_create(
         tenant, customer_whatsapp_number, display_name=customer_display_name
     )
+    # find_or_create only sets name on first creation -- persist a
+    # returning customer's corrected name/email as their new defaults too,
+    # mirroring perform_checkout's own update_contact_details call for the
+    # order flow. Deliberately after find_or_create (a brand-new customer
+    # already got `name` as display_name there) but before the write below
+    # -- if AppointmentRepository.create raises SlotConflictError, this
+    # profile update is rolled back right alongside it.
+    await customer_repo.update_profile_from_appointment(customer, display_name=name, email=email)
 
     try:
         appointment = await AppointmentRepository(session).create(

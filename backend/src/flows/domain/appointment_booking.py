@@ -18,14 +18,27 @@ _SLOT_STEP_MINUTES = 30
 _DAYS_AHEAD = 14
 
 
-def build_booking_screen_data(*, business_name: str) -> dict[str, Any]:
+def build_booking_screen_data(
+    *,
+    business_name: str,
+    saved_customer_name: str | None = None,
+    saved_customer_email: str | None = None,
+) -> dict[str, Any]:
     """The BOOKING screen's `data` on Flow INIT -- a fixed, merchant-agnostic
     set of date/time options, plus the merchant's display name for the
     screen heading. Represented as Dropdown `data-source` arrays of
     {id, title} objects (same shape RadioButtonsGroup/CheckboxGroup use
     elsewhere in this app for categories/items) rather than a native date
     or time picker component -- see flows/assets/appointment_flow.json's
-    header comment for why."""
+    header comment for why.
+
+    saved_customer_name/saved_customer_email mirror order_builder.py's
+    build_details_screen_data: whatever a returning customer already told
+    us (from a past order OR a past booking -- both write the same
+    Customer row), so the Flow JSON's Form `init-values` can prefill
+    instead of asking again. Empty strings, not null, for the same reason
+    build_details_screen_data uses them: a null is more likely to render
+    literally as "None" in a TextInput than as blank."""
     today = datetime.datetime.now(datetime.UTC).date()
     date_options = []
     for offset in range(1, _DAYS_AHEAD + 1):
@@ -41,6 +54,8 @@ def build_booking_screen_data(*, business_name: str) -> dict[str, Any]:
         "business_name": business_name,
         "date_options": date_options,
         "time_options": time_options,
+        "saved_customer_name": saved_customer_name or "",
+        "saved_customer_email": saved_customer_email or "",
     }
 
 

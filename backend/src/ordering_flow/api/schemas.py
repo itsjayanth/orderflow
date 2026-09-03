@@ -123,3 +123,7 @@ class OrderingFlowCustomerLookupOut(BaseModel):
     # pre-select "Use a different number" and prefill the box for a
     # returning customer instead of asking again.
     default_contact_phone: str | None
+    # 'cod' | 'online' | None -- their last order's payment method, so the
+    # webview can default the payment-method selector to it instead of
+    # always defaulting to "online" for a customer who's always paid COD.
+    last_payment_method: str | None

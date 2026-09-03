@@ -1145,6 +1145,84 @@ async def test_appointment_flow_completion_creates_appointment_not_order(
     assert orders == []
 
 
+async def test_appointment_flow_completion_ignores_phone_fields_in_crafted_payload(
+    db_session: AsyncSession,
+) -> None:
+    """The appointment Flow has no phone/whatsapp-number field, and never
+    reads one from the completion payload even if one is smuggled in --
+    identity comes only from message.from_phone (the server-verified
+    inbound sender), never from anything inside flow_response. This is
+    what actually prevents "change my number through this flow," not
+    client-side Flow JSON validation."""
+    merchant, tenant = await _seed_connected_merchant(db_session, vertical="appointment")
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "appointment_date": "2026-09-10",
+            "appointment_time": "14:30",
+            "customer_name": "Asha",
+            "customer_email": "asha@example.com",
+            # Not a real field the Flow JSON produces -- simulates a
+            # crafted/tampered nfm_reply trying to smuggle a different
+            # identity in.
+            "customer_whatsapp_number": "911111111111",
+            "wa_id": "911111111111",
+            "phone": "911111111111",
+        },
+    )
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FLOW_APPOINTMENT_COMPLETED
+    assert result.reply_sent is True
+
+    real_customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    appointments = await AppointmentRepository(db_session).list(
+        tenant, customer_id=real_customer.customer_id
+    )
+    assert len(appointments) == 1
+
+    spoofed_customer = await CustomerRepository(db_session).get_by_whatsapp_number(
+        tenant, "911111111111"
+    )
+    assert spoofed_customer is None
+
+
+async def test_appointment_flow_completion_persists_edited_name_and_email_as_new_defaults(
+    db_session: AsyncSession,
+) -> None:
+    """A returning customer correcting their name/email on the Flow (or
+    filling in an email for the first time) sticks for next time -- same
+    "persist on confirm" requirement perform_checkout already satisfies
+    for the order flow's name/contact-number."""
+    merchant, tenant = await _seed_connected_merchant(db_session, vertical="appointment")
+    await CustomerRepository(db_session).find_or_create(
+        tenant, "919876543210", display_name="Asha"
+    )
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(
+        from_phone="919876543210",
+        flow_response={
+            "appointment_date": "2026-09-10",
+            "appointment_time": "14:30",
+            "customer_name": "Asha Rao",  # corrected on this booking
+            "customer_email": "asha.rao@example.com",  # first time giving an email
+            "notes": None,
+        },
+    )
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.FLOW_APPOINTMENT_COMPLETED
+    customer = await CustomerRepository(db_session).get_by_whatsapp_number(tenant, "919876543210")
+    assert customer is not None
+    assert customer.display_name == "Asha Rao"
+    assert customer.email == "asha.rao@example.com"
+
+
 async def test_appointment_flow_completion_past_date_sends_error_and_creates_no_appointment(
     db_session: AsyncSession,
 ) -> None:

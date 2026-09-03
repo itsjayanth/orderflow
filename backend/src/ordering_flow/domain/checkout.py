@@ -84,7 +84,10 @@ async def perform_checkout(
     # choice actually sticks for next time, instead of only ever reflecting
     # whatever was submitted on their very first order.
     await customer_repo.update_contact_details(
-        customer, display_name=customer_display_name, default_contact_phone=contact_phone
+        customer,
+        display_name=customer_display_name,
+        default_contact_phone=contact_phone,
+        last_payment_method=payment_method,
     )
     # The number to ring for *this* order -- falls back to the WhatsApp
     # identity number itself when the customer didn't ask for a different

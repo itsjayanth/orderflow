@@ -5,6 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from catalog.adapters.repository import ItemRepository
+from customers.adapters.repository import CustomerRepository
 from shared.tenant import TenantContext
 
 
@@ -402,6 +403,55 @@ async def test_customer_lookup_returns_null_address_when_customer_has_none(
     body = response.json()
     assert body["display_name"] == "Asha"
     assert body["address"] is None
+
+
+async def test_customer_lookup_returns_last_payment_method_after_checkout(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    item = await ItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    await db_session.commit()
+
+    checkout_response = await client.post(
+        f"/api/v1/ordering-flow/{tenant.merchant_id}/checkout",
+        json={
+            "customer_whatsapp_number": "+919876543210",
+            "customer_display_name": "Asha",
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
+            "payment_method": "cod",
+        },
+    )
+    assert checkout_response.status_code == 201, checkout_response.text
+
+    response = await client.get(
+        f"/api/v1/ordering-flow/{tenant.merchant_id}/customer-lookup",
+        params={"whatsapp_number": "+919876543210"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["last_payment_method"] == "cod"
+
+
+async def test_customer_lookup_last_payment_method_null_for_new_customer(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    # Force-create the customer with no order yet, bypassing checkout, so
+    # last_payment_method has genuinely never been set.
+    await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/ordering-flow/{tenant.merchant_id}/customer-lookup",
+        params={"whatsapp_number": "+919876543210"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["last_payment_method"] is None
 
 
 async def test_customer_lookup_isolated_between_merchants(

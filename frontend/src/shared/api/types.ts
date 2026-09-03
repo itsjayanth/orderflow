@@ -271,6 +271,7 @@ export interface OrderingFlowCustomerLookupOut {
   display_name: string | null
   address: OrderingFlowAddressOut | null
   default_contact_phone: string | null
+  last_payment_method: 'cod' | 'online' | null
 }
 
 export interface AppointmentAvailabilityWindow {
@@ -341,6 +342,14 @@ export interface AppointmentFlowServiceOut {
 export interface AppointmentFlowSlotOut {
   start_time: string
   end_time: string
+}
+
+export interface AppointmentFlowCustomerLookupOut {
+  display_name: string | null
+  // Null both for a brand-new customer and for a returning one who's
+  // never given an email (e.g. only ever ordered food before) -- either
+  // way the booking form just shows an empty, fillable field.
+  email: string | null
 }
 
 export interface AppointmentFlowBookingResponse {

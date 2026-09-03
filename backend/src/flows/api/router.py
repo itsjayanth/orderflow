@@ -7,8 +7,7 @@ from fastapi import APIRouter, Response, status
 
 from catalog.adapters.repository import ItemRepository
 from catalog.domain.models import Item
-from customers.adapters.repository import AddressRepository, CustomerRepository
-from customers.domain.models import Customer
+from customers.domain.identity_resolution import resolve_customer_by_whatsapp_id
 from flows.api.schemas import FlowDataExchangeRequest
 from flows.domain.appointment_booking import build_booking_screen_data
 from flows.domain.encryption import FlowDecryptionError, decrypt_request, encrypt_response
@@ -140,7 +139,11 @@ async def _handle_appointment_action(
     above. `ping` gets the standard health-check reply; INIT (and any
     other/unrecognized action, as a fail-safe -- same rationale as
     _handle_action's fallback) always (re)renders the one BOOKING screen
-    with a fresh set of date/time options."""
+    with a fresh set of date/time options, prefilling name/email for a
+    customer resolve_customer_by_whatsapp_id recognizes from flow_token --
+    same shared identity-resolution entrypoint _handle_action's ITEMS
+    branch uses, so a customer recognized on one Flow is recognized on the
+    other (both write the same Customer row)."""
     action = payload.get("action")
 
     if action == "ping":
@@ -148,7 +151,15 @@ async def _handle_appointment_action(
 
     merchant = await MerchantRepository(session).get(tenant.merchant_id)
     business_name = merchant.business_name if merchant else "Book"
-    return {"screen": "BOOKING", "data": build_booking_screen_data(business_name=business_name)}
+    resolved = await resolve_customer_by_whatsapp_id(session, tenant, payload.get("flow_token"))
+    return {
+        "screen": "BOOKING",
+        "data": build_booking_screen_data(
+            business_name=business_name,
+            saved_customer_name=resolved.customer.display_name if resolved else None,
+            saved_customer_email=resolved.customer.email if resolved else None,
+        ),
+    }
 
 
 async def _handle_action(
@@ -183,20 +194,17 @@ async def _handle_action(
         except NoItemsSelectedError:
             pass
         else:
-            customer = await _lookup_saved_customer(session, tenant, payload.get("flow_token"))
-            saved_address = None
-            if customer is not None:
-                saved_address = await AddressRepository(session).get_primary_for_customer(
-                    tenant, customer.customer_id
-                )
+            resolved = await resolve_customer_by_whatsapp_id(
+                session, tenant, payload.get("flow_token"), include_address=True
+            )
             return {
                 "screen": "DETAILS",
                 "data": build_details_screen_data(
                     cart_summary=cart.summary_text,
-                    saved_address=saved_address,
-                    saved_customer_name=customer.display_name if customer else None,
+                    saved_address=resolved.address if resolved else None,
+                    saved_customer_name=resolved.customer.display_name if resolved else None,
                     saved_default_contact_phone=(
-                        customer.default_contact_phone if customer else None
+                        resolved.customer.default_contact_phone if resolved else None
                     ),
                 ),
             }
@@ -244,19 +252,3 @@ async def _ensure_images_cached(session: DbSession, items: list[Item]) -> None:
             changed = True
     if changed:
         await session.commit()
-
-
-async def _lookup_saved_customer(
-    session: DbSession, tenant: TenantContext, flow_token: Any
-) -> Customer | None:
-    """flow_token carries the customer's WhatsApp number (set when the Flow
-    is sent, see conversation/domain/handler.py) -- the only way this
-    endpoint knows *who* is ordering, since the decrypted request itself
-    doesn't include it. Returns None for a new customer (nothing on file
-    yet to prefill name/contact/address with) or a malformed/missing
-    token. Returns the full Customer row (not just the address) so callers
-    can also pull display_name/default_contact_phone for the DETAILS
-    screen's name and contact-number defaults."""
-    if not isinstance(flow_token, str) or not flow_token:
-        return None
-    return await CustomerRepository(session).get_by_whatsapp_number(tenant, flow_token)
