@@ -3,11 +3,13 @@ export interface AccessTokenResponse {
   token_type: string
 }
 
+export type MerchantVertical = 'restaurant' | 'appointment'
+
 export interface Merchant {
   merchant_id: string
   business_name: string
   onboarding_status: string
-  appointment_booking_enabled: boolean
+  vertical: MerchantVertical | null
 }
 
 export interface StaffUser {
@@ -160,6 +162,7 @@ export interface WhatsAppFlowSetupResult {
 
 export type OnboardingStatus =
   | 'registered'
+  | 'vertical_selected'
   | 'meta_connected'
   | 'whatsapp_verified'
   | 'profile_completed'
@@ -168,9 +171,15 @@ export type OnboardingStatus =
 
 export interface OnboardingStatusOut {
   onboarding_status: OnboardingStatus
+  vertical: MerchantVertical | null
   whatsapp_connected: boolean
   profile_completed: boolean
   has_available_item: boolean
+  has_available_service: boolean
+}
+
+export interface VerticalSelectionOut {
+  vertical: MerchantVertical
 }
 
 export interface BusinessProfileOut {
@@ -253,10 +262,6 @@ export interface OrderingFlowCustomerLookupOut {
   display_name: string | null
   address: OrderingFlowAddressOut | null
   default_contact_phone: string | null
-}
-
-export interface AppointmentSettingsOut {
-  appointment_booking_enabled: boolean
 }
 
 export interface AppointmentAvailabilityWindow {

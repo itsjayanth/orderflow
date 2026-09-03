@@ -97,6 +97,16 @@ class BusinessProfileUpdate(BaseModel):
 
 class OnboardingStatusOut(BaseModel):
     onboarding_status: str
+    vertical: str | None
     whatsapp_connected: bool
     profile_completed: bool
     has_available_item: bool
+    has_available_service: bool
+
+
+class VerticalSelectionRequest(BaseModel):
+    vertical: str = Field(..., description="'restaurant' or 'appointment' -- set once, immutable")
+
+
+class VerticalSelectionOut(BaseModel):
+    vertical: str

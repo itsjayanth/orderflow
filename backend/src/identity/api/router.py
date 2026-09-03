@@ -16,8 +16,6 @@ from identity.api.schemas import (
     AppointmentServiceCreateRequest,
     AppointmentServiceOut,
     AppointmentServiceUpdateRequest,
-    AppointmentSettingsOut,
-    AppointmentSettingsUpdate,
     LoginRequest,
     MerchantOut,
     MeResponse,
@@ -135,30 +133,6 @@ async def me(
         staff_user=StaffUserOut.model_validate(staff_user),
         merchant=MerchantOut.model_validate(merchant),
     )
-
-
-@router.get("/appointment-settings", response_model=AppointmentSettingsOut)
-async def get_appointment_settings(
-    tenant: CurrentTenant, session: DbSession
-) -> AppointmentSettingsOut:
-    merchant = await MerchantRepository(session).get(tenant.merchant_id)
-    if merchant is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
-    return AppointmentSettingsOut.model_validate(merchant)
-
-
-@router.patch("/appointment-settings", response_model=AppointmentSettingsOut)
-async def update_appointment_settings(
-    body: AppointmentSettingsUpdate, tenant: CurrentTenant, session: DbSession
-) -> AppointmentSettingsOut:
-    merchant = await MerchantRepository(session).get(tenant.merchant_id)
-    if merchant is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
-    merchant = await MerchantRepository(session).update_appointment_booking_enabled(
-        tenant.merchant_id, body.enabled
-    )
-    await session.commit()
-    return AppointmentSettingsOut.model_validate(merchant)
 
 
 @router.get("/appointment-availability", response_model=AppointmentAvailabilitySettingsOut)

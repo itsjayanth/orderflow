@@ -1,20 +1,37 @@
 import datetime
 import uuid
+from enum import StrEnum
 
 from sqlalchemy import JSON, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.db import Base
 
-# ARCHITECTURE.md Section 5.
+# ARCHITECTURE.md Section 5. `vertical_selected` sits right after
+# `registered` -- MULTI_VERTICAL_PLAN.md's Decision 4: the vertical choice
+# is the very first wizard step, before WhatsApp connection, so every step
+# after it (including which WhatsApp Flow a merchant is offered, see
+# conversation/domain/handler.py) already knows the vertical.
 ONBOARDING_STATUSES = (
     "registered",
+    "vertical_selected",
     "meta_connected",
     "whatsapp_verified",
     "profile_completed",
     "catalog_ready",
     "live",
 )
+
+
+class MerchantVertical(StrEnum):
+    """A merchant is exactly one of these, chosen once at onboarding and
+    never changed afterwards (MerchantRepository.set_vertical raises if
+    called a second time) -- MULTI_VERTICAL_PLAN.md's Decision 6: an enum,
+    not a free string, so adding a third vertical is a visible migration,
+    not a silent typo."""
+
+    RESTAURANT = "restaurant"
+    APPOINTMENT = "appointment"
 
 
 class Merchant(Base):
@@ -26,6 +43,12 @@ class Merchant(Base):
     onboarding_status: Mapped[str] = mapped_column(String(32), default="registered")
     status: Mapped[str] = mapped_column(String(16), default="active")
 
+    # Set once via PUT /api/v1/onboarding/vertical (the new first wizard
+    # step) and never changed after -- nullable because it's unset for the
+    # brief window between registration and that step. MerchantRepository
+    # .set_vertical() is the only writer and enforces the immutability.
+    vertical: Mapped[str | None] = mapped_column(String(16), default=None)
+
     # Business details (ARCHITECTURE.md Section 1's "business details"), all
     # nullable until the onboarding wizard's "business details" step is
     # completed. License number is explicitly optional per the brief.
@@ -35,12 +58,6 @@ class Merchant(Base):
     business_pincode: Mapped[str | None] = mapped_column(String(16), default=None)
     business_category: Mapped[str | None] = mapped_column(String(120), default=None)
     license_no: Mapped[str | None] = mapped_column(String(64), default=None)
-
-    # Per-merchant toggle for the Appointment Booking feature
-    # (appointments/, appointment_flow/) -- default OFF so existing
-    # existing merchant behavior is byte-for-byte unchanged until a
-    # merchant opts in from the dashboard Settings page.
-    appointment_booking_enabled: Mapped[bool] = mapped_column(default=False)
 
     # IANA timezone name -- appointment_flow/domain/booking.py's past-date
     # check and appointment_flow/domain/availability.py's slot computation

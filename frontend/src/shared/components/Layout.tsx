@@ -49,6 +49,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useLogout, useMe } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
+import type { MerchantVertical } from '@/shared/api/types'
 import { Toaster } from '@/shared/components/Toaster'
 import { ThemeToggle } from '@/shared/theme/ThemeToggle'
 
@@ -59,16 +60,42 @@ interface NavItem {
   icon: LucideIcon
 }
 
-const NAV_ITEMS: NavItem[] = [
+const BASE_NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', end: true, icon: LayoutDashboard },
+]
+
+const RESTAURANT_NAV_ITEMS: NavItem[] = [
   { to: '/orders', label: 'Orders', icon: ClipboardList },
-  { to: '/appointments', label: 'Appointments', icon: CalendarDays },
   { to: '/catalog', label: 'Catalog', icon: BookOpen },
+]
+
+const APPOINTMENT_NAV_ITEMS: NavItem[] = [
+  { to: '/appointments', label: 'Appointments', icon: CalendarDays },
+  { to: '/services', label: 'Services', icon: BookOpen },
+]
+
+const TRAILING_NAV_ITEMS: NavItem[] = [
   { to: '/faq', label: 'FAQs', icon: HelpCircle },
   { to: '/customers', label: 'Customers', icon: Users },
   { to: '/onboarding', label: 'Onboarding', icon: ListChecks },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
+
+// Vertical-conditional (MULTI_VERTICAL_PLAN.md Phase M3): a restaurant
+// merchant sees Orders + Catalog, an appointment merchant sees Appointments
+// + Services -- never both, never neither. `vertical` is null only in the
+// brief window before a merchant answers the onboarding wizard's first
+// step, so no vertical-specific tab shows until it resolves, rather than
+// flashing one set and swapping to the other.
+function navItemsForVertical(vertical: MerchantVertical | null): NavItem[] {
+  const verticalItems =
+    vertical === 'restaurant'
+      ? RESTAURANT_NAV_ITEMS
+      : vertical === 'appointment'
+        ? APPOINTMENT_NAV_ITEMS
+        : []
+  return [...BASE_NAV_ITEMS, ...verticalItems, ...TRAILING_NAV_ITEMS]
+}
 
 const SIDEBAR_STORAGE_KEY = 'orderflow-sidebar-collapsed'
 
@@ -233,6 +260,7 @@ export function Layout() {
   }, [collapsed])
 
   const businessName = me.data?.merchant.business_name
+  const navItems = navItemsForVertical(me.data?.merchant.vertical ?? null)
   const requestLogout = () => setLogoutConfirmOpen(true)
 
   return (
@@ -249,7 +277,7 @@ export function Layout() {
         </div>
 
         <nav className={cn('flex flex-1 flex-col gap-1 overflow-y-auto px-3', collapsed && 'px-2')}>
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <SidebarLink key={item.to} item={item} collapsed={collapsed} />
           ))}
         </nav>
@@ -317,7 +345,7 @@ export function Layout() {
             </DialogClose>
           </div>
           <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <SidebarLink
                 key={item.to}
                 item={item}

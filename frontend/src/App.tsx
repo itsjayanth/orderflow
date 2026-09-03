@@ -15,6 +15,7 @@ import { OnboardingPage } from '@/features/onboarding/OnboardingPage'
 import { OrderingPage } from '@/features/ordering/OrderingPage'
 import { OrderDetailPage } from '@/features/orders/OrderDetailPage'
 import { OrdersPage } from '@/features/orders/OrdersPage'
+import { ServicesPage } from '@/features/services/ServicesPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { Layout } from '@/shared/components/Layout'
 import { NotFoundPage } from '@/shared/components/NotFoundPage'
@@ -38,6 +39,7 @@ export function App() {
           <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="appointments/:appointmentId" element={<AppointmentDetailPage />} />
           <Route path="catalog" element={<CatalogPage />} />
+          <Route path="services" element={<ServicesPage />} />
           <Route path="faq" element={<FAQPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="onboarding" element={<OnboardingPage />} />

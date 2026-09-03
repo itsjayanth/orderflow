@@ -9,6 +9,7 @@ from appointments.adapters.repository import AppointmentRepository
 from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
+from identity.domain.models import MerchantVertical
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
 from shared.config import get_settings
@@ -110,8 +111,8 @@ async def _seed_confirmed_appointment(
     merchant = await MerchantRepository(db_session).create(
         business_name="Reminder Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
-    await MerchantRepository(db_session).update_appointment_booking_enabled(
-        merchant.merchant_id, True
+    await MerchantRepository(db_session).set_vertical(
+        merchant.merchant_id, MerchantVertical.APPOINTMENT
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     await WhatsAppBusinessAccountRepository(db_session).upsert(

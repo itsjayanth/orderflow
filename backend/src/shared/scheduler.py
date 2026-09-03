@@ -8,6 +8,7 @@ from appointment_flow.domain.reminders import is_reminder_due
 from appointments.adapters.reminder_repository import AppointmentReminderRepository
 from conversation.adapters.whatsapp_client import get_whatsapp_sender
 from identity.adapters.repository import MerchantRepository
+from identity.domain.models import MerchantVertical
 from notifications.adapters.whatsapp_channel import WhatsAppNotificationChannel
 from orders.adapters.repository import OrderRepository
 from orders.domain.state_machine import transition_payment_status
@@ -60,7 +61,7 @@ async def send_due_appointment_reminders() -> None:
     channel = WhatsAppNotificationChannel(get_whatsapp_sender())
 
     async with SessionFactory() as session:
-        merchants = await MerchantRepository(session).list_appointment_booking_enabled()
+        merchants = await MerchantRepository(session).list_by_vertical(MerchantVertical.APPOINTMENT)
 
     sent_count = 0
     for merchant in merchants:

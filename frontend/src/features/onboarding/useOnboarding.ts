@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiFetch } from '@/shared/api/client'
-import type { BusinessProfileOut, OnboardingStatusOut } from '@/shared/api/types'
+import type {
+  BusinessProfileOut,
+  MerchantVertical,
+  OnboardingStatusOut,
+  VerticalSelectionOut,
+} from '@/shared/api/types'
 
 // Exported so mutations elsewhere (connecting WhatsApp in Settings, creating
 // an item in Catalog) can invalidate this query too -- both can advance
@@ -13,6 +18,23 @@ export function useOnboardingStatus() {
   return useQuery({
     queryKey: onboardingStatusQueryKey,
     queryFn: () => apiFetch<OnboardingStatusOut>('/api/v1/onboarding/status'),
+  })
+}
+
+export function useSelectVertical() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vertical: MerchantVertical) =>
+      apiFetch<VerticalSelectionOut>('/api/v1/onboarding/vertical', {
+        method: 'PUT',
+        body: JSON.stringify({ vertical }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: onboardingStatusQueryKey })
+      // Merchant.vertical is also read off GET /me for dashboard nav
+      // (Layout.tsx) -- keep that in sync the moment it's set.
+      queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
+    },
   })
 }
 

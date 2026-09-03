@@ -15,7 +15,7 @@ from appointment_flow.domain.booking import PastDateError, perform_booking, reso
 from appointments.adapters.repository import SlotConflictError
 from appointments.adapters.scheduling_repository import AppointmentServiceRepository
 from identity.adapters.repository import MerchantRepository
-from identity.domain.models import Merchant
+from identity.domain.models import Merchant, MerchantVertical
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from shared.deps import DbSession
 from shared.tenant import TenantContext
@@ -27,7 +27,7 @@ async def _get_bookable_merchant_or_404(session: DbSession, merchant_id: uuid.UU
     merchant = await MerchantRepository(session).get(merchant_id)
     if merchant is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
-    if not merchant.appointment_booking_enabled:
+    if merchant.vertical != MerchantVertical.APPOINTMENT.value:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "Appointment booking is not available for this business"
         )

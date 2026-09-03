@@ -169,78 +169,14 @@ def _auth_headers(tokens: dict) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
-async def test_me_reports_appointment_booking_disabled_by_default(client: AsyncClient) -> None:
+async def test_me_reports_no_vertical_by_default(client: AsyncClient) -> None:
+    """Superseded the additive appointment_booking_enabled toggle
+    (MULTI_VERTICAL_PLAN.md Phase M5) -- a freshly-registered merchant has
+    no vertical yet until the onboarding wizard's first step sets one (see
+    test_onboarding_flow.py's vertical-selection endpoint tests)."""
     tokens = await _register(client)
 
     response = await client.get("/api/v1/auth/me", headers=_auth_headers(tokens))
 
     assert response.status_code == 200
-    assert response.json()["merchant"]["appointment_booking_enabled"] is False
-
-
-async def test_get_appointment_settings_defaults_to_disabled(client: AsyncClient) -> None:
-    tokens = await _register(client)
-
-    response = await client.get("/api/v1/auth/appointment-settings", headers=_auth_headers(tokens))
-
-    assert response.status_code == 200
-    assert response.json() == {"appointment_booking_enabled": False}
-
-
-async def test_update_appointment_settings_enables_toggle(client: AsyncClient) -> None:
-    tokens = await _register(client)
-
-    response = await client.patch(
-        "/api/v1/auth/appointment-settings",
-        json={"enabled": True},
-        headers=_auth_headers(tokens),
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"appointment_booking_enabled": True}
-
-    get_response = await client.get(
-        "/api/v1/auth/appointment-settings", headers=_auth_headers(tokens)
-    )
-    assert get_response.json()["appointment_booking_enabled"] is True
-
-
-async def test_update_appointment_settings_can_disable_again(client: AsyncClient) -> None:
-    tokens = await _register(client)
-    await client.patch(
-        "/api/v1/auth/appointment-settings",
-        json={"enabled": True},
-        headers=_auth_headers(tokens),
-    )
-
-    response = await client.patch(
-        "/api/v1/auth/appointment-settings",
-        json={"enabled": False},
-        headers=_auth_headers(tokens),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["appointment_booking_enabled"] is False
-
-
-async def test_appointment_settings_requires_auth(client: AsyncClient) -> None:
-    response = await client.get("/api/v1/auth/appointment-settings")
-
-    assert response.status_code == 401
-
-
-async def test_appointment_settings_isolated_between_merchants(client: AsyncClient) -> None:
-    tokens_a = await _register(client, owner_contact="owner-a@example.com")
-    tokens_b = await _register(client, owner_contact="owner-b@example.com")
-
-    await client.patch(
-        "/api/v1/auth/appointment-settings",
-        json={"enabled": True},
-        headers=_auth_headers(tokens_a),
-    )
-
-    response_b = await client.get(
-        "/api/v1/auth/appointment-settings", headers=_auth_headers(tokens_b)
-    )
-
-    assert response_b.json()["appointment_booking_enabled"] is False
+    assert response.json()["merchant"]["vertical"] is None

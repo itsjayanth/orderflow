@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Info, Plus, Trash2 } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -12,8 +12,9 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useMe } from '@/features/auth/useAuth'
 import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButton'
-import type { AppointmentServiceSettingsOut, NotificationTemplateOut } from '@/shared/api/types'
+import type { NotificationTemplateOut } from '@/shared/api/types'
 import { PageHeader } from '@/shared/components/PageHeader'
 import { SavedIndicator } from '@/shared/components/SavedIndicator'
 
@@ -23,13 +24,6 @@ import {
   useAppointmentAvailability,
   useUpdateAppointmentAvailability,
 } from './useAppointmentAvailability'
-import {
-  useAppointmentServices,
-  useCreateAppointmentService,
-  useDeleteAppointmentService,
-  useUpdateAppointmentService,
-} from './useAppointmentServices'
-import { useAppointmentSettings, useUpdateAppointmentSettings } from './useAppointmentSettings'
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
 import { useWhatsAppSettings } from './useWhatsAppSettings'
@@ -136,7 +130,7 @@ function PaymentSettingsSection() {
 
 function WhatsAppSettingsSection() {
   const { data, isLoading } = useWhatsAppSettings()
-  const { data: appointmentSettings } = useAppointmentSettings()
+  const { data: me } = useMe()
   const [justSaved, setJustSaved] = useState(false)
 
   const handleSaved = () => {
@@ -171,53 +165,15 @@ function WhatsAppSettingsSection() {
       {justSaved && <SavedIndicator message="Saved and connected" />}
 
       <TestWhatsAppMessageCard disabled={!data?.access_token_set} />
-      <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />
-      {appointmentSettings?.appointment_booking_enabled && (
+      {/* Vertical-gated (MULTI_VERTICAL_PLAN.md Phase M4): a merchant only
+          ever sends the Flow their own vertical's WhatsApp menu offers --
+          setting up the other one's Flow would be dead configuration. */}
+      {me?.merchant.vertical === 'restaurant' && (
+        <WhatsAppFlowSetupCard disabled={!data?.access_token_set} />
+      )}
+      {me?.merchant.vertical === 'appointment' && (
         <AppointmentFlowSetupCard disabled={!data?.access_token_set} />
       )}
-    </Card>
-  )
-}
-
-function AppointmentBookingSettingsSection() {
-  const { data, isLoading } = useAppointmentSettings()
-  const update = useUpdateAppointmentSettings()
-  const [justSaved, setJustSaved] = useState(false)
-
-  const onCheckedChange = (checked: boolean) => {
-    update.mutate(checked, {
-      onSuccess: () => {
-        setJustSaved(true)
-        setTimeout(() => setJustSaved(false), 4000)
-      },
-    })
-  }
-
-  return (
-    <Card className="space-y-4 p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-medium">Appointment booking</h2>
-          <p className="text-muted-foreground text-sm">
-            Let customers book a time slot on WhatsApp instead of -- or alongside -- placing an
-            order.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Switch
-            id="appointment_booking_enabled"
-            aria-label="Enable appointment booking"
-            checked={data?.appointment_booking_enabled ?? false}
-            disabled={isLoading || update.isPending}
-            onCheckedChange={onCheckedChange}
-          />
-        </div>
-      </div>
-
-      {update.isError && (
-        <p className="text-destructive text-sm">Failed to save. Please try again.</p>
-      )}
-      {justSaved && !update.isPending && <SavedIndicator message="Saved" />}
     </Card>
   )
 }
@@ -400,136 +356,6 @@ function AppointmentAvailabilitySettingsSection() {
   )
 }
 
-function ServiceRow({ service }: { service: AppointmentServiceSettingsOut }) {
-  const update = useUpdateAppointmentService()
-  const remove = useDeleteAppointmentService()
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t py-3 first:border-t-0">
-      <div>
-        <p className="text-sm font-medium">{service.name}</p>
-        <p className="text-muted-foreground text-xs">
-          {service.duration_minutes} min{service.price ? ` · ${service.price}` : ''}
-        </p>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <Switch
-            id={`service_${service.service_id}_active`}
-            checked={service.is_active}
-            onCheckedChange={(checked) =>
-              update.mutate({ serviceId: service.service_id, is_active: checked })
-            }
-          />
-          <Label htmlFor={`service_${service.service_id}_active`} className="text-xs">
-            Active
-          </Label>
-        </div>
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          aria-label={`Delete ${service.name}`}
-          disabled={remove.isPending}
-          onClick={() => remove.mutate(service.service_id)}
-        >
-          <Trash2 className="size-4" />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-const newServiceSchema = z.object({
-  name: z.string().trim().min(1, 'Required'),
-  duration_minutes: z.number().int().positive('Must be greater than 0'),
-  price: z.string().trim().optional(),
-})
-type NewServiceForm = z.infer<typeof newServiceSchema>
-
-function AppointmentServicesSettingsSection() {
-  const { data: services, isLoading } = useAppointmentServices()
-  const create = useCreateAppointmentService()
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<NewServiceForm>({ resolver: zodResolver(newServiceSchema) })
-
-  const onSubmit = (values: NewServiceForm) => {
-    create.mutate(
-      {
-        name: values.name,
-        duration_minutes: values.duration_minutes,
-        price: values.price || null,
-      },
-      { onSuccess: () => reset() },
-    )
-  }
-
-  return (
-    <Card className="space-y-4 p-6">
-      <div>
-        <h2 className="text-lg font-medium">Service types</h2>
-        <p className="text-muted-foreground text-sm">
-          Optional -- shown as a "what are you booking?" step before the customer picks a time.
-          Leave this empty to skip that step entirely and use the default slot duration above.
-        </p>
-      </div>
-
-      {isLoading && <p className="text-muted-foreground text-sm">Loading…</p>}
-      {services && services.length > 0 && (
-        <div>
-          {services.map((service) => (
-            <ServiceRow key={service.service_id} service={service} />
-          ))}
-        </div>
-      )}
-
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="flex flex-wrap items-end gap-3 border-t pt-4"
-      >
-        <div className="space-y-1.5">
-          <Label htmlFor="new_service_name">Name</Label>
-          <Input id="new_service_name" placeholder="Haircut" {...register('name')} />
-          {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="new_service_duration">Duration (min)</Label>
-          <Input
-            id="new_service_duration"
-            type="number"
-            min={5}
-            className="w-28"
-            {...register('duration_minutes', { valueAsNumber: true })}
-          />
-          {errors.duration_minutes && (
-            <p className="text-destructive text-sm">{errors.duration_minutes.message}</p>
-          )}
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="new_service_price">Price (optional)</Label>
-          <Input
-            id="new_service_price"
-            placeholder="500.00"
-            className="w-28"
-            {...register('price')}
-          />
-        </div>
-        {create.isError && (
-          <p className="text-destructive text-sm">Failed to add. Please try again.</p>
-        )}
-        <Button type="submit" size="sm" disabled={create.isPending}>
-          <Plus className="size-4" />
-          {create.isPending ? 'Adding…' : 'Add service'}
-        </Button>
-      </form>
-    </Card>
-  )
-}
-
 const templateSchema = z.object({
   template_name: z.string().min(1, 'Required'),
   language_code: z.string().min(1, 'Required'),
@@ -690,6 +516,8 @@ function TemplatesSettingsSection() {
 }
 
 export function SettingsPage() {
+  const { data: me } = useMe()
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -698,9 +526,10 @@ export function SettingsPage() {
       />
       <PaymentSettingsSection />
       <WhatsAppSettingsSection />
-      <AppointmentBookingSettingsSection />
-      <AppointmentAvailabilitySettingsSection />
-      <AppointmentServicesSettingsSection />
+      {/* Appointment-vertical-only (MULTI_VERTICAL_PLAN.md Phase M5) --
+          a restaurant merchant never books appointments, so availability
+          hours have nothing to configure. */}
+      {me?.merchant.vertical === 'appointment' && <AppointmentAvailabilitySettingsSection />}
       <TemplatesSettingsSection />
     </div>
   )
