@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 
 from catalog.adapters.repository import ItemRepository
-from customers.adapters.repository import AddressRepository, CustomerRepository
+from customers.domain.identity_resolution import resolve_customer_by_whatsapp_id
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -65,17 +65,19 @@ async def customer_lookup(
     merchant = await _get_merchant_or_404(session, merchant_id)
     tenant = TenantContext(merchant_id=merchant.merchant_id)
 
-    customer = await CustomerRepository(session).get_by_whatsapp_number(tenant, whatsapp_number)
-    if customer is None:
+    resolved = await resolve_customer_by_whatsapp_id(
+        session, tenant, whatsapp_number, include_address=True
+    )
+    if resolved is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Customer not found")
 
-    address = await AddressRepository(session).get_primary_for_customer(
-        tenant, customer.customer_id
-    )
     return OrderingFlowCustomerLookupOut(
-        display_name=customer.display_name,
-        address=OrderingFlowAddressOut.model_validate(address) if address else None,
-        default_contact_phone=customer.default_contact_phone,
+        display_name=resolved.customer.display_name,
+        address=OrderingFlowAddressOut.model_validate(resolved.address)
+        if resolved.address
+        else None,
+        default_contact_phone=resolved.customer.default_contact_phone,
+        last_payment_method=resolved.customer.last_payment_method,
     )
 
 
