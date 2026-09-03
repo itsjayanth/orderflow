@@ -11,6 +11,7 @@ export interface Merchant {
   onboarding_status: string
   restaurant_enabled: boolean
   appointment_enabled: boolean
+  website_url: string | null
 }
 
 export interface StaffUser {
@@ -132,6 +133,11 @@ export interface WhatsAppSettingsOut {
   display_phone_number: string | null
   access_token_set: boolean
   connection_status: string
+}
+
+export interface WebsiteLinkClickStatsOut {
+  count: number
+  days: number
 }
 
 export interface EmbeddedSignupRequest {

@@ -48,6 +48,25 @@ def validate_vertical_flags(*, restaurant_enabled: bool, appointment_enabled: bo
         raise NoVerticalSelectedError("At least one of restaurant/appointment must be enabled")
 
 
+class InvalidWebsiteUrlError(Exception):
+    """Raised by normalize_website_url for a non-blank value that doesn't
+    start with http:// or https://."""
+
+
+def normalize_website_url(website_url: str | None) -> str | None:
+    """Structural validation only -- no reachability/fetch check, that's an
+    explicit future gap, not v1 scope. Blank/whitespace-only is the "clear
+    the field" case, not an error."""
+    if website_url is None:
+        return None
+    stripped = website_url.strip()
+    if not stripped:
+        return None
+    if not (stripped.startswith("http://") or stripped.startswith("https://")):
+        raise InvalidWebsiteUrlError("website_url must start with http:// or https://")
+    return stripped
+
+
 class Merchant(Base):
     __tablename__ = "merchants"
 
@@ -92,6 +111,10 @@ class Merchant(Base):
     # product spec calls for.
     reminder_offsets_hours: Mapped[list[int]] = mapped_column(JSON, default=lambda: [24])
 
+    # Merchant's own website, offered as a "Visit website" option in the
+    # WhatsApp greeting menu when set -- see conversation/domain/handler.py.
+    website_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC)
     )
@@ -101,6 +124,21 @@ class Merchant(Base):
     )
 
     staff_users: Mapped[list["StaffUser"]] = relationship(back_populates="merchant")
+
+
+class WebsiteLinkClick(Base):
+    """Append-only click log for the "Visit website" WhatsApp menu option --
+    same pattern as PaymentEvent/OrderStatusEvent elsewhere in this
+    codebase. No update/delete methods; the dashboard-facing stat is a
+    count query over this table (WebsiteLinkClickRepository.count_since)."""
+
+    __tablename__ = "website_link_clicks"
+
+    click_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
+    clicked_at: Mapped[datetime.datetime] = mapped_column(
+        default=lambda: datetime.datetime.now(datetime.UTC), index=True
+    )
 
 
 class StaffUser(Base):

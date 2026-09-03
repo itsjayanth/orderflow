@@ -28,6 +28,7 @@ import {
 import { useNotificationTemplates, useUpdateNotificationTemplate } from './useNotificationTemplates'
 import { usePaymentSettings, useUpdatePaymentSettings } from './usePaymentSettings'
 import { useWhatsAppSettings } from './useWhatsAppSettings'
+import { WebsiteLinkSettingsSection } from './WebsiteLinkSettingsSection'
 import { WhatsAppFlowSetupCard } from './WhatsAppFlowSetupCard'
 
 const paymentSchema = z.object({
@@ -609,6 +610,7 @@ export function SettingsPage() {
         description="Test/dummy values work fine for now -- switching to real credentials later doesn't require any code changes."
       />
       <BusinessTypesSettingsSection />
+      <WebsiteLinkSettingsSection />
       <PaymentSettingsSection />
       <WhatsAppSettingsSection />
       {/* Appointment-enabled-only -- a merchant with appointment booking off

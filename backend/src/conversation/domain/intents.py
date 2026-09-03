@@ -29,6 +29,9 @@ class Intent(StrEnum):
     # is set, and carries an appointment_date key) -- never returned by
     # classify(), same reason as FLOW_ORDER_COMPLETED above.
     FLOW_APPOINTMENT_COMPLETED = "flow_appointment_completed"
+    # A merchant's own website link, offered in the greeting menu when
+    # Merchant.website_url is set -- see handler.py's _menu_options.
+    VISIT_WEBSITE = "visit_website"
 
 
 # Order matters: checked top to bottom, first match wins. TRACK_APPOINTMENT is
@@ -55,6 +58,9 @@ _TEXT_KEYWORDS: dict[Intent, tuple[str, ...]] = {
         "book a slot",
     ),
     Intent.PLACE_ORDER: ("order", "menu", "buy"),
+    # Generic enough that it goes last -- doesn't shadow, and isn't shadowed
+    # by, any of the more specific keywords above.
+    Intent.VISIT_WEBSITE: ("website",),
 }
 
 

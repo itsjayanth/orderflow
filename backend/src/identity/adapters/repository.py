@@ -1,9 +1,16 @@
+import datetime
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from identity.domain.models import Merchant, MerchantVertical, StaffUser, validate_vertical_flags
+from identity.domain.models import (
+    Merchant,
+    MerchantVertical,
+    StaffUser,
+    WebsiteLinkClick,
+    validate_vertical_flags,
+)
 
 
 class MerchantRepository:
@@ -65,6 +72,16 @@ class MerchantRepository:
         await self._session.flush()
         return merchant
 
+    async def update_website_url(self, merchant_id: uuid.UUID, website_url: str | None) -> Merchant:
+        """PUT /api/v1/auth/website-link -- mirrors update_timezone's shape
+        exactly. Caller is expected to have already run the value through
+        normalize_website_url."""
+        merchant = await self._session.get(Merchant, merchant_id)
+        assert merchant is not None
+        merchant.website_url = website_url
+        await self._session.flush()
+        return merchant
+
     async def list_enabled_for_vertical(self, vertical: MerchantVertical) -> list[Merchant]:
         """Every merchant with the given vertical's flag on -- used by the
         reminder scan (shared/scheduler.py's send_due_appointment_reminders)
@@ -114,3 +131,26 @@ class StaffUserRepository:
 
     async def get(self, staff_user_id: uuid.UUID) -> StaffUser | None:
         return await self._session.get(StaffUser, staff_user_id)
+
+
+class WebsiteLinkClickRepository:
+    """Append-only -- no update/delete, matching WebsiteLinkClick's
+    event-log style."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record(self, merchant_id: uuid.UUID) -> None:
+        self._session.add(WebsiteLinkClick(merchant_id=merchant_id))
+        await self._session.flush()
+
+    async def count_since(self, merchant_id: uuid.UUID, since: datetime.datetime) -> int:
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(WebsiteLinkClick)
+            .where(
+                WebsiteLinkClick.merchant_id == merchant_id,
+                WebsiteLinkClick.clicked_at >= since,
+            )
+        )
+        return result.scalar_one()

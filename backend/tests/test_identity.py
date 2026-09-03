@@ -181,3 +181,79 @@ async def test_me_reports_no_vertical_by_default(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.json()["merchant"]["restaurant_enabled"] is False
     assert response.json()["merchant"]["appointment_enabled"] is False
+
+
+# --- Website link -----------------------------------------------------
+
+
+async def test_website_link_round_trips_through_me(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    response = await client.put(
+        "/api/v1/auth/website-link",
+        json={"website_url": "https://example.com"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["website_url"] == "https://example.com"
+
+    me_response = await client.get("/api/v1/auth/me", headers=_auth_headers(tokens))
+    assert me_response.json()["merchant"]["website_url"] == "https://example.com"
+
+
+async def test_website_link_blank_clears_it(client: AsyncClient) -> None:
+    tokens = await _register(client)
+    await client.put(
+        "/api/v1/auth/website-link",
+        json={"website_url": "https://example.com"},
+        headers=_auth_headers(tokens),
+    )
+
+    response = await client.put(
+        "/api/v1/auth/website-link",
+        json={"website_url": "   "},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["website_url"] is None
+
+    me_response = await client.get("/api/v1/auth/me", headers=_auth_headers(tokens))
+    assert me_response.json()["merchant"]["website_url"] is None
+
+
+async def test_website_link_without_scheme_rejected(client: AsyncClient) -> None:
+    tokens = await _register(client)
+
+    response = await client.put(
+        "/api/v1/auth/website-link",
+        json={"website_url": "example.com"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_website_link_click_stats(client: AsyncClient, db_session) -> None:
+    import uuid as uuid_module
+
+    from identity.adapters.repository import WebsiteLinkClickRepository
+
+    tokens = await _register(client)
+    me_response = await client.get("/api/v1/auth/me", headers=_auth_headers(tokens))
+    merchant_id = uuid_module.UUID(me_response.json()["merchant"]["merchant_id"])
+
+    click_repo = WebsiteLinkClickRepository(db_session)
+    await click_repo.record(merchant_id)
+    await click_repo.record(merchant_id)
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/auth/website-link/clicks", headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 2
+    assert body["days"] == 7

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/features/auth/authStore'
-import { apiFetch } from '@/shared/api/client'
+import { ApiError, apiFetch } from '@/shared/api/client'
 import type {
   MeResponse,
   NotificationTemplateOut,
@@ -147,7 +147,11 @@ describe('SettingsPage templates section', () => {
   })
 })
 
-function meResponse(restaurantEnabled: boolean, appointmentEnabled: boolean): MeResponse {
+function meResponse(
+  restaurantEnabled: boolean,
+  appointmentEnabled: boolean,
+  websiteUrl: string | null = null,
+): MeResponse {
   return {
     staff_user: {
       staff_user_id: '00000000-0000-0000-0000-000000000000',
@@ -162,6 +166,7 @@ function meResponse(restaurantEnabled: boolean, appointmentEnabled: boolean): Me
       onboarding_status: 'live',
       restaurant_enabled: restaurantEnabled,
       appointment_enabled: appointmentEnabled,
+      website_url: websiteUrl,
     },
   }
 }
@@ -236,5 +241,140 @@ describe('SettingsPage business types section', () => {
         body: JSON.stringify({ restaurant_enabled: true, appointment_enabled: true }),
       }),
     )
+  })
+})
+
+describe('SettingsPage website link section', () => {
+  beforeEach(() => {
+    mockedApiFetch.mockReset()
+    useAuthStore.setState({ accessToken: 'test-token', status: 'authenticated' })
+  })
+
+  function mockBaseRoutes(
+    websiteUrl: string | null,
+    extra?: (path: string, init?: RequestInit) => unknown,
+  ) {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/v1/auth/me') return Promise.resolve(meResponse(true, false, websiteUrl))
+      if (path === '/api/v1/payments/settings') return Promise.resolve(paymentSettings)
+      if (path === '/api/v1/onboarding/whatsapp') return Promise.resolve(whatsappSettings)
+      if (path === '/api/v1/notifications/templates') return Promise.resolve(defaultTemplates)
+      if (extra) {
+        const result = extra(path, init)
+        if (result !== undefined) return result as Promise<unknown>
+      }
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+  }
+
+  it('renders pre-filled from me.merchant.website_url', async () => {
+    mockBaseRoutes('https://example.com', (path) => {
+      if (path === '/api/v1/auth/website-link/clicks?days=7')
+        return Promise.resolve({ count: 3, days: 7 })
+      return undefined
+    })
+
+    renderPage()
+
+    const input = await screen.findByLabelText('Website link')
+    await waitFor(() => expect(input).toHaveValue('https://example.com'))
+  })
+
+  it('submitting a valid URL calls the mutation with the right payload', async () => {
+    mockBaseRoutes(null, (path, init) => {
+      if (path === '/api/v1/auth/website-link' && init?.method === 'PUT') {
+        return Promise.resolve(meResponse(true, false, 'https://example.com').merchant)
+      }
+      return undefined
+    })
+
+    renderPage()
+
+    // Wait for the shared `me` query to resolve (and its useEffect sync to
+    // run in every section reading it) before typing -- otherwise the
+    // effect can fire after the keystroke and clobber it back to empty, the
+    // same race BusinessTypesSettingsSection's own tests guard against.
+    const restaurantSwitch = await screen.findByLabelText('Restaurant / Orders')
+    await waitFor(() => expect(restaurantSwitch).toHaveAttribute('aria-checked', 'true'))
+
+    const input = await screen.findByLabelText('Website link')
+    fireEvent.change(input, { target: { value: 'https://example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: /save website link/i }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/auth/website-link', {
+        method: 'PUT',
+        body: JSON.stringify({ website_url: 'https://example.com' }),
+      }),
+    )
+    expect(await screen.findByText('Saved')).toBeInTheDocument()
+  })
+
+  it('clearing the field and saving sends website_url: null', async () => {
+    mockBaseRoutes('https://example.com', (path, init) => {
+      if (path === '/api/v1/auth/website-link/clicks?days=7')
+        return Promise.resolve({ count: 3, days: 7 })
+      if (path === '/api/v1/auth/website-link' && init?.method === 'PUT') {
+        return Promise.resolve(meResponse(true, false, null).merchant)
+      }
+      return undefined
+    })
+
+    renderPage()
+
+    const input = await screen.findByLabelText('Website link')
+    await waitFor(() => expect(input).toHaveValue('https://example.com'))
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: /save website link/i }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith('/api/v1/auth/website-link', {
+        method: 'PUT',
+        body: JSON.stringify({ website_url: null }),
+      }),
+    )
+  })
+
+  it('shows an error message when the update fails', async () => {
+    mockBaseRoutes(null, (path, init) => {
+      if (path === '/api/v1/auth/website-link' && init?.method === 'PUT') {
+        return Promise.reject(new ApiError(422, JSON.stringify({ detail: 'Invalid URL' })))
+      }
+      return undefined
+    })
+
+    renderPage()
+
+    const restaurantSwitch = await screen.findByLabelText('Restaurant / Orders')
+    await waitFor(() => expect(restaurantSwitch).toHaveAttribute('aria-checked', 'true'))
+
+    const input = await screen.findByLabelText('Website link')
+    fireEvent.change(input, { target: { value: 'not-a-url' } })
+    fireEvent.click(screen.getByRole('button', { name: /save website link/i }))
+
+    expect(await screen.findByText('Invalid URL')).toBeInTheDocument()
+  })
+
+  it('renders the click-engagement stat when a URL is set and the clicks query resolves', async () => {
+    mockBaseRoutes('https://example.com', (path) => {
+      if (path === '/api/v1/auth/website-link/clicks?days=7')
+        return Promise.resolve({ count: 5, days: 7 })
+      return undefined
+    })
+
+    renderPage()
+
+    expect(
+      await screen.findByText(/5 people tapped your website link in the last 7 days/i),
+    ).toBeInTheDocument()
+  })
+
+  it('does not show the click-engagement stat when no URL is set', async () => {
+    mockBaseRoutes(null)
+
+    renderPage()
+
+    await screen.findByLabelText('Website link')
+    expect(screen.queryByText(/tapped your website link/i)).not.toBeInTheDocument()
   })
 })
