@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import type {
   AppointmentFlowBookingResponse,
+  AppointmentFlowCustomerLookupOut,
   AppointmentFlowInfoOut,
   AppointmentFlowServiceOut,
   AppointmentFlowSlotOut,
@@ -52,6 +53,7 @@ function installApiMock(options: {
   services?: AppointmentFlowServiceOut[]
   slots?: AppointmentFlowSlotOut[]
   book?: AppointmentFlowBookingResponse | ApiError
+  customerLookup?: AppointmentFlowCustomerLookupOut | ApiError
 }) {
   mockedApiFetch.mockImplementation((path: string) => {
     if (path.includes('/info')) {
@@ -64,6 +66,14 @@ function installApiMock(options: {
     }
     if (path.includes('/availability')) {
       return Promise.resolve(options.slots ?? sampleSlots)
+    }
+    if (path.includes('/customer-lookup')) {
+      if (options.customerLookup === undefined) {
+        return Promise.reject(new ApiError(404, 'not found'))
+      }
+      return options.customerLookup instanceof ApiError
+        ? Promise.reject(options.customerLookup)
+        : Promise.resolve(options.customerLookup)
     }
     if (path === bookPath) {
       return options.book instanceof ApiError
@@ -108,7 +118,10 @@ async function advanceToDetailsStep(slotStartTime = '15:00:00') {
   const slotButton = await screen.findByRole('button', { name: formatSlotTime(slot.start_time) })
   fireEvent.click(slotButton)
 
-  await screen.findByLabelText('Your name')
+  // Notes always renders as a normal input regardless of whether name/email
+  // are showing as confirmed fields or editable ones, so it's a stable
+  // signal that the details step has mounted.
+  await screen.findByLabelText('Notes (optional)')
 }
 
 describe('BookingPage', () => {
@@ -255,5 +268,112 @@ describe('BookingPage', () => {
 
     expect(await screen.findByText('That time was just taken — pick another.')).toBeInTheDocument()
     expect(screen.getByText('Choose a time')).toBeInTheDocument()
+  })
+
+  it('prefills name and email as confirmed fields for a returning customer', async () => {
+    installApiMock({
+      customerLookup: { display_name: 'Asha', email: 'asha@example.com' },
+    })
+
+    renderPage(`/book/${merchantId}?wa=919876543210`)
+    await screen.findByText('Test Business')
+    await advanceToDetailsStep()
+
+    expect(await screen.findByText('Asha')).toBeInTheDocument()
+    expect(screen.getByText('asha@example.com')).toBeInTheDocument()
+    expect(screen.getAllByText('✓ Looks right')).toHaveLength(2)
+    // No editable name/email inputs while confirmed.
+    expect(screen.queryByLabelText('Your name')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: '✓ Confirm & continue' })).toBeInTheDocument()
+  })
+
+  it('lets a returning customer edit a confirmed name/email field', async () => {
+    installApiMock({
+      customerLookup: { display_name: 'Asha', email: 'asha@example.com' },
+    })
+
+    renderPage(`/book/${merchantId}?wa=919876543210`)
+    await screen.findByText('Test Business')
+    await advanceToDetailsStep()
+    await screen.findByText('Asha')
+
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+    fireEvent.click(editButtons[0]) // name
+
+    const nameInput = screen.getByLabelText('Your name')
+    expect(nameInput).toHaveValue('Asha')
+    fireEvent.change(nameInput, { target: { value: 'Asha Rao' } })
+
+    // Email is still confirmed/read-only -- editing one field doesn't
+    // disturb the other.
+    expect(screen.getByText('asha@example.com')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '✓ Confirm & continue' }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        bookPath,
+        expect.objectContaining({
+          body: expect.stringContaining('"name":"Asha Rao"'),
+        }),
+      ),
+    )
+  })
+
+  it('shows an empty, fillable email field when the customer has a name but no email on file', async () => {
+    installApiMock({
+      customerLookup: { display_name: 'Asha', email: null },
+    })
+
+    renderPage(`/book/${merchantId}?wa=919876543210`)
+    await screen.findByText('Test Business')
+    await advanceToDetailsStep()
+
+    expect(await screen.findByText('Asha')).toBeInTheDocument()
+    const emailInput = screen.getByLabelText('Email')
+    expect(emailInput).toHaveValue('')
+
+    fireEvent.change(emailInput, { target: { value: 'asha@example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: '✓ Confirm & continue' }))
+
+    await waitFor(() =>
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        bookPath,
+        expect.objectContaining({
+          body: expect.stringContaining('"email":"asha@example.com"'),
+        }),
+      ),
+    )
+  })
+
+  it('never renders a phone field or phone edit control, even for a returning customer', async () => {
+    installApiMock({
+      customerLookup: { display_name: 'Asha', email: 'asha@example.com' },
+    })
+
+    renderPage(`/book/${merchantId}?wa=919876543210`)
+    await screen.findByText('Test Business')
+    await advanceToDetailsStep()
+    await screen.findByText('Asha')
+
+    expect(screen.queryByLabelText('Your WhatsApp number')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/phone/i)).not.toBeInTheDocument()
+    // Only two Edit buttons ever render (name, email) -- none for phone.
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2)
+  })
+
+  it('falls back to blank fields and "Confirm & book" when the lookup finds no customer', async () => {
+    installApiMock({})
+
+    renderPage(`/book/${merchantId}?wa=919876543210`)
+    await screen.findByText('Test Business')
+    await advanceToDetailsStep()
+
+    expect(screen.queryByText('✓ Looks right')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Your name')).toHaveValue('')
+    expect(screen.getByLabelText('Email')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Confirm & book' })).toBeInTheDocument()
   })
 })
