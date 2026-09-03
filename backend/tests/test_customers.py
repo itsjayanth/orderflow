@@ -56,14 +56,32 @@ async def test_find_or_create_idempotent(db_session: AsyncSession) -> None:
 
     assert first.customer_id == second.customer_id
 
+    # Stored normalized (no "+") -- see customers.domain.phone.normalize_whatsapp_id
+    # -- so this queries the canonical form, not the raw "+"-prefixed input.
     result = await db_session.execute(
         select(Customer).where(
             Customer.merchant_id == tenant.merchant_id,
-            Customer.whatsapp_number == "+919876543210",
+            Customer.whatsapp_number == "919876543210",
         )
     )
     rows = result.scalars().all()
     assert len(rows) == 1
+
+
+async def test_find_or_create_idempotent_across_whatsapp_number_formatting(
+    db_session: AsyncSession,
+) -> None:
+    """A native Flow's flow_token ("919876543210", Meta's own inbound shape)
+    and a webview's client-submitted "+91 98765-43210" for the same person
+    must resolve to the same Customer row, not create two -- see
+    customers.domain.phone.normalize_whatsapp_id's docstring."""
+    tenant = await _make_tenant(db_session)
+    repo = CustomerRepository(db_session)
+
+    from_native_flow = await repo.find_or_create(tenant, "919876543210", display_name="Asha")
+    from_webview = await repo.find_or_create(tenant, "+91 98765-43210", display_name="Asha")
+
+    assert from_native_flow.customer_id == from_webview.customer_id
 
 
 async def test_customer_numbers_increment_sequentially_per_merchant(
@@ -180,7 +198,8 @@ async def test_list_customers_returns_seeded_customer(
     body = response.json()
     assert len(body) == 1
     assert body[0]["display_name"] == "Asha"
-    assert body[0]["whatsapp_number"] == "+919876543210"
+    # Stored normalized (no "+") -- see customers.domain.phone.normalize_whatsapp_id.
+    assert body[0]["whatsapp_number"] == "919876543210"
     assert body[0]["customer_number"] == 1
 
 
@@ -266,7 +285,8 @@ async def test_create_customer(client: AsyncClient) -> None:
 
     assert response.status_code == 201
     body = response.json()
-    assert body["whatsapp_number"] == "+919876543210"
+    # Stored normalized (no "+") -- see customers.domain.phone.normalize_whatsapp_id.
+    assert body["whatsapp_number"] == "919876543210"
     assert body["display_name"] == "Walk-in Asha"
     assert body["email"] == "asha@example.com"
     assert body["customer_number"] == 1
@@ -325,8 +345,9 @@ async def test_update_customer_display_name_and_contact_phone(
     assert body["display_name"] == "Asha Rao"
     assert body["default_contact_phone"] == "+919876500000"
     # whatsapp_number is never dashboard-editable -- it's the identity
-    # inbound WhatsApp messages are matched on.
-    assert body["whatsapp_number"] == "+919876543210"
+    # inbound WhatsApp messages are matched on. Stored normalized (no "+"),
+    # see customers.domain.phone.normalize_whatsapp_id.
+    assert body["whatsapp_number"] == "919876543210"
 
 
 async def test_update_customer_not_found(client: AsyncClient) -> None:

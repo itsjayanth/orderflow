@@ -5,11 +5,27 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from customers.domain.models import Address, Customer, MerchantCustomerCounter
+from customers.domain.phone import normalize_whatsapp_id
 from shared.tenant import TenantContext
 
 
 class CustomerWhatsAppNumberConflictError(Exception):
     pass
+
+
+def _canonical_whatsapp_number(whatsapp_number: str) -> str:
+    """Every write/read of Customer.whatsapp_number goes through this, so a
+    number that reaches this repository as "+91 98765-43210" and one that
+    reaches it as "919876543210" (Meta's own inbound shape -- see
+    customers.domain.phone.normalize_whatsapp_id) always resolve to the
+    same Customer row instead of silently creating two. Falls back to the
+    raw string, unnormalized, when normalize_whatsapp_id can't make sense
+    of it (out of E.164's digit-count range) -- storing something
+    malformed as-is beats refusing to create the customer/order at all
+    over a formatting quirk; this repeats this codebase's existing
+    "un-normalized input" behavior for that edge case rather than
+    introducing a new failure mode."""
+    return normalize_whatsapp_id(whatsapp_number) or whatsapp_number
 
 
 class CustomerRepository:
@@ -43,8 +59,12 @@ class CustomerRepository:
         display_name: str | None = None,
     ) -> Customer:
         """Idempotent: repeated calls with the same (merchant_id, whatsapp_number)
-        always return the same Customer row, never a duplicate. This is the
-        method Phase 6's Conversation Handler calls on every inbound message."""
+        always return the same Customer row, never a duplicate -- including
+        across formatting differences in whatsapp_number itself (see
+        _canonical_whatsapp_number), so a native Flow's digit-only
+        flow_token and a webview's "+"-prefixed submission for the same
+        person still land on one row. This is the method Phase 6's
+        Conversation Handler calls on every inbound message."""
         existing = await self.get_by_whatsapp_number(tenant, whatsapp_number)
         if existing is not None:
             return existing
@@ -53,7 +73,7 @@ class CustomerRepository:
         customer = Customer(
             merchant_id=tenant.merchant_id,
             customer_number=customer_number,
-            whatsapp_number=whatsapp_number,
+            whatsapp_number=_canonical_whatsapp_number(whatsapp_number),
             display_name=display_name,
         )
         self._session.add(customer)
@@ -66,30 +86,64 @@ class CustomerRepository:
         *,
         display_name: str | None,
         default_contact_phone: str | None,
+        last_payment_method: str | None = None,
     ) -> None:
-        """Refreshes a returning customer's name and delivery-contact
-        preference from what they just submitted at checkout --
-        find_or_create() deliberately only sets these at creation, so
-        without this a correction (or a changed contact-number choice)
-        would never stick for next time. Always overwrites
-        default_contact_phone (None is a real, meaningful value here: "go
-        back to using my WhatsApp number"), but leaves display_name alone
-        when None is passed, since not every caller collects a name."""
+        """Refreshes a returning customer's name, delivery-contact
+        preference, and last-used payment method from what they just
+        submitted at checkout -- find_or_create() deliberately only sets
+        these at creation, so without this a correction (or a changed
+        contact-number/payment choice) would never stick for next time.
+        Always overwrites default_contact_phone (None is a real,
+        meaningful value here: "go back to using my WhatsApp number"), but
+        leaves display_name alone when None is passed, since not every
+        caller collects a name. last_payment_method follows display_name's
+        "only overwrite when given" rule too, for the same reason: not
+        every caller (e.g. a future non-checkout writer) necessarily has
+        one to report."""
         if display_name is not None:
             customer.display_name = display_name
         customer.default_contact_phone = default_contact_phone
+        if last_payment_method is not None:
+            customer.last_payment_method = last_payment_method
+        await self._session.flush()
+
+    async def update_profile_from_appointment(
+        self,
+        customer: Customer,
+        *,
+        display_name: str | None,
+        email: str | None,
+    ) -> None:
+        """Refreshes a returning customer's name/email from what they just
+        confirmed on an appointment booking -- mirrors
+        update_contact_details's role for checkout, but deliberately
+        doesn't touch default_contact_phone (appointments have no
+        "different contact number" concept, see the appointment Flow's own
+        docs) so booking an appointment can never clobber a contact-number
+        preference the order flow set. Only overwrites a field when given
+        a non-empty value: a typo fix or a first-time email should stick,
+        but perform_booking always has *some* name (falls back to the
+        WhatsApp profile name) and always has an email (required on the
+        booking form), so in practice this only ever leaves fields alone
+        for callers that don't collect them at all."""
+        if display_name:
+            customer.display_name = display_name
+        if email:
+            customer.email = email
         await self._session.flush()
 
     async def get_by_whatsapp_number(
         self, tenant: TenantContext, whatsapp_number: str
     ) -> Customer | None:
-        """Exact (merchant_id, whatsapp_number) match -- also used by the
-        public ordering webview's customer-lookup endpoint to prefill a
-        returning customer's name/address without asking again."""
+        """(merchant_id, whatsapp_number) match after normalizing
+        whatsapp_number the same way find_or_create/create do (see
+        _canonical_whatsapp_number) -- also used by
+        customers.domain.identity_resolution, the shared entrypoint both
+        the order and appointment flows prefill from."""
         result = await self._session.execute(
             select(Customer).where(
                 Customer.merchant_id == tenant.merchant_id,
-                Customer.whatsapp_number == whatsapp_number,
+                Customer.whatsapp_number == _canonical_whatsapp_number(whatsapp_number),
             )
         )
         return result.scalar_one_or_none()
@@ -136,7 +190,7 @@ class CustomerRepository:
         customer = Customer(
             merchant_id=tenant.merchant_id,
             customer_number=customer_number,
-            whatsapp_number=whatsapp_number,
+            whatsapp_number=_canonical_whatsapp_number(whatsapp_number),
             display_name=display_name,
             default_contact_phone=default_contact_phone,
             email=email,

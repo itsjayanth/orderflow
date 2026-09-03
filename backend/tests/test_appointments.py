@@ -178,7 +178,7 @@ async def test_list_appointments_returns_seeded_appointment(
     assert body[0]["appointment_number"] == appointment.appointment_number
     assert body[0]["status"] == "requested"
     assert body[0]["customer_name"] == "Asha Rao"
-    assert body[0]["customer_whatsapp_number"] == "+919876543210"
+    assert body[0]["customer_whatsapp_number"] == "919876543210"
     assert body[0]["customer_number"] == 1
     assert body[0]["name"] == "Asha Rao"
     assert body[0]["email"] == "asha@example.com"
