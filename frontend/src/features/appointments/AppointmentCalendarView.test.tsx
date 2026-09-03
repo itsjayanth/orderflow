@@ -12,9 +12,21 @@ import { getWorkingHoursForDate, HourBand } from './AppointmentCalendarView'
 
 const WINDOWS: AppointmentAvailabilityWindow[] = [
   // Monday
-  { day_of_week: 0, start_time: '09:00:00', end_time: '17:00:00', slot_duration_minutes: 30, buffer_minutes: 0 },
+  {
+    day_of_week: 0,
+    start_time: '09:00:00',
+    end_time: '17:00:00',
+    slot_duration_minutes: 30,
+    buffer_minutes: 0,
+  },
   // Saturday
-  { day_of_week: 5, start_time: '10:00:00', end_time: '14:00:00', slot_duration_minutes: 30, buffer_minutes: 0 },
+  {
+    day_of_week: 5,
+    start_time: '10:00:00',
+    end_time: '14:00:00',
+    slot_duration_minutes: 30,
+    buffer_minutes: 0,
+  },
 ]
 
 describe('getWorkingHoursForDate', () => {
