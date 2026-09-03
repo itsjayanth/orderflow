@@ -49,6 +49,7 @@ const sampleAppointment: AppointmentOut = {
   confirmed_at: null,
   completed_at: null,
   cancelled_at: null,
+  status_events: [],
 }
 
 function renderPage(appointments: AppointmentOut[], initialEntries: string[] = ['/appointments']) {

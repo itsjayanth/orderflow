@@ -62,27 +62,29 @@ class AppointmentAvailabilityWindow(BaseModel):
 
 
 def _positive_offsets(value: list[int]) -> list[int]:
-    if any(hours <= 0 for hours in value):
-        raise ValueError("reminder_offsets_hours must all be positive")
+    if any(minutes <= 0 for minutes in value):
+        raise ValueError("reminder_offsets_minutes must all be positive")
     return value
 
 
 class AppointmentAvailabilitySettingsOut(BaseModel):
     timezone: str
     windows: list[AppointmentAvailabilityWindow]
-    # Hours-before-appointment offsets the reminder scan sends a WhatsApp
-    # reminder at (shared/scheduler.py). Empty list = reminders off.
-    reminder_offsets_hours: list[int] = Field(default_factory=lambda: [24])
+    # Minutes-before-appointment offsets the reminder scan sends a
+    # WhatsApp reminder at (shared/scheduler.py). Empty list = reminders
+    # off. Only 60 and 30 currently map to an actual notification kind --
+    # see identity/domain/models.py's Merchant.reminder_offsets_minutes.
+    reminder_offsets_minutes: list[int] = Field(default_factory=lambda: [60, 30])
 
-    _validate_offsets = field_validator("reminder_offsets_hours")(_positive_offsets)
+    _validate_offsets = field_validator("reminder_offsets_minutes")(_positive_offsets)
 
 
 class AppointmentAvailabilitySettingsUpdate(BaseModel):
     timezone: str
     windows: list[AppointmentAvailabilityWindow]
-    reminder_offsets_hours: list[int] = Field(default_factory=lambda: [24])
+    reminder_offsets_minutes: list[int] = Field(default_factory=lambda: [60, 30])
 
-    _validate_offsets = field_validator("reminder_offsets_hours")(_positive_offsets)
+    _validate_offsets = field_validator("reminder_offsets_minutes")(_positive_offsets)
 
 
 class AppointmentServiceOut(BaseModel):

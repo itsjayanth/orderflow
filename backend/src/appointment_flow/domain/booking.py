@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from appointment_flow.domain.availability import is_slot_elapsed
 from appointments.adapters.repository import AppointmentRepository, SlotConflictError
 from appointments.adapters.scheduling_repository import (
     AppointmentServiceRepository,
@@ -20,7 +21,13 @@ _DEFAULT_DURATION_MINUTES = 30
 
 
 class PastDateError(Exception):
-    pass
+    """Raised for a date that's already gone, or -- same underlying "this
+    can't be booked, it's already in the past" case -- a same-day
+    start_time that's already elapsed (Task 1's is_slot_elapsed). Kept as
+    one exception type rather than two: every caller (the browser
+    booking webview, the WhatsApp Flow completion handler) already treats
+    this as a single "pick a different time" outcome, so splitting it
+    would only add call sites to keep in sync for no behavioral gain."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,9 +111,18 @@ async def perform_booking(
     query.
 
     Raises SlotConflictError (propagated, not caught here) if the resolved
-    [start_time, end_time) range is no longer free -- the API layer turns
-    that into a 409."""
+    [start_time, end_time) range is no longer free, OR (Task 3) no longer
+    fits inside the merchant's *current* working-hours window for that
+    weekday -- re-checked live against MerchantAvailability here rather
+    than trusted from whatever slot list the caller (browser page or
+    WhatsApp Flow) had on screen, so a merchant shortening their hours
+    mid-session can never be bypassed by a stale slot pick. The API layer
+    turns either case into the same 409."""
     if appointment_date < _merchant_today(merchant):
+        raise PastDateError(appointment_date)
+    if appointment_date == _merchant_today(merchant) and is_slot_elapsed(
+        appointment_date=appointment_date, start_time=start_time, timezone=merchant.timezone
+    ):
         raise PastDateError(appointment_date)
 
     duration_minutes = await resolve_duration_minutes(
@@ -116,6 +132,24 @@ async def perform_booking(
         datetime.datetime.combine(appointment_date, start_time)
         + datetime.timedelta(minutes=duration_minutes)
     ).time()
+
+    # Only enforced when the merchant has actually configured hours for
+    # this weekday -- a merchant with no MerchantAvailability rows at all
+    # stays fully permissive here, matching resolve_duration_minutes's own
+    # "unconfigured = still bookable" fallback just above, rather than
+    # this becoming the first booking-time check to demand availability
+    # rows exist. Once hours ARE configured, re-check live rather than
+    # trust the caller's slot pick (Task 3) -- catches exactly the "hours
+    # just got shortened out from under a stale slot list" case.
+    availability = await MerchantAvailabilityRepository(session).get_for_day(
+        tenant, day_of_week=appointment_date.weekday(), staff_id=staff_id
+    )
+    if availability is not None and not (
+        availability.start_time <= start_time and end_time <= availability.end_time
+    ):
+        raise SlotConflictError(
+            f"{start_time}-{end_time} on {appointment_date} is outside current working hours"
+        )
 
     customer_repo = CustomerRepository(session)
     customer = await customer_repo.find_or_create(

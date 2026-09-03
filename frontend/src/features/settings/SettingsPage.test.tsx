@@ -244,6 +244,68 @@ describe('SettingsPage business types section', () => {
   })
 })
 
+describe('SettingsPage appointment availability section', () => {
+  const availability = {
+    timezone: 'Asia/Kolkata',
+    windows: [],
+    reminder_offsets_minutes: [60, 30],
+  }
+
+  beforeEach(() => {
+    mockedApiFetch.mockReset()
+    useAuthStore.setState({ accessToken: 'test-token', status: 'authenticated' })
+  })
+
+  function mockRoutesWithAvailability(onPut?: (body: unknown) => void) {
+    mockedApiFetch.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/v1/auth/me') return Promise.resolve(meResponse(false, true))
+      if (path === '/api/v1/payments/settings') return Promise.resolve(paymentSettings)
+      if (path === '/api/v1/onboarding/whatsapp') return Promise.resolve(whatsappSettings)
+      if (path === '/api/v1/notifications/templates') return Promise.resolve(defaultTemplates)
+      if (
+        path === '/api/v1/auth/appointment-availability' &&
+        (!init || init.method === undefined)
+      ) {
+        return Promise.resolve(availability)
+      }
+      if (path === '/api/v1/auth/appointment-availability' && init?.method === 'PUT') {
+        const body = JSON.parse(init.body as string)
+        onPut?.(body)
+        return Promise.resolve(body)
+      }
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+  }
+
+  it('pre-fills the reminder offsets from the fetched settings', async () => {
+    mockRoutesWithAvailability()
+
+    renderPage()
+
+    expect(await screen.findByText('60 min')).toBeInTheDocument()
+    expect(screen.getByText('30 min')).toBeInTheDocument()
+  })
+
+  it('removing a default offset and adding a custom one saves both changes', async () => {
+    let savedBody: { reminder_offsets_minutes?: number[] } | undefined
+    mockRoutesWithAvailability((body) => {
+      savedBody = body as { reminder_offsets_minutes?: number[] }
+    })
+
+    renderPage()
+    await screen.findByText('60 min')
+
+    fireEvent.click(screen.getByLabelText('Remove 30-minute reminder'))
+    fireEvent.change(screen.getByLabelText('Add a reminder offset in minutes'), {
+      target: { value: '120' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /add/i }))
+    fireEvent.click(screen.getByRole('button', { name: /save availability/i }))
+
+    await waitFor(() => expect(savedBody?.reminder_offsets_minutes).toEqual([120, 60]))
+  })
+})
+
 describe('SettingsPage website link section', () => {
   beforeEach(() => {
     mockedApiFetch.mockReset()

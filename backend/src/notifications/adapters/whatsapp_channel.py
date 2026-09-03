@@ -160,22 +160,33 @@ class WhatsAppNotificationChannel:
         )
 
     async def notify_appointment_reminder(
-        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID
+        self, *, merchant_id: uuid.UUID, appointment_id: uuid.UUID, kind: str | None
     ) -> bool:
-        """Distinct from _send_appointment above -- a reminder fires hours
-        after the triggering (confirmed) transition, genuinely outside the
-        customer's 24h WhatsApp session window, so it must go out as a
-        Meta-approved `type: template` send (send_template_message) with
-        positional body params, not the freeform send_text +
-        our-own-{{var}}-rendering _send_appointment uses for the
-        immediate confirmed/cancelled notifications. Returns False (no
-        send attempted) when no reminder template name is configured,
-        same "unset = safe no-op" convention as every other optional Meta
-        config in this codebase."""
-        settings = get_settings()
-        if not settings.whatsapp_appointment_reminder_template_name:
-            return False
+        """Distinct from _send_appointment above -- a reminder fires
+        minutes/hours after the triggering (confirmed) transition,
+        genuinely outside the customer's 24h WhatsApp session window, so
+        it must go out as a Meta-approved `type: template` send
+        (send_template_message) with positional body params, not the
+        freeform send_text + our-own-{{var}}-rendering _send_appointment
+        uses for the immediate confirmed/cancelled notifications.
 
+        `kind` is "appointment_reminder_60m" or "appointment_reminder_30m"
+        for a merchant's two named offsets, or None for any other minute
+        offset a merchant configures (shared/scheduler.py's
+        _REMINDER_KIND_BY_OFFSET_MINUTES only names those two -- there's
+        no bespoke per-offset template for an arbitrary value, so it
+        isn't one of NOTIFICATION_KINDS at all). Which Meta template
+        actually gets sent: when `kind` is given, the merchant's own
+        NotificationTemplate row for that kind if they've configured and
+        activated one (its template_name/language_code -- NOT its body,
+        which for these two kinds is preview-only, see
+        notifications/domain/models.py); otherwise (kind is None, or no
+        such row/it's inactive) the single global env-configured reminder
+        template (whatsapp_appointment_reminder_template_name) as the
+        shared default every offset falls back to. Returns False (no send
+        attempted) when neither resolves to a template name -- same
+        "unset = safe no-op" convention as every other optional Meta
+        config in this codebase."""
         tenant = TenantContext(merchant_id=merchant_id)
         async with SessionFactory() as session:
             waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
@@ -184,6 +195,22 @@ class WhatsAppNotificationChannel:
 
             appointment = await AppointmentRepository(session).get(tenant, appointment_id)
             if appointment is None:
+                return False
+
+            settings = get_settings()
+            template = (
+                await NotificationTemplateRepository(session).get(tenant, kind)
+                if kind is not None
+                else None
+            )
+            template_name: str | None
+            if template is not None and template.is_active:
+                template_name = template.template_name
+                language_code = template.language_code
+            else:
+                template_name = settings.whatsapp_appointment_reminder_template_name
+                language_code = settings.whatsapp_appointment_reminder_language_code
+            if not template_name:
                 return False
 
             merchant = await MerchantRepository(session).get(tenant.merchant_id)
@@ -198,7 +225,7 @@ class WhatsAppNotificationChannel:
                 phone_number_id=waba.phone_number_id,
                 access_token=decrypt(waba.access_token_encrypted),
                 to=appointment.customer.whatsapp_number,
-                template_name=settings.whatsapp_appointment_reminder_template_name,
-                language_code=settings.whatsapp_appointment_reminder_language_code,
+                template_name=template_name,
+                language_code=language_code,
                 body_params=body_params,
             )

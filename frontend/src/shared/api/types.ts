@@ -215,8 +215,11 @@ export type NotificationKind =
   | 'order_processing'
   | 'order_ready'
   | 'order_completed'
+  | 'appointment_requested'
   | 'appointment_confirmed'
   | 'appointment_cancelled'
+  | 'appointment_reminder_60m'
+  | 'appointment_reminder_30m'
 
 export interface NotificationTemplateOut {
   notification_kind: NotificationKind
@@ -285,6 +288,13 @@ export interface AppointmentAvailabilityWindow {
 export interface AppointmentAvailabilitySettingsOut {
   timezone: string
   windows: AppointmentAvailabilityWindow[]
+  // Minutes-before-appointment offsets the reminder scan sends a
+  // WhatsApp reminder at -- only 60 and 30 currently map to an actual
+  // notification kind (see backend/src/shared/scheduler.py's
+  // _REMINDER_KIND_BY_OFFSET_MINUTES). No settings UI edits this list
+  // yet; it's round-tripped unmodified by the availability save so that
+  // save doesn't silently reset it back to the default.
+  reminder_offsets_minutes: number[]
 }
 
 export interface AppointmentServiceSettingsOut {
@@ -299,6 +309,38 @@ export type AppointmentStatus = 'requested' | 'confirmed' | 'completed' | 'cance
 
 export type AppointmentPaymentStatus = 'not_required' | 'pending' | 'paid' | 'failed'
 export type AppointmentCreatedVia = 'flow' | 'browser' | 'dashboard'
+
+export type AppointmentEventType =
+  | 'requested'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'rescheduled'
+  | 'reminder_sent'
+
+// One row of the Task 5 history timeline -- fields irrelevant to a given
+// event_type are simply null (e.g. offset_minutes only on
+// "reminder_sent", from_appointment_date/from_start_time only on
+// "rescheduled"). Mirrors backend/src/appointments/api/schemas.py's
+// AppointmentStatusEventOut.
+export interface AppointmentStatusEventOut {
+  event_type: AppointmentEventType
+  from_status: AppointmentStatus | null
+  to_status: AppointmentStatus | null
+  from_appointment_date: string | null // "YYYY-MM-DD"
+  from_start_time: string | null // "HH:MM:SS"
+  to_appointment_date: string | null // "YYYY-MM-DD"
+  to_start_time: string | null // "HH:MM:SS"
+  offset_minutes: number | null
+  // Raw actor value -- a staff_user_id, "system", or a creation surface
+  // ("flow"/"browser"). Prefer changed_by_name for display.
+  changed_by: string
+  // Resolved staff display name when changed_by is a staff_user_id that
+  // still exists; null for "system"/"flow"/"browser" or a deleted staff
+  // account.
+  changed_by_name: string | null
+  changed_at: string
+}
 
 export interface AppointmentOut {
   appointment_id: string
@@ -322,6 +364,10 @@ export interface AppointmentOut {
   confirmed_at: string | null
   completed_at: string | null
   cancelled_at: string | null
+  // Only populated on GET /api/v1/appointments/{id} -- the list endpoint
+  // returns an empty array here (see appointments/api/router.py's
+  // _to_appointment_out).
+  status_events: AppointmentStatusEventOut[]
 }
 
 export interface AppointmentFlowInfoOut {

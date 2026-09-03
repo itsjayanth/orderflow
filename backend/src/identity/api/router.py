@@ -179,7 +179,7 @@ async def get_appointment_availability_settings(
     return AppointmentAvailabilitySettingsOut(
         timezone=merchant.timezone,
         windows=[AppointmentAvailabilityWindow.model_validate(w) for w in windows],
-        reminder_offsets_hours=merchant.reminder_offsets_hours,
+        reminder_offsets_minutes=merchant.reminder_offsets_minutes,
     )
 
 
@@ -196,8 +196,8 @@ async def update_appointment_availability_settings(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
 
     await MerchantRepository(session).update_timezone(tenant.merchant_id, body.timezone)
-    await MerchantRepository(session).update_reminder_offsets_hours(
-        tenant.merchant_id, body.reminder_offsets_hours
+    await MerchantRepository(session).update_reminder_offsets_minutes(
+        tenant.merchant_id, body.reminder_offsets_minutes
     )
     windows = await MerchantAvailabilityRepository(session).replace_all(
         tenant, windows=[w.model_dump() for w in body.windows]
@@ -206,7 +206,7 @@ async def update_appointment_availability_settings(
     return AppointmentAvailabilitySettingsOut(
         timezone=body.timezone,
         windows=[AppointmentAvailabilityWindow.model_validate(w) for w in windows],
-        reminder_offsets_hours=body.reminder_offsets_hours,
+        reminder_offsets_minutes=body.reminder_offsets_minutes,
     )
 
 

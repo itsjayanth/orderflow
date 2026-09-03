@@ -105,7 +105,11 @@ class FakeReminderSender:
 
 
 async def _seed_confirmed_appointment(
-    db_session: AsyncSession, *, appointment_date: datetime.date, start_time: datetime.time
+    db_session: AsyncSession,
+    *,
+    appointment_date: datetime.date,
+    start_time: datetime.time,
+    reminder_offsets_minutes: list[int] | None = None,
 ):
     merchant = await MerchantRepository(db_session).create(
         business_name="Reminder Business", owner_contact=f"{uuid.uuid4()}@example.com"
@@ -113,6 +117,10 @@ async def _seed_confirmed_appointment(
     await MerchantRepository(db_session).set_vertical_flags(
         merchant.merchant_id, restaurant_enabled=False, appointment_enabled=True
     )
+    if reminder_offsets_minutes is not None:
+        await MerchantRepository(db_session).update_reminder_offsets_minutes(
+            merchant.merchant_id, reminder_offsets_minutes
+        )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     await WhatsAppBusinessAccountRepository(db_session).upsert(
         tenant, phone_number_id="PNID1", access_token_encrypted=encrypt("dummy-token")
@@ -132,7 +140,7 @@ async def _seed_confirmed_appointment(
         ).time(),
     )
     await AppointmentRepository(db_session).transition_status(
-        tenant, appointment.appointment_id, "confirmed"
+        tenant, appointment.appointment_id, "confirmed", changed_by="staff-1"
     )
     await db_session.commit()
     return merchant, appointment
@@ -151,9 +159,11 @@ async def test_reminder_scan_noops_when_no_template_configured(
     assert fake.calls == []
 
 
-async def test_reminder_scan_sends_due_reminder_and_marks_it_sent(
+async def test_reminder_scan_sends_60m_reminder_not_30m_at_45_minutes_out(
     db_session: AsyncSession, monkeypatch
 ) -> None:
+    """Task 4's exact spec: seeded 45 minutes out, the 60-minute reminder
+    is due (45 <= 60) but the 30-minute one isn't yet (45 > 30)."""
     settings = get_settings()
     monkeypatch.setattr(
         settings, "whatsapp_appointment_reminder_template_name", "appointment_reminder"
@@ -161,26 +171,58 @@ async def test_reminder_scan_sends_due_reminder_and_marks_it_sent(
     fake = FakeReminderSender()
     monkeypatch.setattr(scheduler_module, "get_whatsapp_sender", lambda: fake)
 
-    # merchant.timezone defaults to Asia/Kolkata (UTC+5:30); pick an
-    # appointment 23 hours from "now" so it's inside the default [24]-hour
-    # reminder window but hasn't started yet, regardless of the exact
-    # instant this test happens to run.
-    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=23)
-    local_ist = now + datetime.timedelta(hours=5, minutes=30)
+    now_utc = datetime.datetime.now(datetime.UTC)
+    appointment_utc = now_utc + datetime.timedelta(minutes=45)
+    local_ist = appointment_utc + datetime.timedelta(hours=5, minutes=30)
     merchant, appointment = await _seed_confirmed_appointment(
         db_session, appointment_date=local_ist.date(), start_time=local_ist.time()
     )
 
-    await send_due_appointment_reminders()
+    await send_due_appointment_reminders(now_utc)
 
     assert len(fake.calls) == 1
     assert fake.calls[0]["to"] == "919876543210"
     assert fake.calls[0]["template_name"] == "appointment_reminder"
 
-    # A second scan must not re-send -- the AppointmentReminderRepository
-    # row from the first send makes this offset ineligible now.
-    await send_due_appointment_reminders()
+    # A second scan at the same instant must not re-send the 60m
+    # reminder -- the AppointmentReminderRepository row from the first
+    # send makes this offset ineligible now.
+    await send_due_appointment_reminders(now_utc)
     assert len(fake.calls) == 1
+
+    # Advance to 20 minutes out: now inside the 30-minute window. The
+    # 30m reminder fires; the 60m one does not re-fire.
+    await send_due_appointment_reminders(appointment_utc - datetime.timedelta(minutes=20))
+    assert len(fake.calls) == 2
+
+
+async def test_reminder_scan_sends_custom_offset_via_shared_default_template(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    """A merchant-configured offset that isn't 60 or 30 (no bespoke
+    per-offset template exists for it) still gets a reminder sent -- via
+    the shared default template, not silently skipped."""
+    settings = get_settings()
+    monkeypatch.setattr(
+        settings, "whatsapp_appointment_reminder_template_name", "appointment_reminder"
+    )
+    fake = FakeReminderSender()
+    monkeypatch.setattr(scheduler_module, "get_whatsapp_sender", lambda: fake)
+
+    now_utc = datetime.datetime.now(datetime.UTC)
+    appointment_utc = now_utc + datetime.timedelta(minutes=90)
+    local_ist = appointment_utc + datetime.timedelta(hours=5, minutes=30)
+    await _seed_confirmed_appointment(
+        db_session,
+        appointment_date=local_ist.date(),
+        start_time=local_ist.time(),
+        reminder_offsets_minutes=[120],
+    )
+
+    await send_due_appointment_reminders(now_utc)
+
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["template_name"] == "appointment_reminder"
 
 
 async def test_reminder_scan_skips_cancelled_appointments(
@@ -193,17 +235,19 @@ async def test_reminder_scan_skips_cancelled_appointments(
     fake = FakeReminderSender()
     monkeypatch.setattr(scheduler_module, "get_whatsapp_sender", lambda: fake)
 
-    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=23)
-    local_ist = now + datetime.timedelta(hours=5, minutes=30)
+    now_utc = datetime.datetime.now(datetime.UTC)
+    # +5:30 (IST offset) + 45 minutes so this is squarely inside the
+    # 60-minute reminder window, same as the "not sent" scenario above.
+    local_ist = now_utc + datetime.timedelta(hours=6, minutes=15)
     merchant, appointment = await _seed_confirmed_appointment(
         db_session, appointment_date=local_ist.date(), start_time=local_ist.time()
     )
     tenant = TenantContext(merchant_id=merchant.merchant_id)
     await AppointmentRepository(db_session).transition_status(
-        tenant, appointment.appointment_id, "cancelled"
+        tenant, appointment.appointment_id, "cancelled", changed_by="staff-1"
     )
     await db_session.commit()
 
-    await send_due_appointment_reminders()
+    await send_due_appointment_reminders(now_utc)
 
     assert fake.calls == []

@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Info } from 'lucide-react'
+import { Info, Plus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -292,6 +292,8 @@ function AppointmentAvailabilitySettingsSection() {
   const update = useUpdateAppointmentAvailability()
   const [timezone, setTimezone] = useState('Asia/Kolkata')
   const [days, setDays] = useState<DayRow[]>(() => Array.from({ length: 7 }, defaultDayRow))
+  const [reminderOffsets, setReminderOffsets] = useState<number[]>([60, 30])
+  const [newOffsetDraft, setNewOffsetDraft] = useState('')
   const [justSaved, setJustSaved] = useState(false)
 
   useEffect(() => {
@@ -310,10 +312,24 @@ function AppointmentAvailabilitySettingsSection() {
         }
       }),
     )
+    setReminderOffsets(data.reminder_offsets_minutes)
   }, [data])
 
   function updateDay(index: number, patch: Partial<DayRow>) {
     setDays((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  function removeReminderOffset(value: number) {
+    setReminderOffsets((prev) => prev.filter((v) => v !== value))
+  }
+
+  function addReminderOffset() {
+    const value = Number(newOffsetDraft)
+    if (!Number.isInteger(value) || value <= 0) return
+    setReminderOffsets((prev) =>
+      prev.includes(value) ? prev : [...prev, value].sort((a, b) => b - a),
+    )
+    setNewOffsetDraft('')
   }
 
   function onSave() {
@@ -330,6 +346,7 @@ function AppointmentAvailabilitySettingsSection() {
             slot_duration_minutes: row.slot_duration_minutes,
             buffer_minutes: row.buffer_minutes,
           })),
+        reminder_offsets_minutes: reminderOffsets,
       },
       {
         onSuccess: () => {
@@ -426,6 +443,57 @@ function AppointmentAvailabilitySettingsSection() {
             ))}
           </div>
 
+          <div className="space-y-2 border-t pt-4">
+            <Label>Reminders (minutes before appointment)</Label>
+            <p className="text-muted-foreground text-sm">
+              Confirmed appointments get an automatic WhatsApp reminder at each offset below. 60 and
+              30 minutes each get their own customizable message in Message templates below; any
+              other value uses the shared default reminder message.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {reminderOffsets.map((offset) => (
+                <span
+                  key={offset}
+                  className="bg-secondary/60 inline-flex items-center gap-1.5 rounded-full py-1 pr-1.5 pl-3 text-sm"
+                >
+                  {offset} min
+                  <button
+                    type="button"
+                    aria-label={`Remove ${offset}-minute reminder`}
+                    onClick={() => removeReminderOffset(offset)}
+                    className="hover:bg-secondary text-muted-foreground hover:text-foreground rounded-full p-0.5 transition-colors duration-150"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </span>
+              ))}
+              {reminderOffsets.length === 0 && (
+                <span className="text-muted-foreground text-sm">No reminders configured.</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                placeholder="e.g. 120"
+                aria-label="Add a reminder offset in minutes"
+                value={newOffsetDraft}
+                onChange={(e) => setNewOffsetDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addReminderOffset()
+                  }
+                }}
+                className="h-8 w-28"
+              />
+              <Button type="button" variant="outline" size="sm" onClick={addReminderOffset}>
+                <Plus className="size-3.5" />
+                Add
+              </Button>
+            </div>
+          </div>
+
           {update.isError && (
             <p className="text-destructive text-sm">Failed to save. Please try again.</p>
           )}
@@ -453,8 +521,11 @@ const KIND_LABELS: Record<NotificationTemplateOut['notification_kind'], string> 
   order_processing: 'Order processing',
   order_ready: 'Order ready',
   order_completed: 'Order completed',
+  appointment_requested: 'Appointment requested',
   appointment_confirmed: 'Appointment confirmed',
   appointment_cancelled: 'Appointment cancelled',
+  appointment_reminder_60m: 'Appointment reminder (1 hour before)',
+  appointment_reminder_30m: 'Appointment reminder (30 minutes before)',
 }
 
 const KIND_DESCRIPTIONS: Record<NotificationTemplateOut['notification_kind'], string> = {
@@ -462,9 +533,25 @@ const KIND_DESCRIPTIONS: Record<NotificationTemplateOut['notification_kind'], st
   order_processing: 'Sent the moment staff mark the order Processing.',
   order_ready: 'Sent the moment staff mark the order Ready for pickup/delivery.',
   order_completed: 'Sent once staff mark the order Completed.',
+  appointment_requested: 'Sent as soon as a customer submits a booking request.',
   appointment_confirmed: 'Sent when staff confirm a requested appointment.',
   appointment_cancelled: 'Sent when staff cancel an appointment.',
+  appointment_reminder_60m:
+    'Sent automatically about 1 hour before a confirmed appointment, if not already cancelled.',
+  appointment_reminder_30m:
+    'Sent automatically about 30 minutes before a confirmed appointment, if not already cancelled.',
 }
+
+// Reminders send as a Meta-approved WhatsApp template message (required
+// once the customer's 24-hour session window has closed), not the
+// freeform {{var}} text every other kind uses -- only Template name/
+// Language here are actually sent; Message is an editable note for your
+// own reference, not what the customer receives. See
+// notifications/domain/models.py's NOTIFICATION_KINDS docstring.
+const REMINDER_KINDS: NotificationTemplateOut['notification_kind'][] = [
+  'appointment_reminder_60m',
+  'appointment_reminder_30m',
+]
 
 const ORDER_TEMPLATE_VARIABLES = [
   '{{business_name}}',
@@ -482,7 +569,9 @@ const APPOINTMENT_TEMPLATE_VARIABLES = [
 ]
 
 function templateVariablesFor(kind: NotificationTemplateOut['notification_kind']): string[] {
-  return kind === 'appointment_confirmed' || kind === 'appointment_cancelled'
+  return kind === 'appointment_confirmed' ||
+    kind === 'appointment_cancelled' ||
+    kind === 'appointment_requested'
     ? APPOINTMENT_TEMPLATE_VARIABLES
     : ORDER_TEMPLATE_VARIABLES
 }
@@ -526,6 +615,15 @@ function TemplateRow({ template }: { template: NotificationTemplateOut }) {
         <Badge tone={badgeTone}>{badgeLabel}</Badge>
       </div>
 
+      {REMINDER_KINDS.includes(template.notification_kind) && (
+        <p className="bg-secondary/40 text-muted-foreground rounded-md border p-2.5 text-xs">
+          Reminders send outside the customer's WhatsApp session window, so they must use a
+          Meta-approved template message. Set Template name/Language to a template already approved
+          in your Meta Business Manager -- the Message below is a note for your own reference only,
+          not what the customer receives.
+        </p>
+      )}
+
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-lg space-y-3">
         <div className="grid grid-cols-[1fr_100px] gap-3">
           <div className="space-y-1.5">
@@ -549,12 +647,18 @@ function TemplateRow({ template }: { template: NotificationTemplateOut }) {
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor={`${template.notification_kind}_body`}>Message</Label>
+          <Label htmlFor={`${template.notification_kind}_body`}>
+            {REMINDER_KINDS.includes(template.notification_kind)
+              ? 'Message (reference only)'
+              : 'Message'}
+          </Label>
           <Textarea id={`${template.notification_kind}_body`} rows={3} {...register('body')} />
           {errors.body && <p className="text-destructive text-sm">{errors.body.message}</p>}
-          <p className="text-muted-foreground text-xs">
-            Variables: {templateVariablesFor(template.notification_kind).join(', ')}
-          </p>
+          {!REMINDER_KINDS.includes(template.notification_kind) && (
+            <p className="text-muted-foreground text-xs">
+              Variables: {templateVariablesFor(template.notification_kind).join(', ')}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

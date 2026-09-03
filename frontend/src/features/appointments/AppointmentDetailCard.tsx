@@ -1,9 +1,19 @@
 import { useState } from 'react'
 
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import type { AppointmentOut } from '@/shared/api/types'
+import type {
+  AppointmentEventType,
+  AppointmentOut,
+  AppointmentStatusEventOut,
+} from '@/shared/api/types'
 import { formatCustomerNumber } from '@/shared/lib/customerNumber'
 import { formatPhoneNumber } from '@/shared/lib/phoneNumber'
 
@@ -98,6 +108,100 @@ function formatTime(value: string): string {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+function formatSlot(date: string, time: string): string {
+  return `${formatDate(date)} at ${formatTime(time)}`
+}
+
+// changed_by is a raw staff_user_id (UUID), "system" (the reminder scan),
+// or a creation surface ("flow"/"browser") for the initial request -- see
+// appointments/domain/models.py's AppointmentStatusEvent docstring.
+// changed_by_name is the backend's resolved staff display name for the
+// UUID case (appointments/api/router.py's _staff_names_by_id) -- prefer
+// it, and fall back to a generic "Staff member" only if that staff
+// account no longer exists (changed_by_name null but changed_by is still
+// a staff_user_id, not one of the known non-staff markers).
+function formatActor(event: AppointmentStatusEventOut): string {
+  if (event.changed_by_name) return event.changed_by_name
+  if (event.changed_by === 'system') return 'Automatically'
+  if (event.changed_by === 'flow') return 'Customer, via WhatsApp'
+  if (event.changed_by === 'browser') return 'Customer, via the booking page'
+  return 'Staff member'
+}
+
+const EVENT_TITLES: Record<AppointmentEventType, string> = {
+  requested: 'Requested',
+  confirmed: 'Confirmed',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  rescheduled: 'Rescheduled',
+  reminder_sent: 'Reminder sent',
+}
+
+function HistoryEventRow({ event }: { event: AppointmentStatusEventOut }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-t py-2.5 first:border-t-0 first:pt-0">
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium">{EVENT_TITLES[event.event_type]}</p>
+        {event.event_type === 'requested' && event.to_appointment_date && event.to_start_time && (
+          <p className="text-muted-foreground text-xs">
+            Slot requested: {formatSlot(event.to_appointment_date, event.to_start_time)}
+          </p>
+        )}
+        {event.event_type === 'rescheduled' &&
+          event.from_appointment_date &&
+          event.from_start_time &&
+          event.to_appointment_date &&
+          event.to_start_time && (
+            <p className="text-muted-foreground text-xs">
+              {formatSlot(event.from_appointment_date, event.from_start_time)} →{' '}
+              {formatSlot(event.to_appointment_date, event.to_start_time)}
+            </p>
+          )}
+        {event.event_type === 'reminder_sent' && event.offset_minutes != null && (
+          <p className="text-muted-foreground text-xs">
+            {event.offset_minutes}-minute-before reminder
+          </p>
+        )}
+        <p className="text-muted-foreground text-xs">{formatActor(event)}</p>
+      </div>
+      <p className="text-muted-foreground shrink-0 text-xs">
+        {new Date(event.changed_at).toLocaleString()}
+      </p>
+    </div>
+  )
+}
+
+// Task 5: the chronological log built from AppointmentStatusEvent --
+// requested slot (kept even after a reschedule), confirmations,
+// reschedules (old slot -> new), cancellation, and reminders actually
+// sent. Only populated when the appointment was fetched with events
+// included (GET /{id}, or any of the mutation endpoints' own response) --
+// see AppointmentOut.status_events' comment in shared/api/types.ts.
+function AppointmentHistory({ events }: { events: AppointmentStatusEventOut[] }) {
+  if (events.length === 0) {
+    return null
+  }
+  return (
+    <Accordion type="single" collapsible>
+      <AccordionItem value="history">
+        <AccordionTrigger>History ({events.length})</AccordionTrigger>
+        <AccordionContent>
+          <div className="space-y-0.5">
+            {events.map((event, i) => (
+              // No natural unique id on this read-only, append-only log --
+              // event_type + changed_at is unique enough within one
+              // appointment's history in practice, but index is simplest
+              // and this list never reorders/filters client-side.
+              // biome-ignore lint/suspicious/noArrayIndexKey: static, non-reorderable list
+              <HistoryEventRow key={i} event={event} />
+            ))}
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
+  )
 }
 
 // Shared by AppointmentsPage (row expansion) and AppointmentDetailPage
@@ -234,6 +338,8 @@ export function AppointmentDetailCard({
           </TableBody>
         </Table>
       </div>
+
+      <AppointmentHistory events={appointment.status_events} />
     </div>
   )
 }

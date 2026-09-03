@@ -102,14 +102,20 @@ class Merchant(Base):
     # primary market today; not auto-detected from anything.
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata")
 
-    # Hours-before-appointment offsets the reminder scan
+    # Minutes-before-appointment offsets the reminder scan
     # (shared/scheduler.py's send_due_appointment_reminders) sends a
-    # WhatsApp reminder at, e.g. [24, 2] for "a day before and two hours
-    # before". Empty list = reminders off for this merchant. Defaults to a
-    # single 24h reminder, not an empty list, so a merchant who never
-    # visits the reminder settings still gets the baseline behavior the
-    # product spec calls for.
-    reminder_offsets_hours: Mapped[list[int]] = mapped_column(JSON, default=lambda: [24])
+    # WhatsApp reminder at. Empty list = reminders off for this merchant.
+    # Defaults to the product spec's 1-hour and 30-minute reminders, not
+    # an empty list, so a merchant who never visits the reminder settings
+    # still gets the baseline behavior. Minute granularity (not hours, the
+    # old unit -- see migration 0a1e2b3c4d5f) is required precisely
+    # because 30 minutes isn't representable as a whole hour; only offsets
+    # of exactly 60 or 30 currently map to a notification kind
+    # (notifications/adapters/whatsapp_channel.py's
+    # _REMINDER_KIND_BY_OFFSET_MINUTES) -- any other value a merchant sets
+    # here is silently a no-op today, since there's no per-offset template
+    # to send for it yet.
+    reminder_offsets_minutes: Mapped[list[int]] = mapped_column(JSON, default=lambda: [60, 30])
 
     # Merchant's own website, offered as a "Visit website" option in the
     # WhatsApp greeting menu when set -- see conversation/domain/handler.py.
