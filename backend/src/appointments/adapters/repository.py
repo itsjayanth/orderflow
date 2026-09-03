@@ -6,7 +6,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from appointments.domain.models import Appointment, MerchantAppointmentCounter
+from appointments.domain.models import (
+    Appointment,
+    AppointmentStatusEvent,
+    MerchantAppointmentCounter,
+)
 from appointments.domain.state_machine import transition_status
 from shared.tenant import TenantContext
 
@@ -181,6 +185,25 @@ class AppointmentRepository:
             whatsapp_conversation_ref=whatsapp_conversation_ref,
         )
         self._session.add(appointment)
+        # Flushed alone first -- appointment_id is a column-level Python
+        # default (uuid.uuid4), which SQLAlchemy only actually assigns to
+        # the ORM instance once this INSERT is emitted, not at
+        # Appointment(...) construction time. The event row below needs
+        # the real id, so it can't be added in the same batch.
+        await self._session.flush()
+        self._session.add(
+            AppointmentStatusEvent(
+                appointment_id=appointment.appointment_id,
+                event_type="requested",
+                to_status="requested",
+                to_appointment_date=appointment_date,
+                to_start_time=start_time,
+                # The initial request has no staff actor -- which surface
+                # (flow/browser) created it is the closest thing to a
+                # "who", see AppointmentStatusEvent's docstring.
+                changed_by=created_via,
+            )
+        )
         await self._session.flush()
         return appointment
 
@@ -191,7 +214,7 @@ class AppointmentRepository:
                 Appointment.appointment_id == appointment_id,
                 Appointment.merchant_id == tenant.merchant_id,
             )
-            .options(selectinload(Appointment.customer))
+            .options(selectinload(Appointment.customer), selectinload(Appointment.status_events))
         )
         return result.scalar_one_or_none()
 
@@ -258,16 +281,29 @@ class AppointmentRepository:
         return list(result.scalars().all())
 
     async def transition_status(
-        self, tenant: TenantContext, appointment_id: uuid.UUID, to_status: str
+        self, tenant: TenantContext, appointment_id: uuid.UUID, to_status: str, *, changed_by: str
     ) -> Appointment:
         """The only path that mutates status -- always goes through the
         domain state machine first (defense in depth, same rationale as
-        OrderRepository.transition_fulfillment_status)."""
+        OrderRepository.transition_fulfillment_status). `changed_by` is
+        the acting staff_user_id (str) -- see AppointmentStatusEvent's
+        docstring for why every call today is staff-initiated."""
         appointment = await self.get(tenant, appointment_id)
         if appointment is None:
             raise AppointmentNotFoundError(appointment_id)
 
+        from_status = appointment.status
         transition_status(appointment, to_status)
+
+        self._session.add(
+            AppointmentStatusEvent(
+                appointment_id=appointment.appointment_id,
+                event_type=to_status,
+                from_status=from_status,
+                to_status=to_status,
+                changed_by=changed_by,
+            )
+        )
         await self._session.flush()
         return appointment
 
@@ -296,6 +332,7 @@ class AppointmentRepository:
         appointment_date: datetime.date,
         start_time: datetime.time,
         end_time: datetime.time,
+        changed_by: str,
     ) -> Appointment | None:
         """Dashboard-initiated date/time change. Deliberately NOT a
         appointments.domain.state_machine transition -- rescheduling
@@ -303,7 +340,11 @@ class AppointmentRepository:
         rationale as update_notes above, just with the same
         overlap-safety guarantee create() gives a fresh booking (excluding
         this appointment's own current row from the conflict check, so it
-        doesn't collide with itself)."""
+        doesn't collide with itself). Records an AppointmentStatusEvent
+        with both the old and new slot (Task 5) -- the original
+        "requested" event's own slot fields are left untouched, so a
+        reschedule is visible in the timeline rather than silently
+        overwriting history."""
         appointment = await self.get(tenant, appointment_id)
         if appointment is None:
             return None
@@ -317,8 +358,22 @@ class AppointmentRepository:
             exclude_appointment_id=appointment_id,
         )
 
+        from_appointment_date = appointment.appointment_date
+        from_start_time = appointment.start_time
         appointment.appointment_date = appointment_date
         appointment.start_time = start_time
         appointment.end_time = end_time
+
+        self._session.add(
+            AppointmentStatusEvent(
+                appointment_id=appointment.appointment_id,
+                event_type="rescheduled",
+                from_appointment_date=from_appointment_date,
+                from_start_time=from_start_time,
+                to_appointment_date=appointment_date,
+                to_start_time=start_time,
+                changed_by=changed_by,
+            )
+        )
         await self._session.flush()
         return appointment

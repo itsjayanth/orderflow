@@ -40,6 +40,7 @@ const sampleAppointment: AppointmentOut = {
   confirmed_at: null,
   completed_at: null,
   cancelled_at: null,
+  status_events: [],
 }
 
 function renderPage() {
@@ -128,5 +129,56 @@ describe('AppointmentDetailPage', () => {
 
     expect(screen.getByText(/no further actions/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Mark/ })).not.toBeInTheDocument()
+  })
+
+  it('hides the History section when there are no events', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleAppointment)
+
+    renderPage()
+    await screen.findByText('Asha Rao')
+
+    expect(screen.queryByText(/^History/)).not.toBeInTheDocument()
+  })
+
+  it('expands the History accordion to show a reschedule event', async () => {
+    mockedApiFetch.mockResolvedValueOnce({
+      ...sampleAppointment,
+      status_events: [
+        {
+          event_type: 'requested',
+          from_status: null,
+          to_status: 'requested',
+          from_appointment_date: null,
+          from_start_time: null,
+          to_appointment_date: '2026-08-30',
+          to_start_time: '10:00:00',
+          offset_minutes: null,
+          changed_by: 'browser',
+          changed_at: '2026-08-26T12:00:00Z',
+        },
+        {
+          event_type: 'rescheduled',
+          from_status: null,
+          to_status: null,
+          from_appointment_date: '2026-08-30',
+          from_start_time: '10:00:00',
+          to_appointment_date: '2026-09-01',
+          to_start_time: '14:30:00',
+          offset_minutes: null,
+          changed_by: '33333333-3333-3333-3333-333333333333',
+          changed_at: '2026-08-27T09:00:00Z',
+        },
+      ],
+    })
+
+    renderPage()
+    await screen.findByText('Asha Rao')
+
+    fireEvent.click(screen.getByText('History (2)'))
+
+    expect(screen.getByText(/Slot requested/)).toBeInTheDocument()
+    expect(screen.getByText('Rescheduled')).toBeInTheDocument()
+    expect(screen.getByText('Customer, via the booking page')).toBeInTheDocument()
+    expect(screen.getByText('Staff member')).toBeInTheDocument()
   })
 })

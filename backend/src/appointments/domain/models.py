@@ -94,7 +94,7 @@ class MerchantAvailability(Base):
 class AppointmentReminder(Base):
     """Idempotency record for the reminder scan
     (shared/scheduler.py's send_due_appointment_reminders) -- a row exists
-    if and only if that (appointment, offset_hours) reminder was actually
+    if and only if that (appointment, offset_minutes) reminder was actually
     sent successfully. The scan computes what's "due" fresh every 5
     minutes rather than pre-queuing anything (see the plan's Task 4), so
     this table's only job is "don't send the same reminder twice": a row
@@ -106,13 +106,13 @@ class AppointmentReminder(Base):
     sketched -- existence of the row already means "sent"."""
 
     __tablename__ = "appointment_reminders"
-    __table_args__ = (UniqueConstraint("appointment_id", "offset_hours"),)
+    __table_args__ = (UniqueConstraint("appointment_id", "offset_minutes"),)
 
     reminder_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     appointment_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("appointments.appointment_id"), index=True
     )
-    offset_hours: Mapped[int] = mapped_column()
+    offset_minutes: Mapped[int] = mapped_column()
     sent_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC)
     )
@@ -189,3 +189,75 @@ class Appointment(Base):
     # No back_populates on Customer -- nothing there needs the reverse
     # collection today, matching Order.customer's same choice.
     customer: Mapped["Customer"] = relationship()
+
+    # order_by here (rather than only at the query site) means every
+    # eager-load of this collection -- today just
+    # AppointmentRepository.get() -- comes back chronological with no
+    # extra ORDER BY to remember to add. See AppointmentStatusEvent below.
+    status_events: Mapped[list["AppointmentStatusEvent"]] = relationship(
+        order_by="AppointmentStatusEvent.changed_at"
+    )
+
+
+class AppointmentStatusEvent(Base):
+    """Append-only audit trail of an appointment's whole lifecycle --
+    Task 5 of the appointment scheduling plan. Mirrors
+    orders/domain/models.py's OrderStatusEvent (append-only ledger, never
+    mutated/deleted rows, one row per thing-that-happened) but widened
+    beyond "just fulfillment status" to `event_type`, since a single
+    appointment's history genuinely has more kinds of event than an
+    order's does: the initial request (which slot was originally asked
+    for -- kept here even after a reschedule, so that's never silently
+    overwritten), each staff status transition, each reschedule (old slot
+    -> new slot), and each reminder actually sent (Task 4's
+    AppointmentReminder rows feed this too, so staff can see in one place
+    that a reminder went out, not just that it's scheduled to).
+
+    Every status-changing/rescheduling event today is staff-initiated via
+    the dashboard -- there's no customer-facing cancel or reschedule
+    endpoint yet (see appointments/domain/state_machine.py's
+    transition_status docstring) -- so `changed_by` is always a
+    staff_user_id in practice right now. It's a plain string, not an enum
+    of staff/customer/system, specifically so that stays true without a
+    schema change if a customer-facing cancel path is ever added (it
+    would just start passing changed_by="customer")."""
+
+    __tablename__ = "appointment_status_events"
+
+    status_event_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    appointment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("appointments.appointment_id"), index=True
+    )
+
+    # "requested" | "confirmed" | "completed" | "cancelled" | "rescheduled"
+    # | "reminder_sent". Deliberately not the same closed set as
+    # state_machine.STATUSES -- "rescheduled" and "reminder_sent" aren't
+    # Appointment.status values at all, they're just other things worth a
+    # row in this timeline.
+    event_type: Mapped[str] = mapped_column(String(32))
+
+    # Populated for "requested"/"confirmed"/"completed"/"cancelled" only.
+    from_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    to_status: Mapped[str | None] = mapped_column(String(32), default=None)
+
+    # Populated for "requested" (the originally-requested slot) and
+    # "rescheduled" (the slot being moved *to*) -- from_appointment_date/
+    # from_start_time additionally populated for "rescheduled" (the slot
+    # being moved *from*), so a reschedule reads as one row with both
+    # ends, not two rows a reader has to pair up themselves.
+    from_appointment_date: Mapped[datetime.date | None] = mapped_column(default=None)
+    from_start_time: Mapped[datetime.time | None] = mapped_column(default=None)
+    to_appointment_date: Mapped[datetime.date | None] = mapped_column(default=None)
+    to_start_time: Mapped[datetime.time | None] = mapped_column(default=None)
+
+    # Populated for "reminder_sent" only -- which of the two reminders
+    # (60 or 30) this row is about.
+    offset_minutes: Mapped[int | None] = mapped_column(default=None)
+
+    # staff_user_id as str, "system" (the reminder scan), or a surface
+    # name ("flow"/"browser") for the initial "requested" event, which
+    # has no staff actor at all -- see the class docstring above.
+    changed_by: Mapped[str] = mapped_column(String(64))
+    changed_at: Mapped[datetime.datetime] = mapped_column(
+        default=lambda: datetime.datetime.now(datetime.UTC)
+    )

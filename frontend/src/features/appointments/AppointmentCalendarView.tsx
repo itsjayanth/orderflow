@@ -25,6 +25,7 @@ import { useAppointmentAvailability } from '../settings/useAppointmentAvailabili
 import { AppointmentDetailCard } from './AppointmentDetailCard'
 import { APPOINTMENT_STATUS_TONE } from './AppointmentStatusBadge'
 import { CalendarToolbar } from './CalendarToolbar'
+import { useAppointment } from './useAppointment'
 import { useRescheduleAppointment } from './useRescheduleAppointment'
 
 const locales = { 'en-US': enUS }
@@ -219,7 +220,18 @@ export function AppointmentCalendarView({
     [appointments],
   )
 
-  const selected = appointments.find((a) => a.appointment_id === selectedId) ?? null
+  // The row from `appointments` (the list-view fetch) never carries
+  // status_events -- list_appointments doesn't eager-load them (see
+  // appointments/api/router.py's _to_appointment_out). Fetch the single
+  // appointment's own full detail (which does) once one's selected, same
+  // history the list-row detail page shows, so this Sheet isn't a
+  // second, weaker "detail view" -- it's the same AppointmentDetailCard
+  // fed richer data. Falls back to the list row while that's loading (or
+  // if it fails) so the Sheet still opens instantly with what's already
+  // on screen, just without history yet.
+  const { data: selectedDetail } = useAppointment(selectedId ?? '')
+  const selected =
+    selectedDetail ?? appointments.find((a) => a.appointment_id === selectedId) ?? null
 
   const handleRangeChange = (range: Date[] | { start: Date; end: Date }) => {
     if (Array.isArray(range)) {

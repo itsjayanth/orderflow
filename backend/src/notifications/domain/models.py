@@ -9,10 +9,26 @@ from shared.db import Base
 # The four notification kinds sent over an order's lifecycle
 # (orders/domain/events.py's OrderPaid/OrderConfirmedCOD both map to
 # "order_confirmed"; "order_processing" fires on the new -> processing
-# fulfillment transition), plus the three sent over an appointment's
-# lifecycle (appointments/domain/events.py's AppointmentRequested/
+# fulfillment transition), the three sent over an appointment's lifecycle
+# (appointments/domain/events.py's AppointmentRequested/
 # AppointmentConfirmed/AppointmentCancelled -- "completed" stays silent
-# by product spec).
+# by product spec), plus the two pre-appointment reminders
+# (shared/scheduler.py's send_due_appointment_reminders, Task 4 of the
+# appointment scheduling plan).
+#
+# appointment_reminder_60m/appointment_reminder_30m are a different shape
+# from every other kind here: a reminder fires hours/minutes after the
+# triggering (confirmed) transition, genuinely outside the customer's 24h
+# WhatsApp session window, so it must go out as a Meta-approved
+# `type: template` send with positional params
+# (notifications.adapters.whatsapp_channel.notify_appointment_reminder),
+# never the freeform {{var}}-rendered text every other kind's `body`
+# field drives. A merchant customizes these two the same way as any other
+# kind (a NotificationTemplate row via PUT /api/v1/notifications/templates),
+# but only that row's template_name/language_code are actually used for
+# the send -- its `body` is editable but purely informational (see
+# DEFAULT_MESSAGES below and the frontend's TemplateRow copy for these
+# two kinds).
 NOTIFICATION_KINDS = (
     "order_confirmed",
     "order_processing",
@@ -21,6 +37,8 @@ NOTIFICATION_KINDS = (
     "appointment_requested",
     "appointment_confirmed",
     "appointment_cancelled",
+    "appointment_reminder_60m",
+    "appointment_reminder_30m",
 )
 
 # What actually goes out when a merchant hasn't configured (or has
@@ -46,6 +64,12 @@ DEFAULT_MESSAGES: dict[str, str] = {
     "{{appointment_time}}\n\n_See you then!_",
     "appointment_cancelled": "❌ *Your appointment on {{appointment_date}} at "
     "{{appointment_time}} has been cancelled.*\n\n_Contact us if you'd like to rebook._",
+    # Informational preview only -- never actually rendered/sent (see the
+    # NOTIFICATION_KINDS comment above). What a customer receives is
+    # whichever Meta-approved template the merchant names in this kind's
+    # template_name/language_code.
+    "appointment_reminder_60m": "⏰ Reminder: your appointment is in about 1 hour.",
+    "appointment_reminder_30m": "⏰ Reminder: your appointment is in about 30 minutes.",
 }
 
 

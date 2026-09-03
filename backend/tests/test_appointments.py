@@ -137,7 +137,9 @@ async def test_repository_rejects_illegal_transition(db_session: AsyncSession) -
     repo = AppointmentRepository(db_session)
 
     with pytest.raises(IllegalTransitionError):
-        await repo.transition_status(tenant, appointment.appointment_id, "completed")
+        await repo.transition_status(
+            tenant, appointment.appointment_id, "completed", changed_by="staff-1"
+        )
 
 
 async def test_repository_transition_nonexistent_appointment_raises(
@@ -147,7 +149,7 @@ async def test_repository_transition_nonexistent_appointment_raises(
     repo = AppointmentRepository(db_session)
 
     with pytest.raises(AppointmentNotFoundError):
-        await repo.transition_status(tenant, uuid.uuid4(), "confirmed")
+        await repo.transition_status(tenant, uuid.uuid4(), "confirmed", changed_by="staff-1")
 
 
 # --- API endpoints -----------------------------------------------------

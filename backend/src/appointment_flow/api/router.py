@@ -93,6 +93,7 @@ async def get_appointment_flow_availability(
         tenant,
         appointment_date=date,
         service_duration_minutes=duration_minutes,
+        timezone=merchant.timezone,
         staff_id=staff_id,
     )
     return [AppointmentFlowSlotOut(start_time=s.start_time, end_time=s.end_time) for s in slots]

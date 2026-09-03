@@ -7,6 +7,29 @@ from pydantic import BaseModel, Field
 AppointmentStatus = Literal["requested", "confirmed", "completed", "cancelled"]
 PaymentStatus = Literal["not_required", "pending", "paid", "failed"]
 CreatedVia = Literal["flow", "browser", "dashboard"]
+AppointmentEventType = Literal[
+    "requested", "confirmed", "completed", "cancelled", "rescheduled", "reminder_sent"
+]
+
+
+class AppointmentStatusEventOut(BaseModel):
+    """One row of the Task 5 history timeline -- see
+    appointments/domain/models.py's AppointmentStatusEvent for what each
+    field means per event_type. Fields irrelevant to a given event_type
+    are simply null (e.g. offset_minutes only on "reminder_sent")."""
+
+    event_type: AppointmentEventType
+    from_status: AppointmentStatus | None
+    to_status: AppointmentStatus | None
+    from_appointment_date: datetime.date | None
+    from_start_time: datetime.time | None
+    to_appointment_date: datetime.date | None
+    to_start_time: datetime.time | None
+    offset_minutes: int | None
+    changed_by: str
+    changed_at: datetime.datetime
+
+    model_config = {"from_attributes": True}
 
 
 class AppointmentOut(BaseModel):
@@ -31,6 +54,12 @@ class AppointmentOut(BaseModel):
     confirmed_at: datetime.datetime | None
     completed_at: datetime.datetime | None
     cancelled_at: datetime.datetime | None
+    # Chronological (see Appointment.status_events' order_by) -- the
+    # dashboard's history dropdown (Task 5) renders this directly, no
+    # separate per-event endpoint. Only populated on GET /{appointment_id}
+    # (see _to_appointment_out's docstring) -- list_appointments doesn't
+    # eager-load it, since the appointments list view doesn't need it.
+    status_events: list[AppointmentStatusEventOut] = []
 
     model_config = {"from_attributes": True}
 

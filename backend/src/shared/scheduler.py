@@ -18,6 +18,19 @@ from shared.tenant import TenantContext
 
 logger = logging.getLogger(__name__)
 
+# Only these two offsets (Task 4 of the appointment scheduling plan: "1hr
+# and 30min before") map to an actual notification kind/template today --
+# see identity/domain/models.py's Merchant.reminder_offsets_minutes and
+# notifications/domain/models.py's NOTIFICATION_KINDS docstring. A
+# merchant with some other offset configured (no UI sets one today) gets
+# no reminder for it -- silently skipped below, not an error, same
+# "unrecognized/unconfigured = no-op" convention the rest of this scan
+# already follows for a merchant with no reminder template at all.
+_REMINDER_KIND_BY_OFFSET_MINUTES = {
+    60: "appointment_reminder_60m",
+    30: "appointment_reminder_30m",
+}
+
 
 async def sweep_abandoned_orders() -> None:
     """Timeout sweep from ARCHITECTURE.md Section 7a/Section 10 -- orders
@@ -38,7 +51,7 @@ async def sweep_abandoned_orders() -> None:
             logger.info("Cancelled %d abandoned order(s)", len(stale_orders))
 
 
-async def send_due_appointment_reminders() -> None:
+async def send_due_appointment_reminders(now_utc: datetime.datetime | None = None) -> None:
     """Appointment-reminder scan (plan Task 4) -- reuses this same
     AsyncIOScheduler rather than introducing Celery/Redis/BullMQ; this app
     has zero queue infrastructure by design and this is a 5-minute table
@@ -49,15 +62,22 @@ async def send_due_appointment_reminders() -> None:
     idempotency table, so a cancellation or reschedule after a reminder
     became eligible but before it was sent is automatically safe -- the
     next tick simply won't find that appointment (or will find it at its
-    new time) rather than needing an explicit cancel-pending-reminder step."""
-    settings = get_settings()
-    if not settings.whatsapp_appointment_reminder_template_name:
-        # No approved template configured -- every send would just fail at
-        # Meta, so skip the scan entirely rather than log a failure per
-        # confirmed appointment every 5 minutes.
-        return
+    new time) rather than needing an explicit cancel-pending-reminder step.
 
-    now_utc = datetime.datetime.now(datetime.UTC)
+    Unlike the old single-global-template design, this no longer bails
+    out early when the global whatsapp_appointment_reminder_template_name
+    env var is unset -- a merchant can configure their own per-kind
+    template (NotificationTemplate rows for appointment_reminder_60m/30m)
+    with no global default set at all, so that decision has to happen per
+    merchant/offset, inside notify_appointment_reminder, not once here.
+
+    now_utc is injectable (defaults to the real clock in every production
+    call site) so a test can seed an appointment at a fixed offset and
+    then simulate "10 minutes later" by calling this again with a later
+    now_utc, rather than needing to actually sleep -- same testability
+    convention appointment_flow.domain.reminders.is_reminder_due and
+    appointment_flow.domain.availability.get_available_slots already use."""
+    now_utc = now_utc if now_utc is not None else datetime.datetime.now(datetime.UTC)
     channel = WhatsAppNotificationChannel(get_whatsapp_sender())
 
     async with SessionFactory() as session:
@@ -67,7 +87,11 @@ async def send_due_appointment_reminders() -> None:
 
     sent_count = 0
     for merchant in merchants:
-        offsets = merchant.reminder_offsets_hours
+        offsets = [
+            offset
+            for offset in merchant.reminder_offsets_minutes
+            if offset in _REMINDER_KIND_BY_OFFSET_MINUTES
+        ]
         if not offsets:
             continue
 
@@ -82,14 +106,14 @@ async def send_due_appointment_reminders() -> None:
 
             for appointment in appointments:
                 already_sent = await reminder_repo.sent_offsets(appointment.appointment_id)
-                for offset_hours in offsets:
-                    if offset_hours in already_sent:
+                for offset_minutes in offsets:
+                    if offset_minutes in already_sent:
                         continue
                     if not is_reminder_due(
                         appointment_date=appointment.appointment_date,
                         start_time=appointment.start_time,
                         timezone=merchant.timezone,
-                        offset_hours=offset_hours,
+                        offset_minutes=offset_minutes,
                         now_utc=now_utc,
                     ):
                         continue
@@ -97,9 +121,10 @@ async def send_due_appointment_reminders() -> None:
                     sent = await channel.notify_appointment_reminder(
                         merchant_id=merchant.merchant_id,
                         appointment_id=appointment.appointment_id,
+                        kind=_REMINDER_KIND_BY_OFFSET_MINUTES[offset_minutes],
                     )
                     if sent:
-                        await reminder_repo.mark_sent(appointment.appointment_id, offset_hours)
+                        await reminder_repo.mark_sent(appointment.appointment_id, offset_minutes)
                         await session.commit()
                         sent_count += 1
                     # A failed send leaves no AppointmentReminder row, so

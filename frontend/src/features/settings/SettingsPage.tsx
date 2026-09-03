@@ -330,6 +330,11 @@ function AppointmentAvailabilitySettingsSection() {
             slot_duration_minutes: row.slot_duration_minutes,
             buffer_minutes: row.buffer_minutes,
           })),
+        // Round-tripped unmodified -- this form has no UI for editing
+        // reminder timing yet, and the PUT is a full replace, so omitting
+        // this field would silently reset it to the server default on
+        // every hours-only save.
+        reminder_offsets_minutes: data?.reminder_offsets_minutes ?? [60, 30],
       },
       {
         onSuccess: () => {
@@ -453,8 +458,11 @@ const KIND_LABELS: Record<NotificationTemplateOut['notification_kind'], string> 
   order_processing: 'Order processing',
   order_ready: 'Order ready',
   order_completed: 'Order completed',
+  appointment_requested: 'Appointment requested',
   appointment_confirmed: 'Appointment confirmed',
   appointment_cancelled: 'Appointment cancelled',
+  appointment_reminder_60m: 'Appointment reminder (1 hour before)',
+  appointment_reminder_30m: 'Appointment reminder (30 minutes before)',
 }
 
 const KIND_DESCRIPTIONS: Record<NotificationTemplateOut['notification_kind'], string> = {
@@ -462,9 +470,25 @@ const KIND_DESCRIPTIONS: Record<NotificationTemplateOut['notification_kind'], st
   order_processing: 'Sent the moment staff mark the order Processing.',
   order_ready: 'Sent the moment staff mark the order Ready for pickup/delivery.',
   order_completed: 'Sent once staff mark the order Completed.',
+  appointment_requested: 'Sent as soon as a customer submits a booking request.',
   appointment_confirmed: 'Sent when staff confirm a requested appointment.',
   appointment_cancelled: 'Sent when staff cancel an appointment.',
+  appointment_reminder_60m:
+    'Sent automatically about 1 hour before a confirmed appointment, if not already cancelled.',
+  appointment_reminder_30m:
+    'Sent automatically about 30 minutes before a confirmed appointment, if not already cancelled.',
 }
+
+// Reminders send as a Meta-approved WhatsApp template message (required
+// once the customer's 24-hour session window has closed), not the
+// freeform {{var}} text every other kind uses -- only Template name/
+// Language here are actually sent; Message is an editable note for your
+// own reference, not what the customer receives. See
+// notifications/domain/models.py's NOTIFICATION_KINDS docstring.
+const REMINDER_KINDS: NotificationTemplateOut['notification_kind'][] = [
+  'appointment_reminder_60m',
+  'appointment_reminder_30m',
+]
 
 const ORDER_TEMPLATE_VARIABLES = [
   '{{business_name}}',
@@ -482,7 +506,9 @@ const APPOINTMENT_TEMPLATE_VARIABLES = [
 ]
 
 function templateVariablesFor(kind: NotificationTemplateOut['notification_kind']): string[] {
-  return kind === 'appointment_confirmed' || kind === 'appointment_cancelled'
+  return kind === 'appointment_confirmed' ||
+    kind === 'appointment_cancelled' ||
+    kind === 'appointment_requested'
     ? APPOINTMENT_TEMPLATE_VARIABLES
     : ORDER_TEMPLATE_VARIABLES
 }
@@ -526,6 +552,15 @@ function TemplateRow({ template }: { template: NotificationTemplateOut }) {
         <Badge tone={badgeTone}>{badgeLabel}</Badge>
       </div>
 
+      {REMINDER_KINDS.includes(template.notification_kind) && (
+        <p className="bg-secondary/40 text-muted-foreground rounded-md border p-2.5 text-xs">
+          Reminders send outside the customer's WhatsApp session window, so they must use a
+          Meta-approved template message. Set Template name/Language to a template already approved
+          in your Meta Business Manager -- the Message below is a note for your own reference only,
+          not what the customer receives.
+        </p>
+      )}
+
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-lg space-y-3">
         <div className="grid grid-cols-[1fr_100px] gap-3">
           <div className="space-y-1.5">
@@ -549,12 +584,18 @@ function TemplateRow({ template }: { template: NotificationTemplateOut }) {
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor={`${template.notification_kind}_body`}>Message</Label>
+          <Label htmlFor={`${template.notification_kind}_body`}>
+            {REMINDER_KINDS.includes(template.notification_kind)
+              ? 'Message (reference only)'
+              : 'Message'}
+          </Label>
           <Textarea id={`${template.notification_kind}_body`} rows={3} {...register('body')} />
           {errors.body && <p className="text-destructive text-sm">{errors.body.message}</p>}
-          <p className="text-muted-foreground text-xs">
-            Variables: {templateVariablesFor(template.notification_kind).join(', ')}
-          </p>
+          {!REMINDER_KINDS.includes(template.notification_kind) && (
+            <p className="text-muted-foreground text-xs">
+              Variables: {templateVariablesFor(template.notification_kind).join(', ')}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

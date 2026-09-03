@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from appointments.domain.models import Appointment, AppointmentReminder
+from appointments.domain.models import Appointment, AppointmentReminder, AppointmentStatusEvent
 from shared.tenant import TenantContext
 
 
@@ -43,14 +43,28 @@ class AppointmentReminderRepository:
 
     async def sent_offsets(self, appointment_id: uuid.UUID) -> set[int]:
         result = await self._session.execute(
-            select(AppointmentReminder.offset_hours).where(
+            select(AppointmentReminder.offset_minutes).where(
                 AppointmentReminder.appointment_id == appointment_id
             )
         )
         return {row[0] for row in result.all()}
 
-    async def mark_sent(self, appointment_id: uuid.UUID, offset_hours: int) -> None:
+    async def mark_sent(self, appointment_id: uuid.UUID, offset_minutes: int) -> None:
+        """Writes both the idempotency row (AppointmentReminder, checked
+        by sent_offsets above) and a timeline entry (AppointmentStatusEvent,
+        Task 5 -- so staff can see in the dashboard's history dropdown
+        that a reminder actually went out, not just that one's due) in
+        the same flush -- always together, since they mean the same
+        thing: this reminder was sent."""
         self._session.add(
-            AppointmentReminder(appointment_id=appointment_id, offset_hours=offset_hours)
+            AppointmentReminder(appointment_id=appointment_id, offset_minutes=offset_minutes)
+        )
+        self._session.add(
+            AppointmentStatusEvent(
+                appointment_id=appointment_id,
+                event_type="reminder_sent",
+                offset_minutes=offset_minutes,
+                changed_by="system",
+            )
         )
         await self._session.flush()
