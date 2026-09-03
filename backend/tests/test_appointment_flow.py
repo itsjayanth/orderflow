@@ -21,12 +21,12 @@ _FUTURE_DATE_ISO = _FUTURE_DATE.isoformat()
 
 
 async def _make_tenant(
-    db_session: AsyncSession, *, vertical: str | None = "appointment"
+    db_session: AsyncSession, *, appointment_enabled: bool = True
 ) -> tuple[Merchant, TenantContext]:
     merchant = await MerchantRepository(db_session).create(
         business_name="Public Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
-    merchant.vertical = vertical
+    merchant.appointment_enabled = appointment_enabled
     await db_session.commit()
     return merchant, TenantContext(merchant_id=merchant.merchant_id)
 
@@ -69,8 +69,8 @@ async def _connect_whatsapp(
 
 async def _select_appointment_vertical(client: AsyncClient, tokens: dict) -> None:
     response = await client.put(
-        "/api/v1/onboarding/vertical",
-        json={"vertical": "appointment"},
+        "/api/v1/onboarding/verticals",
+        json={"restaurant_enabled": False, "appointment_enabled": True},
         headers=_auth_headers(tokens),
     )
     assert response.status_code == 200

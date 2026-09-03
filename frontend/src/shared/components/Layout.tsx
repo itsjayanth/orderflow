@@ -49,7 +49,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useLogout, useMe } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
-import type { MerchantVertical } from '@/shared/api/types'
 import { Toaster } from '@/shared/components/Toaster'
 import { ThemeToggle } from '@/shared/theme/ThemeToggle'
 
@@ -81,20 +80,18 @@ const TRAILING_NAV_ITEMS: NavItem[] = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-// Vertical-conditional (MULTI_VERTICAL_PLAN.md Phase M3): a restaurant
-// merchant sees Orders + Catalog, an appointment merchant sees Appointments
-// + Services -- never both, never neither. `vertical` is null only in the
-// brief window before a merchant answers the onboarding wizard's first
-// step, so no vertical-specific tab shows until it resolves, rather than
-// flashing one set and swapping to the other.
-function navItemsForVertical(vertical: MerchantVertical | null): NavItem[] {
-  const verticalItems =
-    vertical === 'restaurant'
-      ? RESTAURANT_NAV_ITEMS
-      : vertical === 'appointment'
-        ? APPOINTMENT_NAV_ITEMS
-        : []
-  return [...BASE_NAV_ITEMS, ...verticalItems, ...TRAILING_NAV_ITEMS]
+// Additive, not exclusive (VERTICAL_TOGGLE_PLAN.md): a merchant with both
+// verticals enabled sees Orders + Catalog + Appointments + Services, one
+// with just one enabled sees exactly that pair, and neither shows before
+// the merchant has enabled anything (the brief window before the
+// onboarding wizard's first step resolves) -- no flash-then-swap.
+function navItemsForVerticals(restaurantEnabled: boolean, appointmentEnabled: boolean): NavItem[] {
+  return [
+    ...BASE_NAV_ITEMS,
+    ...(restaurantEnabled ? RESTAURANT_NAV_ITEMS : []),
+    ...(appointmentEnabled ? APPOINTMENT_NAV_ITEMS : []),
+    ...TRAILING_NAV_ITEMS,
+  ]
 }
 
 const SIDEBAR_STORAGE_KEY = 'orderflow-sidebar-collapsed'
@@ -260,7 +257,10 @@ export function Layout() {
   }, [collapsed])
 
   const businessName = me.data?.merchant.business_name
-  const navItems = navItemsForVertical(me.data?.merchant.vertical ?? null)
+  const navItems = navItemsForVerticals(
+    me.data?.merchant.restaurant_enabled ?? false,
+    me.data?.merchant.appointment_enabled ?? false,
+  )
   const requestLogout = () => setLogoutConfirmOpen(true)
 
   return (

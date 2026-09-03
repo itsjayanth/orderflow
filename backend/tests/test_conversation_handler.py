@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from appointments.adapters.repository import AppointmentRepository
+from appointments.adapters.scheduling_repository import AppointmentServiceRepository
 from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
@@ -182,8 +183,20 @@ class RecordingNotificationChannel:
 
 
 async def _seed_connected_merchant(
-    db_session: AsyncSession, phone_number_id: str = "PNID1", vertical: str = "restaurant"
+    db_session: AsyncSession,
+    phone_number_id: str = "PNID1",
+    vertical: str = "restaurant",
+    *,
+    seed_readiness: bool = True,
 ):
+    """`vertical` is "restaurant", "appointment", or "both" -- maps onto the
+    two independent enabled flags (VERTICAL_TOGGLE_PLAN.md). `seed_readiness`
+    (default True) also creates a minimal available Item/active
+    AppointmentService for whichever vertical(s) are enabled, since
+    PLACE_ORDER/BOOK_APPOINTMENT are now gated on readiness as well as the
+    enabled flag, not just enabled alone -- pass seed_readiness=False for
+    tests specifically exercising the "enabled but not ready" empty-flow
+    guard."""
     merchant = await MerchantRepository(db_session).create(
         business_name="Test Business", owner_contact=f"{uuid.uuid4()}@example.com"
     )
@@ -194,13 +207,23 @@ async def _seed_connected_merchant(
     # These tests exercise the conversation handler itself, not onboarding
     # progression (that's test_onboarding_flow.py) -- jump the merchant
     # straight to "live" so the handler's onboarding-status guard doesn't
-    # reject every inbound message here. Defaults to the restaurant
-    # vertical since most existing tests here predate the appointment
-    # vertical; pass vertical="appointment" for the appointment-specific
-    # tests below.
+    # reject every inbound message here.
     merchant.onboarding_status = "live"
-    merchant.vertical = vertical
+    merchant.restaurant_enabled = vertical in ("restaurant", "both")
+    merchant.appointment_enabled = vertical in ("appointment", "both")
     await db_session.commit()
+
+    if seed_readiness:
+        if merchant.restaurant_enabled:
+            await ItemRepository(db_session).create(
+                tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+            )
+        if merchant.appointment_enabled:
+            await AppointmentServiceRepository(db_session).create(
+                tenant, name="Haircut", duration_minutes=30, price=None
+            )
+        await db_session.commit()
+
     return merchant, tenant
 
 
@@ -249,9 +272,8 @@ async def test_greeting_sends_intent_menu(db_session: AsyncSession) -> None:
 async def test_greeting_sends_appointment_menu_for_appointment_vertical(
     db_session: AsyncSession,
 ) -> None:
-    """MULTI_VERTICAL_PLAN.md Phase M4: exclusive, not additive -- an
-    appointment-vertical merchant never sees "Place order", and "Talk to
-    us" is gone for both verticals."""
+    """An appointment-only merchant never sees "Place order", and "Talk to
+    us" is gone for every vertical."""
     await _seed_connected_merchant(db_session, vertical="appointment")
     sender = FakeSender()
     message = _inbound(text="hi")
@@ -263,6 +285,47 @@ async def test_greeting_sends_appointment_menu_for_appointment_vertical(
     assert sender.list_calls == []
     button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
     assert button_ids == {"book_appointment", "track_appointment"}
+
+
+async def test_greeting_sends_all_four_options_when_both_verticals_enabled(
+    db_session: AsyncSession,
+) -> None:
+    """VERTICAL_TOGGLE_PLAN.md: additive, not exclusive -- a merchant with
+    both verticals enabled (and ready) sees all four options. That's more
+    than Meta's 3-button cap, so this tips over into a send_list call
+    instead of send_buttons."""
+    await _seed_connected_merchant(db_session, vertical="both")
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert sender.button_calls == []
+    assert len(sender.list_calls) == 1
+    option_ids = {o[0] for o in sender.list_calls[0]["options"]}
+    assert option_ids == {"place_order", "track_order", "book_appointment", "track_appointment"}
+
+
+async def test_greeting_omits_enabled_but_not_ready_vertical(db_session: AsyncSession) -> None:
+    """The "don't show an empty flow" guard (VERTICAL_TOGGLE_PLAN.md): a
+    merchant with appointment_enabled=True but zero active services doesn't
+    offer "Book appointment" at all -- same as if it weren't enabled.
+    restaurant_enabled=True with an available item still shows PLACE_ORDER,
+    proving this is per-vertical, not an all-or-nothing guard."""
+    _, tenant = await _seed_connected_merchant(db_session, vertical="both", seed_readiness=False)
+    await ItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.reply_sent is True
+    assert len(sender.button_calls) == 1
+    button_ids = {b[0] for b in sender.button_calls[0]["buttons"]}
+    assert button_ids == {"place_order", "track_order"}
 
 
 async def test_greeting_sends_menu_including_faqs_when_merchant_has_an_active_faq(
@@ -964,8 +1027,7 @@ async def test_tapping_faq_list_row_returns_stored_answer(db_session: AsyncSessi
 
 
 async def test_book_appointment_sends_flow_when_flow_configured(db_session: AsyncSession) -> None:
-    merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.vertical = "appointment"
+    merchant, tenant = await _seed_connected_merchant(db_session, vertical="appointment")
     await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
         tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
     )
@@ -985,8 +1047,7 @@ async def test_book_appointment_sends_flow_when_flow_configured(db_session: Asyn
 async def test_book_appointment_falls_back_to_link_when_flow_send_fails(
     db_session: AsyncSession,
 ) -> None:
-    merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.vertical = "appointment"
+    merchant, tenant = await _seed_connected_merchant(db_session, vertical="appointment")
     await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
         tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
     )
@@ -1007,8 +1068,7 @@ async def test_book_appointment_uses_browser_link_when_interaction_mode_is_brows
 ) -> None:
     """Same override as PLACE_ORDER's browser-link test above, but for
     appointment booking -- a configured Flow is still ignored entirely."""
-    merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.vertical = "appointment"
+    merchant, tenant = await _seed_connected_merchant(db_session, vertical="appointment")
     await WhatsAppBusinessAccountRepository(db_session).set_appointment_flow_credentials(
         tenant, flow_id="APPT_FLOW_1", private_key_encrypted=encrypt("dummy-pem")
     )
@@ -1046,9 +1106,7 @@ async def test_appointment_flow_completion_creates_appointment_not_order(
     creates_order_not_appointment's pattern for the analogous Order case."""
     from notifications import wiring
 
-    merchant, tenant = await _seed_connected_merchant(db_session)
-    merchant.vertical = "appointment"
-    await db_session.commit()
+    merchant, tenant = await _seed_connected_merchant(db_session, vertical="appointment")
     sender = FakeSender()
     message = _inbound(
         from_phone="919876543210",

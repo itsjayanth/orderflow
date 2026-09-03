@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/features/auth/authStore'
 import { apiFetch } from '@/shared/api/client'
-import type { MeResponse, MerchantVertical } from '@/shared/api/types'
+import type { MeResponse } from '@/shared/api/types'
 import { ThemeProvider } from '@/shared/theme/ThemeProvider'
 
 import { Layout } from './Layout'
@@ -20,7 +20,7 @@ vi.mock('@/shared/api/client', async () => {
 
 const mockedApiFetch = vi.mocked(apiFetch)
 
-function meResponse(vertical: MerchantVertical | null): MeResponse {
+function meResponse(restaurantEnabled: boolean, appointmentEnabled: boolean): MeResponse {
   return {
     staff_user: {
       staff_user_id: '00000000-0000-0000-0000-000000000000',
@@ -33,7 +33,8 @@ function meResponse(vertical: MerchantVertical | null): MeResponse {
       merchant_id: '11111111-1111-1111-1111-111111111111',
       business_name: 'Test Business',
       onboarding_status: 'live',
-      vertical,
+      restaurant_enabled: restaurantEnabled,
+      appointment_enabled: appointmentEnabled,
     },
   }
 }
@@ -63,8 +64,8 @@ describe('Layout nav', () => {
     useAuthStore.setState({ accessToken: 'test-token', status: 'authenticated' })
   })
 
-  it('shows Orders + Catalog, never Appointments/Services, for a restaurant merchant', async () => {
-    mockedApiFetch.mockResolvedValueOnce(meResponse('restaurant'))
+  it('shows Orders + Catalog, never Appointments/Services, for a restaurant-only merchant', async () => {
+    mockedApiFetch.mockResolvedValueOnce(meResponse(true, false))
 
     renderLayout()
 
@@ -74,8 +75,8 @@ describe('Layout nav', () => {
     expect(screen.queryByRole('link', { name: /services/i })).not.toBeInTheDocument()
   })
 
-  it('shows Appointments + Services, never Orders/Catalog, for an appointment merchant', async () => {
-    mockedApiFetch.mockResolvedValueOnce(meResponse('appointment'))
+  it('shows Appointments + Services, never Orders/Catalog, for an appointment-only merchant', async () => {
+    mockedApiFetch.mockResolvedValueOnce(meResponse(false, true))
 
     renderLayout()
 
@@ -85,8 +86,19 @@ describe('Layout nav', () => {
     expect(screen.queryByRole('link', { name: /catalog/i })).not.toBeInTheDocument()
   })
 
+  it('shows all four -- Orders, Catalog, Appointments, Services -- when both verticals are enabled', async () => {
+    mockedApiFetch.mockResolvedValueOnce(meResponse(true, true))
+
+    renderLayout()
+
+    expect(await screen.findByRole('link', { name: /orders/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /catalog/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /appointments/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /services/i })).toBeInTheDocument()
+  })
+
   it('shows neither vertical-specific tab before a vertical is chosen', async () => {
-    mockedApiFetch.mockResolvedValueOnce(meResponse(null))
+    mockedApiFetch.mockResolvedValueOnce(meResponse(false, false))
 
     renderLayout()
 

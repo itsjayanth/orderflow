@@ -3,9 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
 import type {
   BusinessProfileOut,
-  MerchantVertical,
   OnboardingStatusOut,
-  VerticalSelectionOut,
+  VerticalsSelectionOut,
 } from '@/shared/api/types'
 
 // Exported so mutations elsewhere (connecting WhatsApp in Settings, creating
@@ -21,18 +20,28 @@ export function useOnboardingStatus() {
   })
 }
 
-export function useSelectVertical() {
+export interface SelectVerticalsInput {
+  restaurant_enabled: boolean
+  appointment_enabled: boolean
+}
+
+// VERTICAL_TOGGLE_PLAN.md: multi-select, and callable any number of times --
+// this same mutation backs both the onboarding wizard's first step and
+// Settings' "Business types" section (adding a vertical after going live).
+// No immutability guard on the backend, so no special-casing here either.
+export function useSelectVerticals() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (vertical: MerchantVertical) =>
-      apiFetch<VerticalSelectionOut>('/api/v1/onboarding/vertical', {
+    mutationFn: (input: SelectVerticalsInput) =>
+      apiFetch<VerticalsSelectionOut>('/api/v1/onboarding/verticals', {
         method: 'PUT',
-        body: JSON.stringify({ vertical }),
+        body: JSON.stringify(input),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: onboardingStatusQueryKey })
-      // Merchant.vertical is also read off GET /me for dashboard nav
-      // (Layout.tsx) -- keep that in sync the moment it's set.
+      // Merchant.restaurant_enabled/appointment_enabled are also read off
+      // GET /me for dashboard nav (Layout.tsx) -- keep that in sync the
+      // moment they're set.
       queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
     },
   })

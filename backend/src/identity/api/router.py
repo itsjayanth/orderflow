@@ -30,6 +30,7 @@ from identity.domain.auth import (
     register_merchant,
     rotate_tokens,
 )
+from onboarding.domain.onboarding_service import try_advance_for_catalog_ready
 from shared.config import get_settings
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
 from shared.security import decode_token
@@ -196,6 +197,10 @@ async def create_appointment_service(
     service = await AppointmentServiceRepository(session).create(
         tenant, name=body.name, duration_minutes=body.duration_minutes, price=body.price
     )
+    # A new service is active by default, so this is the most common way the
+    # onboarding gate (VERTICAL_TOGGLE_PLAN.md's appointment_ready) gets met
+    # -- mirrors catalog/api/router.py's create_item.
+    await try_advance_for_catalog_ready(session, tenant)
     await session.commit()
     return AppointmentServiceOut.model_validate(service)
 
@@ -212,6 +217,10 @@ async def update_appointment_service(
     )
     if service is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")
+    # Covers the case where the gate is only met by un-hiding an existing
+    # service (is_active: true) rather than creating a new one -- mirrors
+    # catalog/api/router.py's update_item.
+    await try_advance_for_catalog_ready(session, tenant)
     await session.commit()
     return AppointmentServiceOut.model_validate(service)
 

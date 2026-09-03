@@ -170,13 +170,14 @@ def _auth_headers(tokens: dict) -> dict:
 
 
 async def test_me_reports_no_vertical_by_default(client: AsyncClient) -> None:
-    """Superseded the additive appointment_booking_enabled toggle
-    (MULTI_VERTICAL_PLAN.md Phase M5) -- a freshly-registered merchant has
-    no vertical yet until the onboarding wizard's first step sets one (see
-    test_onboarding_flow.py's vertical-selection endpoint tests)."""
+    """VERTICAL_TOGGLE_PLAN.md Phase T1: a freshly-registered merchant has
+    neither vertical enabled yet until the onboarding wizard's first step
+    (or, later, Settings) sets one -- see test_onboarding_flow.py's
+    vertical-selection endpoint tests."""
     tokens = await _register(client)
 
     response = await client.get("/api/v1/auth/me", headers=_auth_headers(tokens))
 
     assert response.status_code == 200
-    assert response.json()["merchant"]["vertical"] is None
+    assert response.json()["merchant"]["restaurant_enabled"] is False
+    assert response.json()["merchant"]["appointment_enabled"] is False
