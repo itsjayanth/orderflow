@@ -29,3 +29,12 @@ window.matchMedia ??= (query: string) =>
     removeEventListener: () => {},
     dispatchEvent: () => false,
   }) as unknown as MediaQueryList
+
+// jsdom doesn't implement elementFromPoint either -- react-big-calendar's
+// Selection helper (used by the appointments calendar view for click/drag
+// range selection) calls it from a document-level mousedown listener that's
+// live for as long as any calendar is mounted, so it can fire during
+// unrelated interactions elsewhere on the page in tests. A stub returning
+// null (nothing at that point) is enough since no test asserts on
+// drag-to-select behavior.
+document.elementFromPoint ??= () => null

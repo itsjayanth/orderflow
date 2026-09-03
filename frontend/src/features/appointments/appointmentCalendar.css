@@ -83,3 +83,10 @@
 .rbc-theme-wrapper .rbc-current-time-indicator {
   background-color: var(--destructive);
 }
+
+/* Day view only: tints the slots inside the merchant's configured working
+   hours, following the same color-mix-over-token pattern as
+   --rbc-today-bg above so it stays correct in both light and dark theme. */
+.rbc-theme-wrapper .appointment-working-hours-slot {
+  background-color: color-mix(in oklch, var(--primary) 6%, transparent);
+}
