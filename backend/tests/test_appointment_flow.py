@@ -209,6 +209,148 @@ async def test_appointment_flow_info_404_for_unknown_merchant(client: AsyncClien
     assert response.status_code == 404
 
 
+# --- customer-lookup (prefill for the booking webview) -------------------
+
+
+async def test_appointment_customer_lookup_returns_404_for_new_customer(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _select_appointment_vertical(client, tokens)
+
+    response = await client.get(
+        f"/api/v1/appointment-flow/{tenant.merchant_id}/customer-lookup",
+        params={"whatsapp_number": "+919876543210"},
+    )
+
+    assert response.status_code == 404
+
+
+async def test_appointment_customer_lookup_unknown_merchant_returns_404(
+    client: AsyncClient,
+) -> None:
+    response = await client.get(
+        f"/api/v1/appointment-flow/{uuid.uuid4()}/customer-lookup",
+        params={"whatsapp_number": "+919876543210"},
+    )
+
+    assert response.status_code == 404
+
+
+async def test_appointment_customer_lookup_returns_name_and_email_for_returning_customer(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _select_appointment_vertical(client, tokens)
+    await CustomerRepository(db_session).create(
+        tenant, whatsapp_number="+919876543210", display_name="Asha", email="asha@example.com"
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/appointment-flow/{tenant.merchant_id}/customer-lookup",
+        params={"whatsapp_number": "+919876543210"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display_name"] == "Asha"
+    assert body["email"] == "asha@example.com"
+
+
+async def test_appointment_customer_lookup_returns_blank_email_when_customer_never_gave_one(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A customer with a phone on file (e.g. from a past order) but no
+    email yet -- an incomplete profile to fill once, not an error."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _select_appointment_vertical(client, tokens)
+    await CustomerRepository(db_session).find_or_create(
+        tenant, "+919876543210", display_name="Asha"
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/appointment-flow/{tenant.merchant_id}/customer-lookup",
+        params={"whatsapp_number": "+919876543210"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display_name"] == "Asha"
+    assert body["email"] is None
+
+
+async def test_appointment_customer_lookup_isolated_between_merchants(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens_a = await _register(client, owner_contact="owner-a@example.com")
+    tenant_a = await _tenant_for(client, tokens_a)
+    await _select_appointment_vertical(client, tokens_a)
+    await CustomerRepository(db_session).create(
+        tenant_a, whatsapp_number="+919876543210", display_name="Asha", email="asha@example.com"
+    )
+    await db_session.commit()
+
+    tokens_b = await _register(client, owner_contact="owner-b@example.com")
+    tenant_b = await _tenant_for(client, tokens_b)
+    await _select_appointment_vertical(client, tokens_b)
+
+    response = await client.get(
+        f"/api/v1/appointment-flow/{tenant_b.merchant_id}/customer-lookup",
+        params={"whatsapp_number": "+919876543210"},
+    )
+
+    assert response.status_code == 404
+
+
+# --- /book: persistence + identity-resolution behavior --------------------
+
+
+async def test_book_appointment_persists_edited_name_and_email_as_new_defaults(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    await _select_appointment_vertical(client, tokens)
+    await CustomerRepository(db_session).find_or_create(
+        tenant, "+919876543210", display_name="Asha"
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/appointment-flow/{tenant.merchant_id}/book",
+        json={
+            "customer_whatsapp_number": "+919876543210",
+            "name": "Asha Rao",
+            "email": "asha.rao@example.com",
+            "appointment_date": _FUTURE_DATE_ISO,
+            "start_time": "18:00:00",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    customer = await CustomerRepository(db_session).get_by_whatsapp_number(
+        tenant, "+919876543210"
+    )
+    assert customer is not None
+    assert customer.display_name == "Asha Rao"
+    assert customer.email == "asha.rao@example.com"
+
+
+async def test_book_appointment_request_schema_has_no_contact_phone_override_field() -> None:
+    """The appointment webview has no "use a different number" concept --
+    AppointmentFlowBookingRequest deliberately carries no contact-phone-
+    override field the order flow's OrderingFlowCheckoutRequest has, so
+    there's no field a crafted payload could even use to try."""
+    from appointment_flow.api.schemas import AppointmentFlowBookingRequest
+
+    assert "contact_phone" not in AppointmentFlowBookingRequest.model_fields
+
+
 async def test_book_appointment_happy_path(client: AsyncClient, db_session: AsyncSession) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)

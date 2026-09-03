@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from appointment_flow.api.schemas import (
     AppointmentFlowBookingRequest,
     AppointmentFlowBookingResponse,
+    AppointmentFlowCustomerLookupOut,
     AppointmentFlowInfoOut,
     AppointmentFlowServiceOut,
     AppointmentFlowSlotOut,
@@ -14,6 +15,7 @@ from appointment_flow.domain.availability import get_available_slots
 from appointment_flow.domain.booking import PastDateError, perform_booking, resolve_duration_minutes
 from appointments.adapters.repository import SlotConflictError
 from appointments.adapters.scheduling_repository import AppointmentServiceRepository
+from customers.domain.identity_resolution import resolve_customer_by_whatsapp_id
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
@@ -94,6 +96,30 @@ async def get_appointment_flow_availability(
         staff_id=staff_id,
     )
     return [AppointmentFlowSlotOut(start_time=s.start_time, end_time=s.end_time) for s in slots]
+
+
+@router.get("/{merchant_id}/customer-lookup", response_model=AppointmentFlowCustomerLookupOut)
+async def customer_lookup(
+    merchant_id: uuid.UUID, whatsapp_number: str, session: DbSession
+) -> AppointmentFlowCustomerLookupOut:
+    """Public and unauthenticated, same security model as
+    ordering_flow.api.router.customer_lookup -- lets the booking webview
+    prefill a returning customer's name and email once it knows their
+    WhatsApp number (normally the `wa` query param the CTA link already
+    carries, never a number the customer typed in here). 404s for a
+    customer that doesn't exist yet, same as the ordering webview's
+    version -- the normal new-customer case, not an error."""
+    merchant = await _get_bookable_merchant_or_404(session, merchant_id)
+    tenant = TenantContext(merchant_id=merchant.merchant_id)
+
+    resolved = await resolve_customer_by_whatsapp_id(session, tenant, whatsapp_number)
+    if resolved is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Customer not found")
+
+    return AppointmentFlowCustomerLookupOut(
+        display_name=resolved.customer.display_name,
+        email=resolved.customer.email,
+    )
 
 
 @router.post(
