@@ -62,3 +62,42 @@ Traced through the actual code, not the aspirational design — it goes stale as
 Gated together: `fulfillment_status` stays unset until `payment_status` reaches `paid` or `cod_pending`, so kitchen staff never see an order without a valid payment path; a `cancelled` payment status force-cancels fulfillment too. Payment-side transitions come from the Razorpay webhook (`POST /api/v1/payments/webhook/razorpay/{merchant_id}`, signature-verified) or the abandoned-order sweep; fulfillment-side transitions are manual-staff-only via `PATCH /api/v1/orders/{order_id}/fulfillment-status`, each firing an event that `notifications/wiring.py` turns into a WhatsApp status update. The dashboard (`frontend/src/features/orders/`) is a real working orders list/detail/status-transition UI, not scaffolding — `statusTransitions.ts` mirrors backend-allowed transitions client-side (server still enforces). `payments/api/dashboard_router.py`'s `/test-checkout` endpoint is explicitly a staff-facing stand-in for the real WhatsApp flow, not customer-facing.
 
 **4. Pricing** — Entirely static and minimal: **no tax, delivery fee, or discount/coupon logic anywhere** (zero grep hits for coupon/discount/promo/delivery-fee), and no schema fields to even persist such values (`Order` has `subtotal`/`total`/`currency` only). `perform_checkout()` (`ordering_flow/domain/checkout.py`) freezes each cart line's catalog price as `price_snapshot`; `OrderRepository.create()` computes `line_total = price_snapshot * quantity`, `subtotal = sum(line_totals)`, and `total = subtotal` — a straight passthrough. `Item.price` (`catalog/domain/models.py`) is a single flat `Numeric(10,2)` — no variants, modifiers, or rules engine.
+
+## Development workflow
+
+For any major new feature, significant change, or large task in this repo, the following Trello-linked workflow is mandatory before writing code. This applies to major changes only — trivial fixes, typos, or tiny chores are exempt unless explicitly requested.
+
+1. Check the Trello board `Orderflow` for an existing card matching the task (by title/description/keyword).
+2. If no matching card exists, create one on the `Orderflow` board with a clear title and a description covering: problem/goal, scope, affected modules, and acceptance criteria.
+3. Note the Trello card ID/short link.
+4. Create a matching folder under `/plans` named with that same Trello card ID (e.g. `plans/ORD-123-short-slug/`), containing a `PLAN.md` with the implementation plan (approach, steps, files to touch, risks).
+5. Create a working branch named after the same ticket ID (e.g. `feature/ORD-123-short-slug`).
+6. Implement the task on that branch, committing with the ticket ID in commit messages (e.g. `ORD-123: add retry logic to order queue`).
+7. Push the branch and open a PR. Include the Trello card link in the PR description.
+8. Add the PR link back to the Trello card (as a comment or attachment).
+9. Move the Trello card through appropriate states as work progresses (e.g. To Do → In Progress → In Review → Done), and add a comment at each transition summarizing what changed.
+10. Once the PR is reviewed/approved, merge it, then add a final comment on the Trello card confirming merge (with commit hash) and move the card to Done.
+
+### Ongoing sync + auditing
+
+Keep the plan file (`/plans/<TICKET-ID>-<slug>/PLAN.md`) as the single source of truth for task status: a checklist of subtasks (`- [ ]` / `- [x]`) checked off in the same commit that completes them (not batched), plus a dated "Progress Log" section at the bottom recording what was done, the commit hash, and any deviation from the original plan and why.
+
+Mirror progress into Trello in lockstep, not just at PR/merge time:
+
+- Comment on the matching card whenever a `PLAN.md` subtask is checked off (what was done, commit hash, link).
+- Add newly-discovered subtasks to both `PLAN.md` and as a Trello checklist item on the card.
+- Keep `PLAN.md`'s scope description and the Trello card description in sync if scope changes.
+
+Before moving any card to "In Review" or "Done", perform an audit pass:
+
+- Re-read `PLAN.md` top to bottom and confirm every checklist item is actually reflected in the code.
+- Diff the branch against main for stray changes.
+- Confirm commit messages reference the correct ticket ID.
+- Confirm the Trello card's comment history is complete and matches `PLAN.md` with no contradictions.
+- Confirm the plan folder ticket ID, branch name, PR title, and Trello card ID all match exactly.
+
+Flag and report any mismatch found during the audit BEFORE merging or closing the card — never silently fix and move on.
+
+On completion, produce a short audit summary as the final Trello card comment and as the closing Progress Log entry in `PLAN.md`: planned vs. actually delivered (call out gaps), final commit hash, PR link, merge status, and any follow-up items spun into new cards/plans (with links).
+
+This sync+audit step is mandatory for every major task under this workflow, not optional cleanup.
