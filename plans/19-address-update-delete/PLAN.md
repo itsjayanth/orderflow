@@ -41,14 +41,14 @@ Out of scope: WhatsApp-side (Flow) address editing, a generalized soft-delete fl
 
 ## Acceptance criteria
 
-- [ ] Staff can PATCH an existing address's fields via the API and see the update reflected
+- [x] Staff can PATCH an existing address's fields via the API and see the update reflected
       on the next GET.
-- [ ] Setting `is_default=True` on one address clears it on the customer's other addresses.
-- [ ] DELETE removes an address with no order history.
-- [ ] DELETE on an address referenced by any order returns 409, not a raw DB error, and the
+- [x] Setting `is_default=True` on one address clears it on the customer's other addresses.
+- [x] DELETE removes an address with no order history.
+- [x] DELETE on an address referenced by any order returns 409, not a raw DB error, and the
       address is left intact.
-- [ ] Both endpoints 404 for an address that doesn't belong to the given customer_id/tenant.
-- [ ] `ruff check`, `mypy`, and `pytest` (customers + full suite) all pass.
+- [x] Both endpoints 404 for an address that doesn't belong to the given customer_id/tenant.
+- [x] `ruff check`, `mypy`, and `pytest` (customers + full suite) all pass.
 
 ## Implementation steps
 
@@ -83,4 +83,31 @@ is unchanged.
 
 ## Progress Log
 
-(filled in as work proceeds)
+2026-09-04 — Implemented `AddressRepository.update()`/`delete()` in
+`backend/src/customers/adapters/repository.py`: `update()` applies an
+exclude_unset-style partial update scoped by merchant_id + customer_id +
+address_id, and clears `is_default` on the customer's other addresses (same
+flush) when `is_default=True` is set; `delete()` is scoped the same way and
+raises a new `AddressInUseError` (via a function-scoped import of
+`orders.domain.models.Order` to avoid a circular import) when any
+`Order.delivery_address_id` references the address.
+
+2026-09-04 — Added the `AddressUpdate` Pydantic schema
+(`backend/src/customers/api/schemas.py`) and the
+`PATCH /api/v1/customers/{customer_id}/addresses/{address_id}` and
+`DELETE /api/v1/customers/{customer_id}/addresses/{address_id}` endpoints
+(`backend/src/customers/api/router.py`), mapping not-found to 404 and
+`AddressInUseError` to 409.
+
+2026-09-04 — Added tests in `backend/tests/test_customers.py` covering every
+acceptance-criteria bullet: repository-level update (partial fields,
+is_default exclusivity, not-found) and delete (success, order-referenced
+raises `AddressInUseError`), plus API-level PATCH/DELETE tests (success,
+404 for wrong customer, 404 for wrong tenant, 404 not-found, 409 when an
+order references the address). Added an `_seed_order_referencing_address`
+test helper mirroring `test_orders.py`'s `_seed_order` pattern. Started a
+local Postgres 16 instance and set up `orderflow`/`orderflow_test`
+databases + `.env` to run the suite (none of this is part of the app
+config). `ruff check .`, `mypy src` (one pre-existing, unrelated error in
+`payments/api/router.py` confirmed present on `main` too), and `pytest`
+(customers: 33 passed; full suite: 719 passed) all green.
