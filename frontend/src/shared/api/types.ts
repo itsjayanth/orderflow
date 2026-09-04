@@ -440,3 +440,35 @@ export interface MessageTemplateOut {
   created_at: string
   updated_at: string
 }
+
+export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'completed' | 'failed'
+
+export type AudienceFilter =
+  | { kind: 'all' }
+  | { kind: 'ordered_within_days'; days: number }
+  | { kind: 'no_order_within_days'; days: number }
+
+export interface CampaignOut {
+  campaign_id: string
+  name: string
+  template_id: string
+  audience_filter: AudienceFilter
+  scheduled_at: string | null
+  status: CampaignStatus
+  created_by: string
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+}
+
+export interface CampaignRecipientCounts {
+  pending: number
+  sent: number
+  failed: number
+  skipped_opted_out: number
+  skipped_no_number: number
+}
+
+export interface CampaignDetailOut extends CampaignOut {
+  recipient_counts: CampaignRecipientCounts
+}

@@ -1,4 +1,5 @@
-import { Megaphone, Trash2 } from 'lucide-react'
+import { ChevronLeft, Megaphone, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { Badge, type Tone } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -61,6 +62,14 @@ export function TemplatesPage() {
 
   return (
     <div className="space-y-6">
+      <Link
+        to="/campaigns"
+        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm transition-colors duration-150"
+      >
+        <ChevronLeft className="size-4" />
+        Back to campaigns
+      </Link>
+
       <PageHeader
         title="Templates"
         description="WhatsApp message templates for broadcast campaigns, submitted to Meta for approval."
