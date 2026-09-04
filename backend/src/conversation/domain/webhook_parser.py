@@ -89,3 +89,63 @@ def parse_inbound_messages(payload: dict[str, Any]) -> list[InboundMessage]:
                 )
 
     return messages
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateStatusUpdate:
+    meta_template_id: str
+    status: str
+    reason: str | None = None
+
+
+# Meta's own event names -> MessageTemplate.meta_approval_status's values
+# (campaigns/domain/models.py's TEMPLATE_APPROVAL_STATUSES) -- Meta's
+# webhook uses uppercase event names distinct from this codebase's
+# lowercase status column. An event not in this table (e.g. IN_APPEAL,
+# which Meta also sends but this codebase has no dedicated status for) is
+# silently skipped, same "unrecognized field/event = nothing to act on,
+# not an error" convention parse_inbound_messages already follows.
+_APPROVAL_STATUS_BY_META_EVENT: dict[str, str] = {
+    "APPROVED": "approved",
+    "REJECTED": "rejected",
+    "PENDING": "pending",
+    "PAUSED": "paused",
+    "DISABLED": "disabled",
+}
+
+
+def parse_template_status_updates(payload: dict[str, Any]) -> list[TemplateStatusUpdate]:
+    """Parses a WhatsApp Cloud API webhook payload's `entry[].changes[]`
+    where `field == "message_template_status_update"` into
+    TemplateStatusUpdate records -- mirrors parse_inbound_messages' own
+    "walk entry/changes, skip anything not shaped like what I'm looking
+    for" structure, just keyed off `field` instead of the presence of a
+    `messages` list. Meta multiplexes multiple event types onto the same
+    subscribed webhook URL/payload, so a real inbound payload can carry
+    both message and template-status changes interleaved -- this and
+    parse_inbound_messages are both run against the same raw payload by
+    conversation/api/router.py's receive_webhook, not routed separately."""
+    updates: list[TemplateStatusUpdate] = []
+
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            if change.get("field") != "message_template_status_update":
+                continue
+            value = change.get("value", {})
+            meta_template_id = value.get("message_template_id")
+            event = value.get("event")
+            if meta_template_id is None or event is None:
+                continue
+            status = _APPROVAL_STATUS_BY_META_EVENT.get(str(event).upper())
+            if status is None:
+                continue
+
+            updates.append(
+                TemplateStatusUpdate(
+                    meta_template_id=str(meta_template_id),
+                    status=status,
+                    reason=value.get("reason"),
+                )
+            )
+
+    return updates

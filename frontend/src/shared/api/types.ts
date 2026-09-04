@@ -411,3 +411,32 @@ export interface AppointmentFlowBookingResponse {
   start_time: string
   end_time: string
 }
+
+export type TemplateCategory = 'MARKETING' | 'UTILITY'
+export type TemplateHeaderType = 'NONE' | 'TEXT' | 'IMAGE'
+export type TemplateApprovalStatus = 'pending' | 'approved' | 'rejected' | 'paused' | 'disabled'
+
+export interface TemplateButton {
+  type: 'QUICK_REPLY' | 'URL'
+  text: string
+  url: string | null
+}
+
+export interface MessageTemplateOut {
+  template_id: string
+  name: string
+  category: TemplateCategory
+  language_code: string
+  header_type: TemplateHeaderType
+  header_text: string | null
+  header_media_handle: string | null
+  body_text: string
+  body_variable_count: number
+  footer_text: string | null
+  buttons: TemplateButton[]
+  meta_template_id: string | null
+  meta_approval_status: TemplateApprovalStatus
+  meta_rejection_reason: string | null
+  created_at: string
+  updated_at: string
+}

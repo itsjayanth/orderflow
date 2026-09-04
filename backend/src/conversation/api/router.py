@@ -2,9 +2,10 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
+from campaigns.domain.template_status import apply_template_status_update
 from conversation.adapters.whatsapp_client import WhatsAppSender, get_whatsapp_sender
 from conversation.domain.handler import handle_inbound_message
-from conversation.domain.webhook_parser import parse_inbound_messages
+from conversation.domain.webhook_parser import parse_inbound_messages, parse_template_status_updates
 from shared.config import get_settings
 from shared.deps import DbSession
 
@@ -40,5 +41,15 @@ async def receive_webhook(
 
     for message in messages:
         await handle_inbound_message(session, sender, message)
+
+    # Meta multiplexes multiple event types onto this one subscribed
+    # webhook URL/payload -- template approval/rejection/pause events
+    # (campaigns/) arrive here too, not to a separate route. Applied after
+    # inbound messages, on the same already-parsed payload/session.
+    template_updates = parse_template_status_updates(payload)
+    for update in template_updates:
+        await apply_template_status_update(session, update)
+    if template_updates:
+        await session.commit()
 
     return {"status": "ok"}

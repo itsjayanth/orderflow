@@ -6,6 +6,7 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { RegisterPage } from '@/features/auth/RegisterPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
 import { BookingPage } from '@/features/booking/BookingPage'
+import { TemplatesPage } from '@/features/campaigns/TemplatesPage'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
 import { CustomersPage } from '@/features/customers/CustomersPage'
 import { DashboardHomePage } from '@/features/dashboard/DashboardHomePage'
@@ -42,6 +43,7 @@ export function App() {
           <Route path="services" element={<ServicesPage />} />
           <Route path="faq" element={<FAQPage />} />
           <Route path="customers" element={<CustomersPage />} />
+          <Route path="campaigns/templates" element={<TemplatesPage />} />
           <Route path="onboarding" element={<OnboardingPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

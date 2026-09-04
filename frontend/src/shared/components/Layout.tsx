@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Megaphone,
   Menu,
   Settings,
   Users,
@@ -76,6 +77,9 @@ const APPOINTMENT_NAV_ITEMS: NavItem[] = [
 const TRAILING_NAV_ITEMS: NavItem[] = [
   { to: '/faq', label: 'FAQs', icon: HelpCircle },
   { to: '/customers', label: 'Customers', icon: Users },
+  // Ungated by vertical (unlike Orders+Catalog/Appointments+Services above) --
+  // campaigns aren't restaurant- or appointment-specific.
+  { to: '/campaigns/templates', label: 'Campaigns', icon: Megaphone },
   { to: '/onboarding', label: 'Onboarding', icon: ListChecks },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
