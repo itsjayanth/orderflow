@@ -53,5 +53,17 @@ class AddressOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AddressUpdate(BaseModel):
+    label: str | None = Field(default=None, max_length=64)
+    line1: str | None = Field(default=None, max_length=255)
+    line2: str | None = Field(default=None, max_length=255)
+    landmark: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=128)
+    pincode: str | None = Field(default=None, max_length=16)
+    geo_lat: float | None = None
+    geo_long: float | None = None
+    is_default: bool | None = None
+
+
 class CustomerWithAddressesOut(CustomerOut):
     addresses: list[AddressOut]
