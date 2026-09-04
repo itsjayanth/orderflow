@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,15 @@ from shared.tenant import TenantContext
 
 
 class CustomerWhatsAppNumberConflictError(Exception):
+    pass
+
+
+class AddressInUseError(Exception):
+    """Raised by AddressRepository.delete when the address is still
+    referenced by Order.delivery_address_id -- past orders must keep their
+    delivery address intact (Order has no cascade/nullify path today, and
+    adding one is out of scope for this card)."""
+
     pass
 
 
@@ -309,3 +318,97 @@ class AddressRepository:
         self._session.add(address)
         await self._session.flush()
         return address
+
+    async def get(
+        self, tenant: TenantContext, customer_id: uuid.UUID, address_id: uuid.UUID
+    ) -> Address | None:
+        result = await self._session.execute(
+            select(Address).where(
+                Address.merchant_id == tenant.merchant_id,
+                Address.customer_id == customer_id,
+                Address.address_id == address_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update(
+        self,
+        tenant: TenantContext,
+        customer_id: uuid.UUID,
+        address_id: uuid.UUID,
+        *,
+        label: str | None = None,
+        line1: str | None = None,
+        line2: str | None = None,
+        landmark: str | None = None,
+        city: str | None = None,
+        pincode: str | None = None,
+        geo_lat: float | None = None,
+        geo_long: float | None = None,
+        is_default: bool | None = None,
+    ) -> Address | None:
+        """Dashboard-driven partial update, mirroring CustomerRepository.update's
+        exclude_unset pattern (via the router's model_dump(exclude_unset=True)) --
+        only fields actually passed are applied. When is_default=True is being
+        set, first clears is_default on the customer's other addresses in the
+        same flush, so a crash mid-update can't leave two defaults set."""
+        address = await self.get(tenant, customer_id, address_id)
+        if address is None:
+            return None
+
+        if label is not None:
+            address.label = label
+        if line1 is not None:
+            address.line1 = line1
+        if line2 is not None:
+            address.line2 = line2
+        if landmark is not None:
+            address.landmark = landmark
+        if city is not None:
+            address.city = city
+        if pincode is not None:
+            address.pincode = pincode
+        if geo_lat is not None:
+            address.geo_lat = geo_lat
+        if geo_long is not None:
+            address.geo_long = geo_long
+        if is_default is not None:
+            if is_default:
+                await self._session.execute(
+                    update(Address)
+                    .where(
+                        Address.merchant_id == tenant.merchant_id,
+                        Address.customer_id == customer_id,
+                        Address.address_id != address_id,
+                    )
+                    .values(is_default=False)
+                )
+            address.is_default = is_default
+
+        await self._session.flush()
+        return address
+
+    async def delete(
+        self, tenant: TenantContext, customer_id: uuid.UUID, address_id: uuid.UUID
+    ) -> bool:
+        """Tenant+customer-scoped delete, blocked with AddressInUseError if any
+        Order.delivery_address_id references this address -- past orders must
+        keep their delivery address intact. Deferred import of
+        orders.domain.models.Order: orders/domain/models.py already imports
+        from customers.domain.models, so a top-level import the other way
+        would create a circular import."""
+        from orders.domain.models import Order
+
+        address = await self.get(tenant, customer_id, address_id)
+        if address is None:
+            return False
+
+        referenced = await self._session.execute(
+            select(Order.order_id).where(Order.delivery_address_id == address_id).limit(1)
+        )
+        if referenced.scalar_one_or_none() is not None:
+            raise AddressInUseError(address_id)
+
+        await self._session.delete(address)
+        await self._session.flush()
+        return True
