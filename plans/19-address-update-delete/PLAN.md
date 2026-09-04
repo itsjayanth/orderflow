@@ -111,3 +111,14 @@ databases + `.env` to run the suite (none of this is part of the app
 config). `ruff check .`, `mypy src` (one pre-existing, unrelated error in
 `payments/api/router.py` confirmed present on `main` too), and `pytest`
 (customers: 33 passed; full suite: 719 passed) all green.
+
+2026-09-04 — **Closed.** PR #27 opened (https://github.com/itsjayanth/orderflow/pull/27),
+Trello card synced with PR link and moved to In Review / Testing. Vercel preview deploy
+check went green (`state: success`, `mergeable_state: clean`); no review comments needed
+action. Merged to `main` via squash-merge, commit `3da6290c5d7652b26734b4c3e8ca874ffadaaa17`.
+Trello card commented with the merge commit hash and moved to Done.
+
+Planned vs. delivered: everything in "Acceptance criteria" and "Implementation steps" above
+shipped exactly as scoped — no gaps. No follow-up cards/plans were spun out; the WhatsApp
+Flow-side address editing and `Order.delivery_address_id` cascade/nullify path noted as
+out-of-scope in the "Scope" section above remain open (not tracked as separate cards yet).
