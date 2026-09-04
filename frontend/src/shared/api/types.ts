@@ -37,6 +37,11 @@ export interface CustomerOut {
   first_seen_at: string
   last_order_at: string | null
   is_active: boolean
+  // Read-only -- only the customer's own STOP/START WhatsApp message
+  // changes this (see backend/src/conversation/domain/handler.py); no
+  // dashboard write path exists.
+  marketing_opt_out: boolean
+  marketing_opt_out_at: string | null
 }
 
 export interface AddressOut {

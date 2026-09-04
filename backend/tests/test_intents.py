@@ -67,3 +67,30 @@ def test_no_text_and_no_button_falls_back_to_greeting() -> None:
 
 def test_button_reply_takes_priority_over_text() -> None:
     assert classify(text="hi", button_id="track_order") == Intent.TRACK_ORDER
+
+
+@pytest.mark.parametrize("text", ["stop", "STOP", " Stop ", "unsubscribe", "Unsubscribe"])
+def test_opt_out_keywords_exact_match(text: str) -> None:
+    assert classify(text=text, button_id=None) == Intent.OPT_OUT
+
+
+@pytest.mark.parametrize("text", ["start", "START", " Start ", "subscribe", "Subscribe"])
+def test_opt_in_keywords_exact_match(text: str) -> None:
+    assert classify(text=text, button_id=None) == Intent.OPT_IN
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "please stop shipping it late",
+        "what's the status",
+        "when do you start delivering",
+        "I want to subscribe to your newsletter please",
+    ],
+)
+def test_opt_keywords_do_not_match_as_substrings(text: str) -> None:
+    # Unlike every other entry in _TEXT_KEYWORDS (substring match), STOP/
+    # START/UNSUBSCRIBE/SUBSCRIBE only fire on an exact, stripped match --
+    # a substring match would misfire on ordinary customer text like this.
+    result = classify(text=text, button_id=None)
+    assert result not in (Intent.OPT_OUT, Intent.OPT_IN)

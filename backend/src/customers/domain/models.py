@@ -67,6 +67,16 @@ class Customer(Base):
     # order history. Deactivated customers are excluded from the default
     # list view but stay fully intact for their existing orders.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # WhatsApp Business Platform policy: honoring STOP/opt-out is mandatory
+    # for MARKETING-category sends (broadcast campaigns), not optional
+    # polish -- conversation/domain/handler.py's Intent.OPT_OUT/OPT_IN
+    # branch is the only writer, driven by the customer's own STOP/START
+    # message. Deliberately does NOT gate transactional notifications
+    # (notifications/adapters/whatsapp_channel.py's order/appointment
+    # lifecycle sends) -- Meta treats those as a different message
+    # category entirely, and nothing in that channel reads this flag.
+    marketing_opt_out: Mapped[bool] = mapped_column(Boolean, default=False)
+    marketing_opt_out_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
 
     addresses: Mapped[list["Address"]] = relationship(back_populates="customer")
 

@@ -1352,6 +1352,59 @@ async def test_visit_website_falls_back_to_menu_when_website_url_unset(
     assert button_ids == {"place_order", "track_order"}
 
 
+async def test_opt_out_flips_flag_and_sends_confirmation(db_session: AsyncSession) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    await db_session.commit()
+    assert customer.marketing_opt_out is False
+
+    sender = FakeSender()
+    message = _inbound(from_phone="919876543210", text="STOP")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.OPT_OUT
+    assert result.reply_sent is True
+    assert len(sender.text_calls) == 1
+    assert "won't receive marketing messages" in sender.text_calls[0]["body"]
+
+    refreshed = await CustomerRepository(db_session).get(tenant, customer.customer_id)
+    assert refreshed is not None
+    assert refreshed.marketing_opt_out is True
+    assert refreshed.marketing_opt_out_at is not None
+
+
+async def test_opt_in_flips_flag_back(db_session: AsyncSession) -> None:
+    _, tenant = await _seed_connected_merchant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    await CustomerRepository(db_session).set_marketing_opt_out(customer, opted_out=True)
+    await db_session.commit()
+
+    sender = FakeSender()
+    message = _inbound(from_phone="919876543210", text="start")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.OPT_IN
+    assert "resubscribed" in sender.text_calls[0]["body"]
+
+    refreshed = await CustomerRepository(db_session).get(tenant, customer.customer_id)
+    assert refreshed is not None
+    assert refreshed.marketing_opt_out is False
+
+
+async def test_opt_out_does_not_misfire_on_ordinary_text_containing_stop(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_connected_merchant(db_session)
+    sender = FakeSender()
+    message = _inbound(text="please stop shipping it late")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent != Intent.OPT_OUT
+
+
 async def test_order_flow_completion_with_selected_items_still_creates_order_not_appointment(
     db_session: AsyncSession,
 ) -> None:

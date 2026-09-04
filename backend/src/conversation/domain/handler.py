@@ -256,6 +256,31 @@ async def _reply_for_intent(
 ) -> bool:
     access_token = _access_token(waba)
 
+    if intent in (Intent.OPT_OUT, Intent.OPT_IN):
+        # Ahead of every vertical-gated branch below (and unconditional on
+        # restaurant_enabled/appointment_enabled) -- STOP/START must work
+        # for any customer regardless of which vertical(s) a merchant has
+        # enabled. Only touches Customer.marketing_opt_out (Phase 12); never
+        # touches transactional notification delivery, which doesn't read
+        # this flag at all.
+        customer = await CustomerRepository(session).get(tenant, customer_id)
+        opted_out = intent == Intent.OPT_OUT
+        if customer is not None:
+            await CustomerRepository(session).set_marketing_opt_out(customer, opted_out=opted_out)
+            await session.commit()
+        body = (
+            f"You won't receive marketing messages from {merchant.business_name} anymore. "
+            "Reply START to resubscribe."
+            if opted_out
+            else f"You're resubscribed to updates from {merchant.business_name}."
+        )
+        return await sender.send_text(
+            phone_number_id=message.phone_number_id,
+            access_token=access_token,
+            to=message.from_phone,
+            body=body,
+        )
+
     if (
         intent == Intent.PLACE_ORDER
         and merchant.restaurant_enabled

@@ -1,3 +1,4 @@
+import datetime
 import uuid
 
 from sqlalchemy import select
@@ -105,6 +106,16 @@ class CustomerRepository:
         customer.default_contact_phone = default_contact_phone
         if last_payment_method is not None:
             customer.last_payment_method = last_payment_method
+        await self._session.flush()
+
+    async def set_marketing_opt_out(self, customer: Customer, *, opted_out: bool) -> None:
+        """The only writer of Customer.marketing_opt_out/marketing_opt_out_at
+        -- driven exclusively by the customer's own STOP/START message
+        (conversation/domain/handler.py's Intent.OPT_OUT/OPT_IN branch), per
+        customers/api/router.py's read-only exposure of these fields: a
+        merchant can't flip this from the dashboard, only the customer can."""
+        customer.marketing_opt_out = opted_out
+        customer.marketing_opt_out_at = datetime.datetime.now(datetime.UTC)
         await self._session.flush()
 
     async def update_profile_from_appointment(

@@ -55,6 +55,9 @@ export function CustomerDetailCard({
           ) : (
             <Badge tone="gray">Removed</Badge>
           )}
+          {/* Read-only -- only the customer's own STOP/START WhatsApp
+              message flips this (Phase 12), so there's no toggle here. */}
+          {customer.marketing_opt_out && <Badge tone="amber">Opted out</Badge>}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button

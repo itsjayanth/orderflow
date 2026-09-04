@@ -32,6 +32,13 @@ class Intent(StrEnum):
     # A merchant's own website link, offered in the greeting menu when
     # Merchant.website_url is set -- see handler.py's _menu_options.
     VISIT_WEBSITE = "visit_website"
+    # WhatsApp Business Platform policy: STOP/START are dedicated commands
+    # for marketing-message opt-out/in, checked by exact match (see
+    # _OPT_KEYWORDS below), not through the substring _TEXT_KEYWORDS table
+    # every other intent uses. Never offered as a button/menu option --
+    # customer-initiated only.
+    OPT_OUT = "opt_out"
+    OPT_IN = "opt_in"
 
 
 # Order matters: checked top to bottom, first match wins. TRACK_APPOINTMENT is
@@ -63,6 +70,16 @@ _TEXT_KEYWORDS: dict[Intent, tuple[str, ...]] = {
     Intent.VISIT_WEBSITE: ("website",),
 }
 
+# Exact match only, checked ahead of every substring keyword above: a
+# customer typing "please stop shipping it late" or "what's the status"
+# must never trip an opt-out, and Meta's own STOP/START guidance treats
+# them as dedicated commands, not phrase fragments a substring check would
+# also catch. Values are pre-lowercased/stripped to match `lowered` below.
+_OPT_KEYWORDS: dict[Intent, frozenset[str]] = {
+    Intent.OPT_OUT: frozenset({"stop", "unsubscribe"}),
+    Intent.OPT_IN: frozenset({"start", "subscribe"}),
+}
+
 
 def classify(*, text: str | None, button_id: str | None) -> Intent:
     """Structured/guided intent detection, not free-text AI chatbot parsing
@@ -80,6 +97,11 @@ def classify(*, text: str | None, button_id: str | None) -> Intent:
         return Intent.GREETING
 
     lowered = text.strip().lower()
+
+    for intent, exact_keywords in _OPT_KEYWORDS.items():
+        if lowered in exact_keywords:
+            return intent
+
     for intent, keywords in _TEXT_KEYWORDS.items():
         if any(keyword in lowered for keyword in keywords):
             return intent

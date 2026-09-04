@@ -14,6 +14,11 @@ class CustomerOut(BaseModel):
     first_seen_at: datetime.datetime
     last_order_at: datetime.datetime | None
     is_active: bool
+    # Read-only: only the customer's own STOP/START WhatsApp message can
+    # change this (conversation/domain/handler.py) -- no staff-facing write
+    # path exists on purpose, see CustomerUpdate below.
+    marketing_opt_out: bool
+    marketing_opt_out_at: datetime.datetime | None
 
     model_config = {"from_attributes": True}
 

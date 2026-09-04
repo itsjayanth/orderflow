@@ -162,6 +162,31 @@ async def test_notify_order_completed_sends_expected_message(db_session: AsyncSe
     assert "complete" in sender.calls[0]["body"].lower()
 
 
+async def test_transactional_notification_ignores_marketing_opt_out(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 12: Customer.marketing_opt_out gates broadcast/campaign sends
+    only -- Meta treats transactional order-lifecycle notifications as a
+    different message category entirely, and WhatsAppNotificationChannel's
+    _send never reads this flag. A customer opted out of marketing must
+    still get their order-ready update."""
+    tenant, order = await _seed_order(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "919876543210")
+    await CustomerRepository(db_session).set_marketing_opt_out(customer, opted_out=True)
+    await db_session.commit()
+
+    sender = FakeSender()
+    channel = WhatsAppNotificationChannel(sender)
+
+    result = await channel.notify_order_ready(
+        merchant_id=tenant.merchant_id, order_id=order.order_id
+    )
+
+    assert result is True
+    assert len(sender.calls) == 1
+    assert "ready" in sender.calls[0]["body"].lower()
+
+
 async def test_notify_returns_false_when_whatsapp_not_connected(db_session: AsyncSession) -> None:
     tenant, order = await _seed_order(db_session, connect_whatsapp=False)
     sender = FakeSender()

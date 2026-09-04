@@ -61,6 +61,8 @@ const customers: CustomerOut[] = [
     first_seen_at: daysAgo(10),
     last_order_at: daysAgo(3),
     is_active: true,
+    marketing_opt_out: false,
+    marketing_opt_out_at: null,
   },
   {
     customer_id: 'c2',
@@ -72,6 +74,8 @@ const customers: CustomerOut[] = [
     first_seen_at: daysAgo(9),
     last_order_at: null,
     is_active: true,
+    marketing_opt_out: false,
+    marketing_opt_out_at: null,
   },
   {
     customer_id: 'c3',
@@ -83,6 +87,8 @@ const customers: CustomerOut[] = [
     first_seen_at: daysAgo(90),
     last_order_at: daysAgo(54),
     is_active: true,
+    marketing_opt_out: false,
+    marketing_opt_out_at: null,
   },
 ]
 
@@ -144,6 +150,28 @@ describe('CustomersPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Collapse Asha' }))
 
     await waitFor(() => expect(screen.queryByText('WhatsApp number')).not.toBeInTheDocument())
+  })
+
+  it('shows an Opted out badge only for a customer who has texted STOP', async () => {
+    const optedOutCustomers = customers.map((c) =>
+      c.customer_id === 'c3' ? { ...c, marketing_opt_out: true } : c,
+    )
+    apiFetchMock.mockImplementation((path: string) => {
+      const detail = mockCustomerDetailAndOrders(optedOutCustomers, path)
+      if (detail !== undefined) return Promise.resolve(detail)
+      return Promise.resolve(optedOutCustomers)
+    })
+
+    renderPage()
+    await screen.findByText('Asha')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Asha' }))
+    expect(await screen.findByText('WhatsApp number')).toBeInTheDocument()
+    expect(screen.queryByText('Opted out')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Asha' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Ravi Kumar' }))
+    expect(await screen.findByText('Opted out')).toBeInTheDocument()
   })
 
   it('expands a row by clicking anywhere on it, not just the chevron', async () => {
