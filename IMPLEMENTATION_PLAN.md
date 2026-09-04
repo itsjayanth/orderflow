@@ -292,6 +292,46 @@ A refinement of Phase 11's own pattern, not a new phase: one more merchant-scope
 
 ---
 
+## Phase 12 — Marketing opt-out & compliance foundation ✅ done
+
+Built from `docs/broadcast-implementation-plan.md` (Phases 12–16 there), written before any code the same way `MULTI_VERTICAL_PLAN.md`/`VERTICAL_TOGGLE_PLAN.md` were for Phases 10/11 — except no separate product/architecture proposal doc preceded it; that plan doc **is** the spec, built directly from `docs/product-roadmap.md`'s "WhatsApp Broadcast Campaign Engine" ticket plus a handful of settled architectural decisions, with its own "Assumptions made in absence of a proposal doc" section standing in for the usual "Deviations from the proposal doc" one.
+
+`Customer.marketing_opt_out`/`marketing_opt_out_at`, driven exclusively by a customer's own STOP/START WhatsApp message (`Intent.OPT_OUT`/`Intent.OPT_IN`, exact-match classification checked ahead of `intents.py`'s existing substring keyword table, so ordinary text like "please stop shipping it late" never misfires). Read-only on the dashboard — only the customer can flip it, enforced structurally (no write endpoint exists), matching `customers/api/router.py`'s existing "writes only happen from the WhatsApp ordering flow" convention. Deliberately does **not** gate transactional order/appointment notifications (`notifications/adapters/whatsapp_channel.py`), which Meta treats as a separate message category — a regression test proves the channel is structurally unaware of the flag. Built first, ahead of every later phase's real template sends, since WhatsApp Business Platform policy mandates honoring opt-out for MARKETING-category messages.
+
+**Definition of done** (met): simulate an inbound "STOP" webhook — the customer's `marketing_opt_out` flips true, the dashboard shows an "Opted out" badge, "START" flips it back, and a separate order-ready notification to the same (still-transactional) customer still sends. Backend: 656 tests passing. Frontend: 179 tests passing.
+
+## Phase 13 — WhatsApp template creation, submission & Meta approval webhook ✅ done
+
+New `campaigns` module (`domain/adapters/api`, the same hexagonal shape every other module uses). Template creation and submission is real from the start, not a "paste a template name from Meta Business Manager" placeholder — `onboarding/domain/embedded_signup.py`'s `_verify_waba_scope` already requests and verifies the `whatsapp_business_management` scope before persisting a token, and `shared/config.py`'s `meta_app_id` docstring records that the shared Meta App is App Review-approved for it in production. `POST /{waba_id}/message_templates` (`campaigns/adapters/template_gateway.py`) is therefore a new call against an already-proven credential path, not a call gated on a missing prerequisite — this absorbed what a naive plan might have pushed to a later "unblock Meta access" phase.
+
+`MessageTemplate` is a deliberately new model, not an extension of `notifications/domain/models.py`'s `NotificationTemplate` (freeform, locally-rendered, no Meta template id/category/approval concept — a MARKETING template needed real submission tracking that model was never built for). Approval is webhook-driven, never polled: `conversation/domain/webhook_parser.py` gained `parse_template_status_updates` for Meta's `message_template_status_update` field, applied by the same already-subscribed `/api/v1/whatsapp/webhook` route that handles inbound messages, on the same payload — Meta multiplexes both event types onto one subscribed URL.
+
+**Definition of done** (met): create a MARKETING template with an image header from the dashboard, get back a real `meta_template_id` at `pending`; simulate an `APPROVED` status-update webhook — the row flips to `approved` with zero polling calls. Backend: 679 tests passing. Frontend: 184 tests passing.
+
+## Phase 14 — Campaign entity, audience targeting & scheduled send ✅ done
+
+`Campaign`/`CampaignRecipient` plus a lightweight `AudienceFilter` (all / ordered-within-N-days / no-order-within-N-days) — deliberately not the full Customer Segmentation Engine, a separate not-yet-built roadmap ticket; an unused `segment_id` key is left on the stored JSON as that ticket's future extension point. `campaigns/domain/send_orchestrator.py` reuses `WhatsAppSender.send_template_message` (the exact send path the roadmap ticket asked for reusing), rate-limited per tick and against a per-merchant `messaging_tier_daily_limit` on `WhatsAppBusinessAccount` (Meta assigns tiers per phone number, so it lives there, not on `Merchant`) — overflow past the daily cap is queued to the next scheduler tick/day, never dropped, so `Campaign.status`'s five-value enum stays honest under a partial send rather than lying as `completed`. `campaigns/domain/campaign_service.py`'s `create_campaign()` is exposed as a same-process domain function (not just an HTTP endpoint) — the interface point the roadmap's still-unbuilt Automated Reorder Reminder / Lost Customer Win-back jobs will call directly, matching `onboarding/domain/onboarding_service.py`'s existing cross-module-call-not-HTTP convention.
+
+**Two real bugs caught while building and testing this phase, not just designed around:**
+- `Customer.last_order_at` is declared on the model but **never actually written** by any order-creation path in this codebase (`OrderRepository.create`, `ordering_flow/domain/checkout.py`'s `perform_checkout` — neither touches it). The audience filter queries `Order.placed_at` directly instead of trusting that column, rather than silently shipping a targeting feature that would always return "nobody" / "everybody."
+- `send_due_campaigns`' merchant-local day-boundary calculation initially read the real wall clock instead of the function's own injectable `now_utc` parameter, silently breaking the "simulate a day later without sleeping" test convention every other scheduler job (`send_due_appointment_reminders`) already relies on — caught by a test that actually exercised a simulated day boundary, not just asserted the tier cap in isolation.
+
+**Definition of done** (met): a campaign against a WABA capped at 2/day sends exactly 2 on day one (3 stay `pending`, campaign stays `sending`), 2 more the next simulated day, and the last one the day after that, reaching `completed`; an opted-out customer in the audience is recorded `skipped_opted_out`, never sent to. Backend: 694 tests passing. No frontend in this phase, by design.
+
+## Phase 15 — Dashboard campaign UI ✅ done
+
+`CampaignsPage` (list + status badges + a "New campaign" dialog), `CampaignForm` (name, an approved-only template picker with a disabled-reason tooltip for pending/rejected templates, the three `AudienceFilter` kinds, send-now/schedule-later), `CampaignDetailPage` (recipient-count breakdown by status, a Cancel button for a `scheduled`/`sending` campaign, 5s polling while a send is in progress — the same cache-and-revalidate rationale `useOrders.ts` already established, applied to campaign send progress instead of order status). Campaigns got its own nav entry, ungated by vertical (campaigns aren't restaurant- or appointment-specific); Templates moved to live under it (`/campaigns/templates`) with a back-link for symmetry, rather than as a peer top-level nav item.
+
+**Definition of done** (met): create a campaign end-to-end from the dashboard against an approved template, watch it move Scheduled → Sending → Completed with live recipient counts updating via polling and no page reload; cancel a still-scheduled campaign and confirm zero sends occurred. Backend unchanged, by design. Frontend: 196 tests passing.
+
+## Phase 16 — Video & document template headers ✅ done
+
+Deliberately last, and deliberately small, exactly as planned: widens `header_type` from Phase 13's image-only scope to also cover `VIDEO`/`DOCUMENT`, on the same `header_media_handle` mechanism — `upload_header_image` generalized to `upload_header_media(kind, ...)`, with only the per-kind size/MIME table changing; the Resumable Upload call itself and the HEADER component's `example.header_handle` wiring are unchanged, confirmed by tests asserting identical payload shape across all three media kinds. `DOCUMENT` additionally requires Meta's display-filename field (new `header_filename` column, validated present only for that header type). The template-create API's `header_image_base64`/`header_image_content_type` fields were renamed to `header_media_base64`/`header_media_content_type` to match — a straight rename, not a versioned/dual-field migration, since nothing outside this codebase consumed the Phase 13 shape yet.
+
+**Definition of done** (met): submit a VIDEO-header MARKETING template from the dashboard — the gateway payload and returned `meta_template_id` round-trip exactly like the Phase 13 image path, confirming the extension point added no new plumbing. Backend: 706 tests passing, `ruff`/`mypy` clean (same one pre-existing, unrelated `payments/api/router.py` finding, unrelated to this phase). Frontend: 198 tests passing, `biome`/`tsc` clean.
+
+---
+
 ## Explicitly not in this plan
 
 Everything `ARCHITECTURE.md` §11 and `TECH_STACK.md`'s "explicitly deferred" section already call out: hosting/CI/CD/observability, Phase 2 POS sync, multi-outlet, multi-user roles, delivery logistics beyond address capture. Don't build ahead of these phases.
