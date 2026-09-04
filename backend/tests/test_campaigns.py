@@ -337,7 +337,7 @@ async def test_upload_header_image_rejects_unsupported_content_type(
 ) -> None:
     _, waba = await _make_waba(db_session)
     with pytest.raises(media_upload_module.MediaUploadError):
-        await media_upload_module.upload_header_image(waba, b"data", "image/webp")
+        await media_upload_module.upload_header_media("image", waba, b"data", "image/webp")
 
 
 async def test_upload_header_image_returns_handle(db_session: AsyncSession, monkeypatch) -> None:
@@ -355,7 +355,9 @@ async def test_upload_header_image_returns_handle(db_session: AsyncSession, monk
     )
     monkeypatch.setattr(media_upload_module.httpx, "AsyncClient", lambda **kw: fake_client)
 
-    handle = await media_upload_module.upload_header_image(waba, b"fake-image-bytes", "image/jpeg")
+    handle = await media_upload_module.upload_header_media(
+        "image", waba, b"fake-image-bytes", "image/jpeg"
+    )
 
     assert handle == "HEADER_HANDLE_1"
     assert len(fake_client.calls) == 2

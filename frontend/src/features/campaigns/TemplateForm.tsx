@@ -37,7 +37,7 @@ function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader()
     reader.onload = () => {
       // dataURL is "data:<mime>;base64,<data>" -- only the payload after
-      // the comma is what the backend's header_image_base64 field wants.
+      // the comma is what the backend's header_media_base64 field wants.
       const result = reader.result as string
       resolve(result.split(',')[1] ?? '')
     }
@@ -46,12 +46,23 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
+// Phase 16: VIDEO/DOCUMENT headers reuse the exact same upload plumbing as
+// Phase 13's IMAGE header (see backend/src/campaigns/adapters/media_upload.py's
+// upload_header_media) -- only the file-input accept attribute and, for
+// DOCUMENT, an extra required filename field change per kind.
+export const MEDIA_HEADER_ACCEPT: Record<string, string> = {
+  IMAGE: 'image/jpeg,image/png',
+  VIDEO: 'video/mp4,video/3gpp',
+  DOCUMENT: 'application/pdf',
+}
+
 const templateFormSchema = z
   .object({
     name: z.string().min(1, 'Required').max(512),
     category: z.enum(['MARKETING', 'UTILITY']),
-    header_type: z.enum(['NONE', 'TEXT', 'IMAGE']),
+    header_type: z.enum(['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT']),
     header_text: z.string().max(60).optional(),
+    header_filename: z.string().max(255).optional(),
     body_text: z.string().min(1, 'Required').max(1024).refine(variableNumbersAreSequential, {
       message: 'Variables must be {{1}}, {{2}}, ... in order, with no gaps.',
     }),
@@ -68,6 +79,10 @@ const templateFormSchema = z
     message: 'Header text is required for a text header.',
     path: ['header_text'],
   })
+  .refine((data) => data.header_type !== 'DOCUMENT' || !!data.header_filename?.trim(), {
+    message: 'A display filename is required for a document header.',
+    path: ['header_filename'],
+  })
 
 type TemplateFormValues = z.infer<typeof templateFormSchema>
 
@@ -75,8 +90,8 @@ export function TemplateForm() {
   const createTemplate = useCreateTemplate()
   // Kept out of react-hook-form's own state -- a File object isn't
   // serializable form data, it's a side input only read at submit time to
-  // build header_image_base64.
-  const [imageFile, setImageFile] = useState<File | null>(null)
+  // build header_media_base64.
+  const [mediaFile, setMediaFile] = useState<File | null>(null)
 
   const {
     register,
@@ -96,11 +111,11 @@ export function TemplateForm() {
     .size
 
   const onSubmit = async (data: TemplateFormValues) => {
-    let headerImageBase64: string | undefined
-    let headerImageContentType: string | undefined
-    if (data.header_type === 'IMAGE' && imageFile) {
-      headerImageBase64 = await fileToBase64(imageFile)
-      headerImageContentType = imageFile.type
+    let headerMediaBase64: string | undefined
+    let headerMediaContentType: string | undefined
+    if (data.header_type in MEDIA_HEADER_ACCEPT && mediaFile) {
+      headerMediaBase64 = await fileToBase64(mediaFile)
+      headerMediaContentType = mediaFile.type
     }
 
     createTemplate.mutate(
@@ -109,8 +124,9 @@ export function TemplateForm() {
         category: data.category,
         header_type: data.header_type,
         header_text: data.header_type === 'TEXT' ? data.header_text : undefined,
-        header_image_base64: headerImageBase64,
-        header_image_content_type: headerImageContentType,
+        header_media_base64: headerMediaBase64,
+        header_media_content_type: headerMediaContentType,
+        header_filename: data.header_type === 'DOCUMENT' ? data.header_filename : undefined,
         body_text: data.body_text,
         footer_text: data.footer_text || undefined,
         buttons: data.buttons.map((b) => ({
@@ -121,7 +137,7 @@ export function TemplateForm() {
       {
         onSuccess: () => {
           reset({ category: 'MARKETING', header_type: 'NONE', buttons: [] })
-          setImageFile(null)
+          setMediaFile(null)
         },
       },
     )
@@ -173,6 +189,8 @@ export function TemplateForm() {
                     <SelectItem value="NONE">None</SelectItem>
                     <SelectItem value="TEXT">Text</SelectItem>
                     <SelectItem value="IMAGE">Image</SelectItem>
+                    <SelectItem value="VIDEO">Video</SelectItem>
+                    <SelectItem value="DOCUMENT">Document</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -189,15 +207,29 @@ export function TemplateForm() {
             </div>
           )}
 
-          {headerType === 'IMAGE' && (
+          {headerType in MEDIA_HEADER_ACCEPT && (
             <div className="space-y-2">
-              <Label htmlFor="header_image">Header image</Label>
+              <Label htmlFor="header_media">Header {headerType.toLowerCase()}</Label>
               <Input
-                id="header_image"
+                id="header_media"
                 type="file"
-                accept="image/jpeg,image/png"
-                onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                accept={MEDIA_HEADER_ACCEPT[headerType]}
+                onChange={(e) => setMediaFile(e.target.files?.[0] ?? null)}
               />
+            </div>
+          )}
+
+          {headerType === 'DOCUMENT' && (
+            <div className="space-y-2">
+              <Label htmlFor="header_filename">Document filename</Label>
+              <Input
+                id="header_filename"
+                placeholder="e.g. menu.pdf"
+                {...register('header_filename')}
+              />
+              {errors.header_filename && (
+                <p className="text-destructive text-sm">{errors.header_filename.message}</p>
+              )}
             </div>
           )}
 

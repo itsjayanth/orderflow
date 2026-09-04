@@ -27,6 +27,7 @@ class MessageTemplateRepository:
         body_variable_count: int,
         footer_text: str | None,
         buttons: list[dict[str, str | None]],
+        header_filename: str | None = None,
     ) -> MessageTemplate:
         template = MessageTemplate(
             merchant_id=tenant.merchant_id,
@@ -36,6 +37,7 @@ class MessageTemplateRepository:
             header_type=header_type,
             header_text=header_text,
             header_media_handle=header_media_handle,
+            header_filename=header_filename,
             body_text=body_text,
             body_variable_count=body_variable_count,
             footer_text=footer_text,

@@ -31,11 +31,15 @@ def _build_components(template: MessageTemplate) -> list[dict[str, object]]:
 
     if template.header_type == "TEXT":
         components.append({"type": "HEADER", "format": "TEXT", "text": template.header_text})
-    elif template.header_type == "IMAGE":
+    elif template.header_type in ("IMAGE", "VIDEO", "DOCUMENT"):
+        # Identical wiring for all three media header formats -- Meta's
+        # HEADER component only cares about format + example.header_handle
+        # here; header_filename (DOCUMENT only) is a send-time concern, not
+        # part of the template definition itself.
         components.append(
             {
                 "type": "HEADER",
-                "format": "IMAGE",
+                "format": template.header_type,
                 "example": {"header_handle": [template.header_media_handle]},
             }
         )

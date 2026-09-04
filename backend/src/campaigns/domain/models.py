@@ -13,11 +13,10 @@ from shared.db import Base
 # second, parallel template system.
 TEMPLATE_CATEGORIES = ("MARKETING", "UTILITY")
 
-# NONE/TEXT/IMAGE only -- Phase 1 scope. VIDEO/DOCUMENT are a small
-# additive change on top of the same header_media_handle mechanism (see
-# campaigns/adapters/media_upload.py), sequenced into a later phase rather
-# than built now.
-TEMPLATE_HEADER_TYPES = ("NONE", "TEXT", "IMAGE")
+# VIDEO/DOCUMENT (Phase 16) are a small additive change on top of the same
+# header_media_handle mechanism IMAGE (Phase 13) already uses -- see
+# campaigns/adapters/media_upload.py's upload_header_media.
+TEMPLATE_HEADER_TYPES = ("NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT")
 
 # Meta's own lifecycle for a submitted template. "pending" is the only
 # status this codebase ever sets directly (at submission); every other
@@ -55,10 +54,14 @@ class MessageTemplate(Base):
 
     header_type: Mapped[str] = mapped_column(String(16), default="NONE")
     header_text: Mapped[str | None] = mapped_column(String(60), default=None)
-    # Meta's opaque Resumable-Upload handle, only set for an IMAGE (later,
-    # VIDEO/DOCUMENT) header -- becomes the HEADER component's
-    # example.header_handle at submission time.
+    # Meta's opaque Resumable-Upload handle, set for an IMAGE/VIDEO/DOCUMENT
+    # header -- becomes the HEADER component's example.header_handle at
+    # submission time.
     header_media_handle: Mapped[str | None] = mapped_column(String(512), default=None)
+    # Meta's spec requirement for a DOCUMENT header only (the display
+    # filename shown alongside the document in WhatsApp) -- unused for
+    # every other header_type.
+    header_filename: Mapped[str | None] = mapped_column(String(255), default=None)
 
     body_text: Mapped[str] = mapped_column(Text)
     # Derived from body_text at save time (count of {{1}}, {{2}}, ...) so

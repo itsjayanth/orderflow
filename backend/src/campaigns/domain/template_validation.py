@@ -47,12 +47,15 @@ def validate_template(
     header_text: str | None,
     body_text: str,
     footer_text: str | None,
+    header_filename: str | None = None,
 ) -> int:
     """Pure validation, no I/O -- returns the body's variable count (so the
     caller doesn't need to call count_body_variables separately) or raises
     InvalidTemplateError. Doesn't validate header_media_handle/buttons --
     those are adapter-layer concerns (an image upload result, a URL
-    shape), not something knowable from this data alone."""
+    shape), not something knowable from this data alone. header_filename
+    is Meta's DOCUMENT-only display-filename requirement (Phase 16) --
+    unused (and rejected if given) for every other header_type."""
     if category not in TEMPLATE_CATEGORIES:
         raise InvalidTemplateError(
             f"category must be one of {TEMPLATE_CATEGORIES}, got {category!r}."
@@ -69,6 +72,10 @@ def validate_template(
         raise InvalidTemplateError(
             f"header_text must be at most {_HEADER_TEXT_MAX_LENGTH} characters."
         )
+    if header_type == "DOCUMENT" and not header_filename:
+        raise InvalidTemplateError("header_filename is required when header_type is DOCUMENT.")
+    if header_type != "DOCUMENT" and header_filename:
+        raise InvalidTemplateError("header_filename is only valid when header_type is DOCUMENT.")
     if not body_text.strip():
         raise InvalidTemplateError("body_text is required.")
     if len(body_text) > _BODY_MAX_LENGTH:

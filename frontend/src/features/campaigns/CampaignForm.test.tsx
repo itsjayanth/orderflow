@@ -13,6 +13,7 @@ function template(overrides: Partial<MessageTemplateOut> = {}): MessageTemplateO
     header_type: 'NONE',
     header_text: null,
     header_media_handle: null,
+    header_filename: null,
     body_text: 'Hi',
     body_variable_count: 0,
     footer_text: null,

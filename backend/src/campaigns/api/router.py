@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from campaigns.adapters.media_upload import MediaUploadError, upload_header_image
+from campaigns.adapters.media_upload import MediaKind, MediaUploadError, upload_header_media
 from campaigns.adapters.repository import (
     CampaignRecipientRepository,
     CampaignRepository,
@@ -30,6 +30,12 @@ from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
 
 router = APIRouter(prefix="/api/v1/campaigns", tags=["campaigns"])
+
+_MEDIA_KIND_BY_HEADER_TYPE: dict[str, MediaKind] = {
+    "IMAGE": "image",
+    "VIDEO": "video",
+    "DOCUMENT": "document",
+}
 
 
 async def _detail_out(session: AsyncSession, campaign: Campaign) -> CampaignDetailOut:
@@ -68,6 +74,7 @@ async def create_template(
             header_text=body.header_text,
             body_text=body.body_text,
             footer_text=body.footer_text,
+            header_filename=body.header_filename,
         )
     except InvalidTemplateError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -79,22 +86,23 @@ async def create_template(
         )
 
     header_media_handle: str | None = None
-    if body.header_type == "IMAGE":
-        if not body.header_image_base64 or not body.header_image_content_type:
+    media_kind = _MEDIA_KIND_BY_HEADER_TYPE.get(body.header_type)
+    if media_kind is not None:
+        if not body.header_media_base64 or not body.header_media_content_type:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                "header_image_base64 and header_image_content_type are required for an "
-                "IMAGE header.",
+                "header_media_base64 and header_media_content_type are required for an "
+                f"{body.header_type} header.",
             )
         try:
-            image_bytes = base64.b64decode(body.header_image_base64, validate=True)
+            media_bytes = base64.b64decode(body.header_media_base64, validate=True)
         except (ValueError, binascii.Error) as exc:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, "header_image_base64 is not valid base64."
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "header_media_base64 is not valid base64."
             ) from exc
         try:
-            header_media_handle = await upload_header_image(
-                waba, image_bytes, body.header_image_content_type
+            header_media_handle = await upload_header_media(
+                media_kind, waba, media_bytes, body.header_media_content_type
             )
         except MediaUploadError as exc:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
@@ -107,6 +115,7 @@ async def create_template(
         header_type=body.header_type,
         header_text=body.header_text,
         header_media_handle=header_media_handle,
+        header_filename=body.header_filename,
         body_text=body.body_text,
         body_variable_count=body_variable_count,
         footer_text=body.footer_text,

@@ -413,7 +413,7 @@ export interface AppointmentFlowBookingResponse {
 }
 
 export type TemplateCategory = 'MARKETING' | 'UTILITY'
-export type TemplateHeaderType = 'NONE' | 'TEXT' | 'IMAGE'
+export type TemplateHeaderType = 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'
 export type TemplateApprovalStatus = 'pending' | 'approved' | 'rejected' | 'paused' | 'disabled'
 
 export interface TemplateButton {
@@ -430,6 +430,7 @@ export interface MessageTemplateOut {
   header_type: TemplateHeaderType
   header_text: string | null
   header_media_handle: string | null
+  header_filename: string | null
   body_text: string
   body_variable_count: number
   footer_text: string | null

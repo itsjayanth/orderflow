@@ -18,8 +18,9 @@ interface CreateTemplateInput {
   language_code?: string
   header_type: string
   header_text?: string
-  header_image_base64?: string
-  header_image_content_type?: string
+  header_media_base64?: string
+  header_media_content_type?: string
+  header_filename?: string
   body_text: string
   footer_text?: string
   buttons: TemplateButton[]

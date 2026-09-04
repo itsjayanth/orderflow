@@ -24,6 +24,7 @@ class MessageTemplateOut(BaseModel):
     header_type: str
     header_text: str | None
     header_media_handle: str | None
+    header_filename: str | None
     body_text: str
     body_variable_count: int
     footer_text: str | None
@@ -43,11 +44,13 @@ class MessageTemplateCreate(BaseModel):
     language_code: str = Field(default="en_US", max_length=16)
     header_type: str = Field(default="NONE", pattern="^(" + "|".join(TEMPLATE_HEADER_TYPES) + ")$")
     header_text: str | None = Field(default=None, max_length=60)
-    # base64-encoded image bytes -- decoded and uploaded via
-    # campaigns/adapters/media_upload.py before submission. Only read when
-    # header_type == "IMAGE".
-    header_image_base64: str | None = None
-    header_image_content_type: str | None = None
+    # base64-encoded media bytes -- decoded and uploaded via
+    # campaigns/adapters/media_upload.py's upload_header_media before
+    # submission. Only read when header_type is IMAGE/VIDEO/DOCUMENT.
+    header_media_base64: str | None = None
+    header_media_content_type: str | None = None
+    # DOCUMENT only -- Meta's required display filename.
+    header_filename: str | None = Field(default=None, max_length=255)
     body_text: str = Field(min_length=1, max_length=1024)
     footer_text: str | None = Field(default=None, max_length=60)
     buttons: list[TemplateButtonIn] = Field(default_factory=list)
