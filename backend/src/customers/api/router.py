@@ -3,12 +3,14 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 
 from customers.adapters.repository import (
+    AddressInUseError,
     AddressRepository,
     CustomerRepository,
     CustomerWhatsAppNumberConflictError,
 )
 from customers.api.schemas import (
     AddressOut,
+    AddressUpdate,
     CustomerCreate,
     CustomerOut,
     CustomerUpdate,
@@ -73,3 +75,36 @@ async def get_customer(
         **CustomerOut.model_validate(customer).model_dump(),
         addresses=[AddressOut.model_validate(a) for a in addresses],
     )
+
+
+@router.patch("/{customer_id}/addresses/{address_id}", response_model=AddressOut)
+async def update_address(
+    customer_id: uuid.UUID,
+    address_id: uuid.UUID,
+    body: AddressUpdate,
+    tenant: CurrentTenant,
+    session: DbSession,
+) -> AddressOut:
+    address = await AddressRepository(session).update(
+        tenant, customer_id, address_id, **body.model_dump(exclude_unset=True)
+    )
+    if address is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Address not found")
+    await session.commit()
+    return AddressOut.model_validate(address)
+
+
+@router.delete("/{customer_id}/addresses/{address_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_address(
+    customer_id: uuid.UUID, address_id: uuid.UUID, tenant: CurrentTenant, session: DbSession
+) -> None:
+    try:
+        deleted = await AddressRepository(session).delete(tenant, customer_id, address_id)
+    except AddressInUseError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Address is referenced by an existing order and cannot be deleted",
+        ) from exc
+    if not deleted:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Address not found")
+    await session.commit()

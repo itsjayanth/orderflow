@@ -1,12 +1,16 @@
 import uuid
+from decimal import Decimal
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from customers.adapters.repository import AddressRepository, CustomerRepository
+from catalog.adapters.repository import ItemRepository
+from customers.adapters.repository import AddressInUseError, AddressRepository, CustomerRepository
 from customers.domain.models import Customer
 from identity.adapters.repository import MerchantRepository
+from orders.adapters.repository import OrderItemInput, OrderRepository
 from shared.tenant import TenantContext
 
 
@@ -411,6 +415,341 @@ async def test_reactivate_customer(client: AsyncClient, db_session: AsyncSession
     assert reactivate_response.json()["is_active"] is True
     list_response = await client.get("/api/v1/customers", headers=_auth_headers(tokens))
     assert len(list_response.json()) == 1
+
+
+async def _seed_order_referencing_address(
+    db_session: AsyncSession, tenant: TenantContext, customer: Customer, address_id: uuid.UUID
+):
+    item = await ItemRepository(db_session).create(
+        tenant, category="Mains", name="Butter Chicken", price=Decimal("349.00")
+    )
+    order = await OrderRepository(db_session).create(
+        tenant,
+        customer_id=customer.customer_id,
+        order_type="delivery",
+        payment_method="online",
+        payment_status="paid",
+        fulfillment_status="new",
+        delivery_address_id=address_id,
+        items=[
+            OrderItemInput(
+                item_id=item.item_id,
+                name_snapshot=item.name,
+                price_snapshot=item.price,
+                quantity=1,
+            )
+        ],
+    )
+    await db_session.commit()
+    return order
+
+
+# --- AddressRepository.update / delete --------------------------------------
+
+
+async def test_address_update_partial_fields(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address_repo = AddressRepository(db_session)
+    address = await address_repo.create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+
+    updated = await address_repo.update(
+        tenant, customer.customer_id, address.address_id, line1="14 MG Road", city="Bengaluru"
+    )
+
+    assert updated is not None
+    assert updated.line1 == "14 MG Road"
+    # Untouched fields are left alone.
+    assert updated.label == "Home"
+    assert updated.pincode == "560001"
+
+
+async def test_address_update_is_default_exclusivity(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address_repo = AddressRepository(db_session)
+    home = await address_repo.create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        is_default=True,
+    )
+    work = await address_repo.create(
+        tenant,
+        customer.customer_id,
+        label="Work",
+        line1="45 Residency Road",
+        city="Bengaluru",
+        pincode="560025",
+    )
+
+    await address_repo.update(tenant, customer.customer_id, work.address_id, is_default=True)
+
+    addresses = {
+        a.address_id: a for a in await address_repo.list_for_customer(tenant, customer.customer_id)
+    }
+    assert addresses[work.address_id].is_default is True
+    assert addresses[home.address_id].is_default is False
+
+
+async def test_address_update_not_found_returns_none(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address_repo = AddressRepository(db_session)
+
+    result = await address_repo.update(tenant, customer.customer_id, uuid.uuid4(), label="Nope")
+
+    assert result is None
+
+
+async def test_address_delete_removes_address_with_no_orders(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address_repo = AddressRepository(db_session)
+    address = await address_repo.create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+
+    deleted = await address_repo.delete(tenant, customer.customer_id, address.address_id)
+
+    assert deleted is True
+    assert await address_repo.list_for_customer(tenant, customer.customer_id) == []
+
+
+async def test_address_delete_raises_when_referenced_by_order(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address_repo = AddressRepository(db_session)
+    address = await address_repo.create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+    await _seed_order_referencing_address(db_session, tenant, customer, address.address_id)
+
+    with pytest.raises(AddressInUseError):
+        await address_repo.delete(tenant, customer.customer_id, address.address_id)
+
+    # Address left intact.
+    remaining = await address_repo.list_for_customer(tenant, customer.customer_id)
+    assert len(remaining) == 1
+
+
+# --- Address API endpoints ---------------------------------------------------
+
+
+async def test_update_address_api(client: AsyncClient, db_session: AsyncSession) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address = await AddressRepository(db_session).create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+    await db_session.commit()
+
+    response = await client.patch(
+        f"/api/v1/customers/{customer.customer_id}/addresses/{address.address_id}",
+        json={"line1": "14 MG Road"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["line1"] == "14 MG Road"
+
+    get_response = await client.get(
+        f"/api/v1/customers/{customer.customer_id}", headers=_auth_headers(tokens)
+    )
+    assert get_response.json()["addresses"][0]["line1"] == "14 MG Road"
+
+
+async def test_update_address_not_found_returns_404(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    await db_session.commit()
+
+    response = await client.patch(
+        f"/api/v1/customers/{customer.customer_id}/addresses/{uuid.uuid4()}",
+        json={"line1": "Nope"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_update_address_wrong_customer_returns_404(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer_a = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    customer_b = await CustomerRepository(db_session).find_or_create(tenant, "+919876543211")
+    address = await AddressRepository(db_session).create(
+        tenant,
+        customer_a.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+    await db_session.commit()
+
+    response = await client.patch(
+        f"/api/v1/customers/{customer_b.customer_id}/addresses/{address.address_id}",
+        json={"line1": "Hijacked"},
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_update_address_wrong_tenant_returns_404(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens_a = await _register(client, owner_contact="addr-a@example.com")
+    tenant_a = await _tenant_for(client, tokens_a)
+    tokens_b = await _register(client, owner_contact="addr-b@example.com")
+    customer_a = await CustomerRepository(db_session).find_or_create(tenant_a, "+919876543210")
+    address = await AddressRepository(db_session).create(
+        tenant_a,
+        customer_a.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+    await db_session.commit()
+
+    response = await client.patch(
+        f"/api/v1/customers/{customer_a.customer_id}/addresses/{address.address_id}",
+        json={"line1": "Hijacked"},
+        headers=_auth_headers(tokens_b),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_delete_address_api(client: AsyncClient, db_session: AsyncSession) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address = await AddressRepository(db_session).create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+    await db_session.commit()
+
+    response = await client.delete(
+        f"/api/v1/customers/{customer.customer_id}/addresses/{address.address_id}",
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 204
+
+    get_response = await client.get(
+        f"/api/v1/customers/{customer.customer_id}", headers=_auth_headers(tokens)
+    )
+    assert get_response.json()["addresses"] == []
+
+
+async def test_delete_address_not_found_returns_404(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    await db_session.commit()
+
+    response = await client.delete(
+        f"/api/v1/customers/{customer.customer_id}/addresses/{uuid.uuid4()}",
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_delete_address_wrong_customer_returns_404(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer_a = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    customer_b = await CustomerRepository(db_session).find_or_create(tenant, "+919876543211")
+    address = await AddressRepository(db_session).create(
+        tenant,
+        customer_a.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+    await db_session.commit()
+
+    response = await client.delete(
+        f"/api/v1/customers/{customer_b.customer_id}/addresses/{address.address_id}",
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 404
+
+
+async def test_delete_address_referenced_by_order_returns_409(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address = await AddressRepository(db_session).create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+    )
+    await db_session.commit()
+    await _seed_order_referencing_address(db_session, tenant, customer, address.address_id)
+
+    response = await client.delete(
+        f"/api/v1/customers/{customer.customer_id}/addresses/{address.address_id}",
+        headers=_auth_headers(tokens),
+    )
+
+    assert response.status_code == 409
+
+    get_response = await client.get(
+        f"/api/v1/customers/{customer.customer_id}", headers=_auth_headers(tokens)
+    )
+    assert len(get_response.json()["addresses"]) == 1
 
 
 async def test_customer_crud_isolated_between_merchants(
