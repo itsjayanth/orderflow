@@ -6,10 +6,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from appointment_flow.domain.reminders import is_reminder_due
 from appointments.adapters.reminder_repository import AppointmentReminderRepository
+from campaigns.adapters.repository import CampaignRecipientRepository, CampaignRepository
+from campaigns.domain.send_orchestrator import send_campaign_batch
+from campaigns.domain.tier_enforcement import remaining_quota_today
 from conversation.adapters.whatsapp_client import get_whatsapp_sender
 from identity.adapters.repository import MerchantRepository
 from identity.domain.models import MerchantVertical
 from notifications.adapters.whatsapp_channel import WhatsAppNotificationChannel
+from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from orders.adapters.repository import OrderRepository
 from orders.domain.state_machine import transition_payment_status
 from shared.config import get_settings
@@ -136,10 +140,84 @@ async def send_due_appointment_reminders(now_utc: datetime.datetime | None = Non
         logger.info("Sent %d appointment reminder(s)", sent_count)
 
 
+async def send_due_campaigns(now_utc: datetime.datetime | None = None) -> None:
+    """Broadcast-campaign send sweep (Phase 14) -- mirrors
+    sweep_abandoned_orders' shape exactly: query due work, act, commit,
+    log a count. "Due" (CampaignRepository.list_due) covers both a
+    scheduled campaign whose time has arrived (or is send-now) and a
+    campaign still mid-send from a prior tick/day, so overflow from a
+    tier-capped previous run resumes automatically -- there's no separate
+    "day 2 resume" bookkeeping, the query is always "whatever's still due".
+
+    now_utc is injectable, same testability convention as
+    send_due_appointment_reminders above -- a test seeds a small tier cap,
+    calls this once, then calls it again with a later now_utc to simulate
+    the next day without sleeping."""
+    now_utc = now_utc if now_utc is not None else datetime.datetime.now(datetime.UTC)
+    sender = get_whatsapp_sender()
+
+    async with SessionFactory() as session:
+        due_campaigns = await CampaignRepository(session).list_due(now_utc)
+
+    sent_count = 0
+    for due_campaign in due_campaigns:
+        tenant = TenantContext(merchant_id=due_campaign.merchant_id)
+        async with SessionFactory() as session:
+            merchant = await MerchantRepository(session).get(tenant.merchant_id)
+            waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
+            if (
+                merchant is None
+                or waba is None
+                or not waba.phone_number_id
+                or not waba.access_token_encrypted
+            ):
+                continue
+
+            campaign_repo = CampaignRepository(session)
+            campaign = await campaign_repo.get(tenant, due_campaign.campaign_id)
+            if campaign is None:
+                continue
+            if campaign.status == "scheduled":
+                await campaign_repo.set_status(campaign, "sending")
+                await session.commit()
+
+            # Merchant-local calendar day, not UTC midnight -- same
+            # per-merchant timezone convention send_due_appointment_reminders
+            # above already uses. An approximation of Meta's actual daily-
+            # tier-reset window (not fully documented publicly), per
+            # campaigns/domain/tier_enforcement.py's docstring. Derived from
+            # the injectable now_utc (not the real clock) so a test can
+            # simulate a day boundary via a later now_utc, same as
+            # is_reminder_due's now_utc parameter above.
+            merchant_now = now_utc.astimezone(zoneinfo.ZoneInfo(merchant.timezone))
+            day_start = merchant_now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ).astimezone(datetime.UTC)
+            day_end = day_start + datetime.timedelta(days=1)
+
+            recipient_repo = CampaignRecipientRepository(session)
+            sent_today = await recipient_repo.count_sent_today(
+                tenant, day_start=day_start, day_end=day_end
+            )
+            quota_remaining = remaining_quota_today(waba, sent_today)
+
+            sent_count += await send_campaign_batch(
+                session, tenant, campaign, waba, sender, quota_remaining
+            )
+
+            if not await recipient_repo.has_pending(campaign.campaign_id):
+                await campaign_repo.set_status(campaign, "completed", completed=True)
+                await session.commit()
+
+    if sent_count:
+        logger.info("Sent %d campaign message(s)", sent_count)
+
+
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(sweep_abandoned_orders, "interval", minutes=5, id="sweep_abandoned_orders")
     scheduler.add_job(
         send_due_appointment_reminders, "interval", minutes=5, id="appointment_reminders"
     )
+    scheduler.add_job(send_due_campaigns, "interval", minutes=5, id="send_due_campaigns")
     return scheduler

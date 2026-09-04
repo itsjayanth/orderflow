@@ -6,6 +6,7 @@ class WhatsAppSettingsOut(BaseModel):
     display_phone_number: str | None
     access_token_set: bool
     connection_status: str
+    messaging_tier_daily_limit: int
 
 
 class WhatsAppSettingsUpdate(BaseModel):
@@ -118,3 +119,15 @@ class VerticalsSelectionRequest(BaseModel):
 class VerticalsSelectionOut(BaseModel):
     restaurant_enabled: bool
     appointment_enabled: bool
+
+
+class MessagingTierOut(BaseModel):
+    """Meta assigns messaging tiers per phone number -- this reads/writes
+    WhatsAppBusinessAccount.messaging_tier_daily_limit, the ceiling
+    campaigns/domain/tier_enforcement.py enforces on broadcast sends."""
+
+    messaging_tier_daily_limit: int
+
+
+class MessagingTierUpdate(BaseModel):
+    messaging_tier_daily_limit: int = Field(gt=0)

@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 from campaigns.domain.models import TEMPLATE_CATEGORIES, TEMPLATE_HEADER_TYPES
 
 
+def _default_audience_filter() -> dict[str, object]:
+    return {"kind": "all"}
+
+
 class TemplateButtonIn(BaseModel):
     type: str = Field(pattern="^(QUICK_REPLY|URL)$")
     text: str = Field(min_length=1, max_length=25)
@@ -47,3 +51,44 @@ class MessageTemplateCreate(BaseModel):
     body_text: str = Field(min_length=1, max_length=1024)
     footer_text: str | None = Field(default=None, max_length=60)
     buttons: list[TemplateButtonIn] = Field(default_factory=list)
+
+
+class CampaignOut(BaseModel):
+    campaign_id: uuid.UUID
+    name: str
+    template_id: uuid.UUID
+    audience_filter: dict[str, object]
+    scheduled_at: datetime.datetime | None
+    status: str
+    created_by: str
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    completed_at: datetime.datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class CampaignRecipientCountsOut(BaseModel):
+    pending: int = 0
+    sent: int = 0
+    failed: int = 0
+    skipped_opted_out: int = 0
+    skipped_no_number: int = 0
+
+
+class CampaignDetailOut(CampaignOut):
+    recipient_counts: CampaignRecipientCountsOut
+
+
+class CampaignCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    template_id: uuid.UUID
+    audience_filter: dict[str, object] = Field(default_factory=_default_audience_filter)
+    scheduled_at: datetime.datetime | None = None
+
+
+class CampaignUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    template_id: uuid.UUID | None = None
+    audience_filter: dict[str, object] | None = None
+    scheduled_at: datetime.datetime | None = None

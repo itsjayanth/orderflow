@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import JSON, ForeignKey, String, Text
+from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base
@@ -82,3 +82,89 @@ class MessageTemplate(Base):
         default=lambda: datetime.datetime.now(datetime.UTC),
         onupdate=lambda: datetime.datetime.now(datetime.UTC),
     )
+
+
+# Campaign.status -- no dedicated "cancelled" or "partially_sent" value.
+# A merchant-cancel maps onto "failed" (distinguished only by which
+# CampaignRecipient rows are "sent" vs "pending" at cancel time); a
+# tier-capped campaign stays "sending" (not "completed") until every
+# recipient row reaches a terminal status, even across a day boundary --
+# see campaigns/domain/send_orchestrator.py's overflow-to-next-tick design.
+CAMPAIGN_STATUSES = ("draft", "scheduled", "sending", "completed", "failed")
+
+# CampaignRecipient.status -- this codebase's own design, not specified by
+# Meta or the roadmap ticket. skipped_opted_out/skipped_no_number are
+# terminal, not retried; a merchant re-targets by creating a fresh campaign
+# (ARCHITECTURE.md Section 10's existing "no retry/backoff sophistication
+# for outbound WhatsApp sends" rule, applied here too).
+CAMPAIGN_RECIPIENT_STATUSES = (
+    "pending",
+    "sent",
+    "failed",
+    "skipped_opted_out",
+    "skipped_no_number",
+)
+
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    campaign_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("message_templates.template_id"))
+
+    # {"kind": "all"} | {"kind": "ordered_within_days", "days": int} |
+    # {"kind": "no_order_within_days", "days": int}, plus an unused
+    # "segment_id" key -- an explicit extension point for the (separate,
+    # not-yet-built) Customer Segmentation Engine roadmap ticket to
+    # populate later without a migration. See campaigns/domain/audience.py.
+    audience_filter: Mapped[dict[str, object]] = mapped_column(JSON)
+
+    # None means "send on the very next scheduler tick" (send-now).
+    scheduled_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+
+    # A StaffUser id (as a string) for a dashboard-created campaign, or a
+    # "system:<job-name>" sentinel for one a future scheduled job (Automated
+    # Reorder Reminders, Lost Customer Win-back) creates via create_campaign()
+    # directly -- mirrors OrderStatusEvent.changed_by's existing
+    # human-or-system string convention exactly.
+    created_by: Mapped[str] = mapped_column(String(64))
+
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        default=lambda: datetime.datetime.now(datetime.UTC)
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
+
+
+class CampaignRecipient(Base):
+    """Append-only per-recipient send ledger -- same shape as
+    PaymentEvent/OrderStatusEvent: one row per (campaign, customer),
+    materialized once when a campaign first starts sending, then updated
+    in place as each recipient's send is attempted. This is what makes
+    Campaign.status's five-value enum honest under tier-capping -- the
+    campaign itself just stays "sending" while these rows track exactly
+    who has and hasn't been reached yet."""
+
+    __tablename__ = "campaign_recipients"
+    __table_args__ = (UniqueConstraint("campaign_id", "customer_id"),)
+
+    recipient_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("campaigns.campaign_id"), index=True
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.customer_id"), index=True)
+
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    sent_at: Mapped[datetime.datetime | None] = mapped_column(default=None)
+    failure_reason: Mapped[str | None] = mapped_column(Text, default=None)
+    # Captured for future delivery-status reconciliation (sent/delivered/
+    # read/failed callbacks) -- write-only today, since no delivery-status
+    # webhook parsing exists yet (see docs/broadcast-implementation-plan.md's
+    # Open Questions).
+    whatsapp_message_id: Mapped[str | None] = mapped_column(String(255), default=None)

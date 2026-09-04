@@ -19,6 +19,8 @@ from onboarding.api.schemas import (
     BusinessProfileUpdate,
     EmbeddedSignupRequest,
     EmbeddedSignupResult,
+    MessagingTierOut,
+    MessagingTierUpdate,
     OnboardingStatusOut,
     VerticalsSelectionOut,
     VerticalsSelectionRequest,
@@ -56,12 +58,14 @@ def _whatsapp_to_out(account: WhatsAppBusinessAccount | None) -> WhatsAppSetting
             display_phone_number=None,
             access_token_set=False,
             connection_status="pending",
+            messaging_tier_daily_limit=250,
         )
     return WhatsAppSettingsOut(
         phone_number_id=account.phone_number_id,
         display_phone_number=account.display_phone_number,
         access_token_set=account.access_token_encrypted is not None,
         connection_status=account.connection_status,
+        messaging_tier_daily_limit=account.messaging_tier_daily_limit,
     )
 
 
@@ -126,6 +130,19 @@ async def update_whatsapp_settings(
     await advance_after_whatsapp_connected(session, tenant)
     await session.commit()
     return _whatsapp_to_out(account)
+
+
+@router.put("/whatsapp/messaging-tier", response_model=MessagingTierOut)
+async def update_messaging_tier(
+    body: MessagingTierUpdate, tenant: CurrentTenant, session: DbSession
+) -> MessagingTierOut:
+    account = await WhatsAppBusinessAccountRepository(session).update_messaging_tier_daily_limit(
+        tenant, messaging_tier_daily_limit=body.messaging_tier_daily_limit
+    )
+    if account is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "WhatsApp credentials not configured")
+    await session.commit()
+    return MessagingTierOut(messaging_tier_daily_limit=account.messaging_tier_daily_limit)
 
 
 @router.post("/whatsapp/embedded-signup", response_model=EmbeddedSignupResult)

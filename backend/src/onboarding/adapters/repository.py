@@ -147,6 +147,16 @@ class WhatsAppBusinessAccountRepository:
         await self._session.flush()
         return account
 
+    async def update_messaging_tier_daily_limit(
+        self, tenant: TenantContext, *, messaging_tier_daily_limit: int
+    ) -> WhatsAppBusinessAccount | None:
+        account = await self.get(tenant)
+        if account is None:
+            return None
+        account.messaging_tier_daily_limit = messaging_tier_daily_limit
+        await self._session.flush()
+        return account
+
     async def set_appointment_flow_credentials(
         self, tenant: TenantContext, *, flow_id: str, private_key_encrypted: str
     ) -> WhatsAppBusinessAccount:

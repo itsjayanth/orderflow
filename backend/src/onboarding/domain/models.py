@@ -57,6 +57,16 @@ class WhatsAppBusinessAccount(Base):
     # Flow), so there's no separate private-key column here.
     whatsapp_appointment_flow_id: Mapped[str | None] = mapped_column(String(255), default=None)
 
+    # Meta assigns messaging tiers per phone number, not per business --
+    # this is why it lives here rather than on Merchant or a new table,
+    # even though this codebase's single-outlet-per-merchant assumption
+    # means the two are practically 1:1 today. Defaults to 250 (Meta's
+    # default "Limited Access" tier); admin-settable via
+    # PUT /api/v1/onboarding/whatsapp/messaging-tier as a merchant's WABA
+    # graduates tiers, not a hardcoded constant -- see campaigns/domain/
+    # tier_enforcement.py, the only reader.
+    messaging_tier_daily_limit: Mapped[int] = mapped_column(default=250)
+
     updated_at: Mapped[datetime.datetime] = mapped_column(
         default=lambda: datetime.datetime.now(datetime.UTC),
         onupdate=lambda: datetime.datetime.now(datetime.UTC),
