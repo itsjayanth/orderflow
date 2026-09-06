@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from httpx import AsyncClient
@@ -12,6 +13,7 @@ from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from shared.config import get_settings
 from shared.encryption import encrypt
 from shared.tenant import TenantContext
+from tests.conftest import webhook_request_kwargs
 
 
 class RecordingSender(WhatsAppSender):
@@ -155,11 +157,13 @@ async def test_inbound_webhook_routes_to_correct_merchant_and_replies(
     try:
         response = await client.post(
             "/api/v1/whatsapp/webhook",
-            json=_webhook_body(
-                phone_number_id="PNID_E2E",
-                message_id="wamid.e2e1",
-                from_phone="919876543210",
-                text="hi",
+            **webhook_request_kwargs(
+                _webhook_body(
+                    phone_number_id="PNID_E2E",
+                    message_id="wamid.e2e1",
+                    from_phone="919876543210",
+                    text="hi",
+                )
             ),
         )
 
@@ -175,11 +179,13 @@ async def test_inbound_webhook_for_unknown_number_does_not_crash(client: AsyncCl
     try:
         response = await client.post(
             "/api/v1/whatsapp/webhook",
-            json=_webhook_body(
-                phone_number_id="NOT_REGISTERED",
-                message_id="wamid.unknown1",
-                from_phone="919876543210",
-                text="hi",
+            **webhook_request_kwargs(
+                _webhook_body(
+                    phone_number_id="NOT_REGISTERED",
+                    message_id="wamid.unknown1",
+                    from_phone="919876543210",
+                    text="hi",
+                )
             ),
         )
 
@@ -208,9 +214,10 @@ async def test_redelivered_webhook_is_deduped(
             from_phone="919876543210",
             text="hi",
         )
+        request_kwargs = webhook_request_kwargs(body)
 
-        await client.post("/api/v1/whatsapp/webhook", json=body)
-        await client.post("/api/v1/whatsapp/webhook", json=body)
+        await client.post("/api/v1/whatsapp/webhook", **request_kwargs)
+        await client.post("/api/v1/whatsapp/webhook", **request_kwargs)
 
         assert len(sender.calls) == 1
 
@@ -222,3 +229,63 @@ async def test_redelivered_webhook_is_deduped(
         assert len(result.scalars().all()) == 1
     finally:
         app.dependency_overrides.pop(get_whatsapp_sender, None)
+
+
+async def test_webhook_post_without_signature_is_rejected(client: AsyncClient) -> None:
+    body = _webhook_body(
+        phone_number_id="PNID_NOSIG",
+        message_id="wamid.nosig1",
+        from_phone="919876543210",
+        text="hi",
+    )
+
+    response = await client.post("/api/v1/whatsapp/webhook", json=body)
+
+    assert response.status_code == 401
+
+
+async def test_webhook_post_with_forged_signature_is_rejected(client: AsyncClient) -> None:
+    body = _webhook_body(
+        phone_number_id="PNID_FORGED",
+        message_id="wamid.forged1",
+        from_phone="919876543210",
+        text="hi",
+    )
+
+    response = await client.post(
+        "/api/v1/whatsapp/webhook",
+        content=json.dumps(body).encode("utf-8"),
+        headers={
+            "content-type": "application/json",
+            "x-hub-signature-256": "sha256=" + "0" * 64,
+        },
+    )
+
+    assert response.status_code == 401
+
+
+async def test_webhook_post_with_unconfigured_app_secret_returns_503(
+    client: AsyncClient, monkeypatch
+) -> None:
+    monkeypatch.delenv("META_APP_SECRET", raising=False)
+    get_settings.cache_clear()
+    try:
+        body = _webhook_body(
+            phone_number_id="PNID_NOAPPSECRET",
+            message_id="wamid.noappsecret1",
+            from_phone="919876543210",
+            text="hi",
+        )
+
+        response = await client.post(
+            "/api/v1/whatsapp/webhook",
+            content=json.dumps(body).encode("utf-8"),
+            headers={
+                "content-type": "application/json",
+                "x-hub-signature-256": "sha256=" + "0" * 64,
+            },
+        )
+
+        assert response.status_code == 503
+    finally:
+        get_settings.cache_clear()

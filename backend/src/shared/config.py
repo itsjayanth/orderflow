@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.env != "development"
 
-    jwt_secret: str = "change-me"
+    # No hardcoded fallback on purpose: a guessable default here would let
+    # anyone forge a staff JWT for any merchant. shared/security.py fails
+    # closed (raises) if this is unset, the same way shared/encryption.py's
+    # _fernet() already fails closed on an unset secrets_encryption_key.
+    jwt_secret: str = ""
     jwt_access_token_ttl_minutes: int = 15
     jwt_refresh_token_ttl_days: int = 30
 
@@ -39,7 +43,10 @@ class Settings(BaseSettings):
     whatsapp_graph_api_base_url: str = "https://graph.facebook.com/v20.0"
     # Shared across all merchants -- Meta's webhook verification handshake
     # is per-app, not per-tenant (the callback URL itself is shared infra).
-    whatsapp_webhook_verify_token: str = "change-me"
+    # No hardcoded fallback, same reasoning as jwt_secret above: a known
+    # default would let anyone complete Meta's verification handshake
+    # against this backend's webhook URL.
+    whatsapp_webhook_verify_token: str = ""
 
     # Meta Embedded Signup (onboarding/domain/embedded_signup.py) -- one
     # Meta App backs every merchant's "Connect WhatsApp" button, the same

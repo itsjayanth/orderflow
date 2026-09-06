@@ -20,6 +20,7 @@ from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from shared.encryption import encrypt
 from shared.security import decode_token
 from shared.tenant import TenantContext
+from tests.conftest import webhook_request_kwargs
 
 # --- template_validation.py ---
 
@@ -424,21 +425,23 @@ async def test_create_template_then_webhook_flips_to_approved_with_no_polling(
 
     webhook_response = await client.post(
         "/api/v1/whatsapp/webhook",
-        json={
-            "entry": [
-                {
-                    "changes": [
-                        {
-                            "field": "message_template_status_update",
-                            "value": {
-                                "message_template_id": "META_TEMPLATE_1",
-                                "event": "APPROVED",
-                            },
-                        }
-                    ]
-                }
-            ]
-        },
+        **webhook_request_kwargs(
+            {
+                "entry": [
+                    {
+                        "changes": [
+                            {
+                                "field": "message_template_status_update",
+                                "value": {
+                                    "message_template_id": "META_TEMPLATE_1",
+                                    "event": "APPROVED",
+                                },
+                            }
+                        ]
+                    }
+                ]
+            }
+        ),
     )
     assert webhook_response.status_code == 200
 

@@ -10,7 +10,22 @@ os.environ["DATABASE_URL"] = os.environ.get(
 # to, the same way DATABASE_URL is pinned above rather than trusting .env.
 os.environ.setdefault("INTERACTION_MODE", "WHATSAPP_FLOW")
 
+# JWT_SECRET/WHATSAPP_WEBHOOK_VERIFY_TOKEN/META_APP_SECRET have no
+# hardcoded default in shared/config.py on purpose (a guessable default
+# would defeat auth/webhook-signature verification in production) -- so
+# the suite needs its own deterministic, test-only values, the same
+# rationale as INTERACTION_MODE above. Individual tests that need a
+# specific value (e.g. test_verify_webhook_with_correct_token) still
+# monkeypatch + get_settings.cache_clear() over these.
+os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-do-not-use-in-production")
+os.environ.setdefault("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "test-only-webhook-verify-token")
+os.environ.setdefault("META_APP_SECRET", "test-only-meta-app-secret")
+
+import hashlib
+import hmac
+import json
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -22,6 +37,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # that module's models. New modules never need to touch this file.
 from app import app
 from shared.db import Base, SessionFactory, engine
+
+
+def webhook_request_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
+    """Builds the (content, headers) httpx.post() kwargs for a WhatsApp
+    webhook POST, signed with the same META_APP_SECRET this conftest pins
+    -- conversation/api/router.py rejects any POST without a valid
+    X-Hub-Signature-256 header. Use this instead of `json=payload` for any
+    POST to /api/v1/whatsapp/webhook."""
+    body = json.dumps(payload).encode("utf-8")
+    secret = os.environ["META_APP_SECRET"]
+    signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return {
+        "content": body,
+        "headers": {
+            "content-type": "application/json",
+            "x-hub-signature-256": f"sha256={signature}",
+        },
+    }
 
 
 @pytest_asyncio.fixture(autouse=True)
