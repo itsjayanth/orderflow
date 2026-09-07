@@ -182,6 +182,15 @@ removing the need for CI (or a fresh clone) to generate/export one.
 
 ## Progress Log
 
+**2026-09-07 (final)** — All 4 P0 items complete: item 1 (`4a4dc3f`, webhook idempotency
+row-locking), item 2 (`dbcf4a2`, checkout transaction ordering — taken over directly
+after the delegated sub-agent stalled across multiple resumes waiting on its own
+background test run without applying the fix; verified `appointment_flow/domain/booking.py`
+has no analogous bug), item 3 (`1b31fa4`, stock re-check at checkout), item 4
+(`ed275ab`, CI workflow + pinned test secret). All acceptance criteria met; see
+`plans/52-batch-remediation-p1-p3/PLAN.md` for the P1-P3 continuation and final
+consolidated test results across the whole session's work.
+
 **2026-09-07** — Plan written, Trello card #51 created, not yet implemented. Awaiting
 go-ahead before touching payment-webhook code and adding a migration.
 

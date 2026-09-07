@@ -170,6 +170,13 @@ Each backlog item above is also tracked as a Trello checklist item on card #50 u
 
 ## Progress Log
 
+**2026-09-07 (later)** — Every item in the P0-P3 backlog above has now been picked up
+and closed out across cards #51 (P0) and #52 (P1-P3), except the three items explicitly
+flagged as skipped in card #52 (god-file split, repo-wide StrEnum conversion, frontend/
+backend transition-table codegen) — see `plans/51-p0-order-flow-correctness-ci/PLAN.md`
+and `plans/52-batch-remediation-p1-p3/PLAN.md` for the full record and final
+consolidated test results (853/853 backend, full frontend suite green).
+
 **2026-09-07** — Implemented the placeholder fix (commit `a1cd862`). Replaced the
 merchant_id-derived dummy webhook secret and the hardcoded platform billing webhook secret
 literal with `Field(default_factory=lambda: secrets.token_urlsafe(32))` settings, sourced
