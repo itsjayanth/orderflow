@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from orders.domain.models import MerchantOrderCounter, Order, OrderItem, OrderStatusEvent
-from orders.domain.state_machine import transition_fulfillment_status, transition_payment_status
+from orders.domain.state_machine import (
+    IllegalTransitionError,
+    transition_fulfillment_status,
+    transition_payment_status,
+)
 from shared.tenant import TenantContext
 
 
@@ -47,6 +51,18 @@ class OrderItemInput:
     name_snapshot: str
     price_snapshot: Decimal
     quantity: int
+
+
+@dataclass(frozen=True, slots=True)
+class PaymentWebhookResult:
+    """Return shape for `apply_payment_webhook_result` -- everything the
+    payments module's webhook handler needs to build its HTTP response,
+    without reaching into Order's domain/persistence layer itself
+    (ARCHITECTURE.md Section 3: "Payment Service ... emits the fact,
+    Order Service reacts")."""
+
+    order: Order
+    duplicate: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,7 +191,21 @@ class OrderRepository:
         from_date: datetime.date | None = None,
         to_date: datetime.date | None = None,
         customer_id: uuid.UUID | None = None,
-    ) -> list[Order]:
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> builtins.list[Order]:
+        """`limit`/`offset` are optional and offset-based (simpler than a
+        placed_at+order_id keyset cursor, and acceptable here since
+        nothing yet drives repeat deep pagination -- the trade-off is that
+        a page can skip or repeat a row if orders are inserted/deleted
+        between two calls, unlike a keyset cursor). Omitted (the default),
+        behavior is exactly as before this pagination support was added:
+        every matching row, unbounded. When `limit` is given, `limit + 1`
+        rows are fetched so the caller (orders/api/router.py's
+        list_orders) can detect "is there another page" itself by
+        checking whether more than `limit` rows came back, then trim to
+        `limit` before returning to its own caller -- kept out of this
+        method so its return type stays a plain list rather than a tuple."""
         stmt = (
             select(Order)
             .where(Order.merchant_id == tenant.merchant_id)
@@ -191,6 +221,8 @@ class OrderRepository:
             stmt = stmt.where(Order.placed_at >= lower)
         if upper is not None:
             stmt = stmt.where(Order.placed_at < upper)
+        if limit is not None:
+            stmt = stmt.offset(offset).limit(limit + 1)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -249,6 +281,43 @@ class OrderRepository:
         transition_payment_status(order, to_status)
         await self._session.flush()
         return order
+
+    async def apply_payment_webhook_result(
+        self, tenant: TenantContext, order_id: uuid.UUID, *, succeeded: bool
+    ) -> PaymentWebhookResult:
+        """Order Service's side of a verified payment-gateway webhook
+        (ARCHITECTURE.md Section 3: "Payment Service ... emits the fact,
+        Order Service reacts" -- Payment Service isn't supposed to drive
+        this state machine itself). The payments module resolves *which*
+        order a webhook belongs to (via its own PaymentEvent/
+        provider_order_id lookup -- that's payments' aggregate, not ours)
+        and calls this with just the order_id and the verified outcome;
+        everything from here down -- locking the row, running it through
+        the same domain state machine as every other payment_status write
+        in this class, and deciding "duplicate" -- is Order Service's job.
+
+        Same lock-then-transition shape as transition_payment_status
+        above (get_for_update so a concurrent redelivery of the same
+        webhook blocks here instead of racing this one), but where that
+        method lets IllegalTransitionError propagate for its dashboard
+        caller to turn into a 409 (an operator action on an order in the
+        wrong state genuinely is an error), a redelivered webhook for an
+        already-settled order is expected, routine traffic -- so it's
+        caught here and reported back as `duplicate=True` instead, mirroring
+        the razorpay_webhook / razorpay_appointment_webhook redelivery
+        handling both had inline before this was extracted."""
+        order = await self.get_for_update(tenant, order_id)
+        if order is None:
+            raise OrderNotFoundError(order_id)
+
+        to_status = "paid" if succeeded else "payment_failed"
+        try:
+            transition_payment_status(order, to_status)
+        except IllegalTransitionError:
+            return PaymentWebhookResult(order=order, duplicate=True)
+
+        await self._session.flush()
+        return PaymentWebhookResult(order=order, duplicate=False)
 
     async def update_details(
         self,
