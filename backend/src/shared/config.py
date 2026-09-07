@@ -1,6 +1,7 @@
+import secrets
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +36,17 @@ class Settings(BaseSettings):
     jwt_refresh_token_ttl_days: int = 30
 
     secrets_encryption_key: str = ""
+
+    # Fallback HMAC secret DummyPaymentGateway uses to verify /test-checkout
+    # webhook signatures for a merchant who hasn't configured real Razorpay
+    # credentials yet (payments/adapters/gateway_selector.py). PLACEHOLDER:
+    # leave PAYMENTS_DUMMY_GATEWAY_SECRET unset for now -- a random secret is
+    # generated at process startup below, so this can no longer be derived
+    # from the (public) merchant_id the way the old fallback was. Set the
+    # env var only if dummy-webhook signatures need to stay valid across
+    # restarts/multiple workers. Real per-merchant Razorpay credentials are
+    # entered via the dashboard's Settings page, not here.
+    payments_dummy_gateway_secret: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
 
     # Razorpay and WhatsApp credentials are per-merchant (Settings page),
     # not global -- see payments/domain/models.py's
@@ -120,14 +132,16 @@ class Settings(BaseSettings):
     # dummy" pattern payments/adapters/gateway_selector.py already uses.
     platform_razorpay_key_id: str | None = None
     platform_razorpay_key_secret: str = ""
-    # A real default is fine here, unlike jwt_secret/secrets_encryption_key
-    # above -- this is a billing-webhook HMAC key, not a login/encryption
-    # secret. It has no cross-tenant forgery blast radius (every merchant
-    # already shares one platform account by design, so there's nothing
-    # merchant-specific to forge access to), and DummyBillingGateway's
-    # webhook signature check needs *some* stable secret to verify against
-    # even before real platform credentials exist.
-    platform_razorpay_webhook_secret: str = "dummy-platform-billing-secret"
+    # PLACEHOLDER: no committed default -- a hardcoded literal here would be
+    # checked into source and world-readable, letting anyone forge platform
+    # subscription-status webhooks. A random secret is generated at process
+    # startup if PLATFORM_RAZORPAY_WEBHOOK_SECRET is left unset, the same
+    # "unguessable placeholder" pattern payments_dummy_gateway_secret above
+    # uses. Replace with the real webhook secret from Razorpay's dashboard
+    # once platform_razorpay_key_id/_key_secret are configured for production.
+    platform_razorpay_webhook_secret: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(32)
+    )
 
     trial_period_days: int = 14
     billing_past_due_grace_days: int = 4

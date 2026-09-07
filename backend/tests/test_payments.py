@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
 from orders.adapters.repository import OrderRepository
+from shared.config import get_settings
 from shared.tenant import TenantContext
 
 
@@ -248,7 +249,7 @@ async def test_webhook_marks_order_paid_and_gates_fulfillment(
 
     # The dummy secret used when no real credentials are configured, per
     # gateway_selector.resolve_credentials.
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.captured", payment_id="pay_abc123", order_id=provider_order_id
     )
@@ -290,7 +291,7 @@ async def test_webhook_payment_failed_does_not_gate_fulfillment(
     order_id = checkout.json()["order_id"]
     provider_order_id = checkout.json()["payment_link_url"].split("/pay/")[1].split("?")[0]
 
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.failed", payment_id="pay_fail1", order_id=provider_order_id
     )
@@ -361,7 +362,7 @@ async def test_webhook_redelivery_is_idempotent(
     order_id = checkout.json()["order_id"]
     provider_order_id = checkout.json()["payment_link_url"].split("/pay/")[1].split("?")[0]
 
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.captured", payment_id="pay_dup1", order_id=provider_order_id
     )
@@ -389,7 +390,7 @@ async def test_webhook_unknown_order_returns_404(client: AsyncClient) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
 
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.captured", payment_id="pay_orphan", order_id="dummy_order_doesnotexist"
     )

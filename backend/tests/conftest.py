@@ -20,6 +20,14 @@ os.environ.setdefault("INTERACTION_MODE", "WHATSAPP_FLOW")
 os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-do-not-use-in-production")
 os.environ.setdefault("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "test-only-webhook-verify-token")
 os.environ.setdefault("META_APP_SECRET", "test-only-meta-app-secret")
+# PAYMENTS_DUMMY_GATEWAY_SECRET/PLATFORM_RAZORPAY_WEBHOOK_SECRET default to a
+# random value generated at process startup (shared/config.py) when unset,
+# same "no guessable committed default" reasoning as the three above --
+# pinned here for the same test-determinism reason.
+os.environ.setdefault("PAYMENTS_DUMMY_GATEWAY_SECRET", "test-only-payments-dummy-gateway-secret")
+os.environ.setdefault(
+    "PLATFORM_RAZORPAY_WEBHOOK_SECRET", "test-only-platform-razorpay-webhook-secret"
+)
 
 import hashlib
 import hmac

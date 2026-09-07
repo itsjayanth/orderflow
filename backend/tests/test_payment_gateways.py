@@ -13,6 +13,7 @@ from payments.adapters.gateway_selector import get_payment_gateway, resolve_cred
 from payments.adapters.razorpay_gateway import RazorpayGateway
 from payments.domain.gateway import WebhookVerificationError
 from payments.domain.models import MerchantPaymentCredentials
+from shared.config import get_settings
 
 
 def _sign(payload: bytes, secret: str) -> str:
@@ -181,7 +182,19 @@ def test_resolve_credentials_defaults_when_no_row() -> None:
     key_id, key_secret = resolve_credentials(None, merchant_id)
 
     assert key_id is None
-    assert key_secret == f"dummy-secret-{merchant_id}"
+    assert key_secret == get_settings().payments_dummy_gateway_secret
+
+
+def test_resolve_credentials_dummy_secret_is_not_derived_from_merchant_id() -> None:
+    """Regression guard: the dummy webhook secret must not be computable from
+    merchant_id alone, since merchant_id is public (embedded in every
+    customer-facing ordering link)."""
+    key_id, secret_a = resolve_credentials(None, uuid.uuid4())
+    _, secret_b = resolve_credentials(None, uuid.uuid4())
+
+    assert key_id is None
+    assert secret_a == secret_b
+    assert secret_a == get_settings().payments_dummy_gateway_secret
 
 
 def test_resolve_credentials_decrypts_stored_secret() -> None:
