@@ -1,4 +1,6 @@
 import datetime
+import hashlib
+import hmac
 import uuid
 
 from sqlalchemy import select, update
@@ -7,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from customers.domain.models import Address, Customer, MerchantCustomerCounter
 from customers.domain.phone import normalize_whatsapp_id
+from shared.config import get_settings
 from shared.tenant import TenantContext
 
 
@@ -36,6 +39,24 @@ def _canonical_whatsapp_number(whatsapp_number: str) -> str:
     "un-normalized input" behavior for that edge case rather than
     introducing a new failure mode."""
     return normalize_whatsapp_id(whatsapp_number) or whatsapp_number
+
+
+def _whatsapp_number_lookup_hash(whatsapp_number: str) -> str:
+    """Deterministic HMAC-SHA256 of the canonicalized WhatsApp number, keyed
+    by the same secrets_encryption_key that backs shared/encryption.py's
+    Fernet cipher -- reusing the app's one secret-material config value
+    rather than adding a second one. This is the value stored in/queried
+    against Customer.whatsapp_number_lookup_hash: Customer.whatsapp_number
+    itself is Fernet-encrypted (random IV per call, see
+    customers.domain.models.FernetEncryptedString), so it can never be the
+    target of a `WHERE ... = ?` exact-match lookup -- two encryptions of
+    the same number never compare equal. Every read/write of
+    whatsapp_number in this module must go through both this function (for
+    the hash) and _canonical_whatsapp_number (for the value itself), the
+    same way every call already went through _canonical_whatsapp_number
+    alone before encryption was introduced."""
+    key = get_settings().secrets_encryption_key.encode("utf-8")
+    return hmac.new(key, whatsapp_number.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 class CustomerRepository:
@@ -80,13 +101,28 @@ class CustomerRepository:
             return existing
 
         customer_number = await self._next_customer_number(tenant.merchant_id)
-        customer = Customer(
-            merchant_id=tenant.merchant_id,
-            customer_number=customer_number,
-            whatsapp_number=_canonical_whatsapp_number(whatsapp_number),
-            display_name=display_name,
+        canonical_number = _canonical_whatsapp_number(whatsapp_number)
+        stmt = (
+            pg_insert(Customer)
+            .values(
+                merchant_id=tenant.merchant_id,
+                customer_number=customer_number,
+                whatsapp_number=canonical_number,
+                whatsapp_number_lookup_hash=_whatsapp_number_lookup_hash(canonical_number),
+                display_name=display_name,
+            )
+            .on_conflict_do_nothing(constraint="uq_customers_merchant_whatsapp_hash")
+            .returning(Customer)
         )
-        self._session.add(customer)
+        result = await self._session.execute(stmt)
+        customer = result.scalar_one_or_none()
+        if customer is None:
+            # Lost the race: another concurrent call inserted this
+            # (merchant_id, whatsapp_number) first -- same customer either
+            # way, so fetch and return the winner's row instead of raising.
+            existing = await self.get_by_whatsapp_number(tenant, whatsapp_number)
+            assert existing is not None
+            return existing
         await self._session.flush()
         return customer
 
@@ -159,16 +195,40 @@ class CustomerRepository:
         whatsapp_number the same way find_or_create/create do (see
         _canonical_whatsapp_number) -- also used by
         customers.domain.identity_resolution, the shared entrypoint both
-        the order and appointment flows prefill from."""
+        the order and appointment flows prefill from.
+
+        Matches by whatsapp_number_lookup_hash rather than whatsapp_number
+        itself: whatsapp_number is Fernet-encrypted at rest (random IV per
+        encryption), so it can never be the target of an exact-match
+        WHERE clause -- see _whatsapp_number_lookup_hash's docstring."""
+        canonical_number = _canonical_whatsapp_number(whatsapp_number)
         result = await self._session.execute(
             select(Customer).where(
                 Customer.merchant_id == tenant.merchant_id,
-                Customer.whatsapp_number == _canonical_whatsapp_number(whatsapp_number),
+                Customer.whatsapp_number_lookup_hash
+                == _whatsapp_number_lookup_hash(canonical_number),
             )
         )
         return result.scalar_one_or_none()
 
-    async def list(self, tenant: TenantContext, include_inactive: bool = False) -> list[Customer]:
+    async def list(
+        self,
+        tenant: TenantContext,
+        include_inactive: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Customer]:
+        """`limit`/`offset` are optional and offset-based (see
+        OrderRepository.list in orders/adapters/repository.py for the
+        full rationale, mirrored here rather than factored into a shared
+        helper -- this codebase prefers a few repeated lines per
+        repository over a generic pagination base class). Omitted (the
+        default), behavior is exactly as before this pagination support
+        was added: every matching row, unbounded. When `limit` is given,
+        `limit + 1` rows are fetched so the caller (customers/api/
+        router.py's list_customers) can detect "is there another page"
+        itself and trim to `limit` before returning to its own caller --
+        kept out of this method so its return type stays a plain list."""
         stmt = (
             select(Customer)
             .where(Customer.merchant_id == tenant.merchant_id)
@@ -176,6 +236,8 @@ class CustomerRepository:
         )
         if not include_inactive:
             stmt = stmt.where(Customer.is_active.is_(True))
+        if limit is not None:
+            stmt = stmt.offset(offset).limit(limit + 1)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -207,10 +269,12 @@ class CustomerRepository:
             raise CustomerWhatsAppNumberConflictError(whatsapp_number)
 
         customer_number = await self._next_customer_number(tenant.merchant_id)
+        canonical_number = _canonical_whatsapp_number(whatsapp_number)
         customer = Customer(
             merchant_id=tenant.merchant_id,
             customer_number=customer_number,
-            whatsapp_number=_canonical_whatsapp_number(whatsapp_number),
+            whatsapp_number=canonical_number,
+            whatsapp_number_lookup_hash=_whatsapp_number_lookup_hash(canonical_number),
             display_name=display_name,
             default_contact_phone=default_contact_phone,
             email=email,

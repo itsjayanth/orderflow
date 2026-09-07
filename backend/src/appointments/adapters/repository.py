@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -11,12 +12,27 @@ from appointments.domain.models import (
     AppointmentStatusEvent,
     MerchantAppointmentCounter,
 )
-from appointments.domain.state_machine import transition_status
+from appointments.domain.state_machine import (
+    IllegalTransitionError,
+    transition_payment_status,
+    transition_status,
+)
 from shared.tenant import TenantContext
 
 
 class AppointmentNotFoundError(Exception):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class AppointmentPaymentWebhookResult:
+    """Mirrors orders.adapters.repository.PaymentWebhookResult -- same
+    reasoning: everything payments' webhook handler needs to build its
+    response, without it reaching into Appointment's domain/persistence
+    layer itself."""
+
+    appointment: Appointment
+    duplicate: bool
 
 
 class SlotConflictError(Exception):
@@ -218,6 +234,23 @@ class AppointmentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_for_update(
+        self, tenant: TenantContext, appointment_id: uuid.UUID
+    ) -> Appointment | None:
+        """Same as get(), but locks the appointment row (SELECT ... FOR
+        UPDATE) for the rest of this transaction -- see
+        OrderRepository.get_for_update()'s docstring for why."""
+        result = await self._session.execute(
+            select(Appointment)
+            .where(
+                Appointment.appointment_id == appointment_id,
+                Appointment.merchant_id == tenant.merchant_id,
+            )
+            .options(selectinload(Appointment.customer), selectinload(Appointment.status_events))
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def list_booked_ranges(
         self,
         tenant: TenantContext,
@@ -306,6 +339,33 @@ class AppointmentRepository:
         )
         await self._session.flush()
         return appointment
+
+    async def apply_payment_webhook_result(
+        self, tenant: TenantContext, appointment_id: uuid.UUID, *, succeeded: bool
+    ) -> AppointmentPaymentWebhookResult:
+        """Appointment Service's side of a verified payment-gateway webhook
+        -- see orders.adapters.repository.OrderRepository
+        .apply_payment_webhook_result's docstring for the full rationale
+        (ARCHITECTURE.md Section 3's "Payment Service ... emits the fact,
+        [owning service] reacts", applied here to Appointment instead of
+        Order). payments resolves *which* appointment a webhook belongs to
+        and calls this with just the appointment_id and the verified
+        outcome; locking the row and guarding the write are this
+        repository's job. Locks via get_for_update for the same reason
+        transition_status does -- a concurrent redelivery of the same
+        webhook blocks here instead of racing this one."""
+        appointment = await self.get_for_update(tenant, appointment_id)
+        if appointment is None:
+            raise AppointmentNotFoundError(appointment_id)
+
+        to_status = "paid" if succeeded else "failed"
+        try:
+            transition_payment_status(appointment, to_status)
+        except IllegalTransitionError:
+            return AppointmentPaymentWebhookResult(appointment=appointment, duplicate=True)
+
+        await self._session.flush()
+        return AppointmentPaymentWebhookResult(appointment=appointment, duplicate=False)
 
     async def update_notes(
         self, tenant: TenantContext, appointment_id: uuid.UUID, *, notes: str | None

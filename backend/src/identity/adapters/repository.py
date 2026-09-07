@@ -2,11 +2,13 @@ import datetime
 import uuid
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from identity.domain.models import (
     Merchant,
     MerchantVertical,
+    RevokedRefreshToken,
     StaffUser,
     WebsiteLinkClick,
     validate_vertical_flags,
@@ -143,6 +145,44 @@ class StaffUserRepository:
             select(StaffUser).where(StaffUser.staff_user_id.in_(staff_user_ids))
         )
         return list(result.scalars().all())
+
+
+class RevokedRefreshTokenRepository:
+    """Denylist backing identity/domain/auth.py's logout/rotate_tokens --
+    see RevokedRefreshToken's docstring for why this is a denylist rather
+    than a full allowlist of issued tokens."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def revoke(
+        self,
+        jti: uuid.UUID,
+        staff_user_id: uuid.UUID,
+        merchant_id: uuid.UUID,
+        expires_at: datetime.datetime,
+    ) -> None:
+        """Idempotent -- ON CONFLICT DO NOTHING, since the same jti can be
+        revoked twice in ordinary operation (e.g. a double-submitted
+        logout, or a refresh request retried by a flaky client after the
+        first attempt already rotated-and-revoked it)."""
+        stmt = (
+            pg_insert(RevokedRefreshToken)
+            .values(
+                jti=jti,
+                staff_user_id=staff_user_id,
+                merchant_id=merchant_id,
+                expires_at=expires_at,
+            )
+            .on_conflict_do_nothing(index_elements=["jti"])
+        )
+        await self._session.execute(stmt)
+        await self._session.flush()
+
+    async def is_revoked(self, jti: uuid.UUID) -> bool:
+        return (
+            await self._session.get(RevokedRefreshToken, jti)
+        ) is not None
 
 
 class WebsiteLinkClickRepository:

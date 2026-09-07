@@ -247,12 +247,19 @@ function CartRow({
           type="button"
           variant="outline"
           size="icon"
+          aria-label={`Decrease quantity of ${item.name}`}
           onClick={() => onChange(Math.max(0, quantity - 1))}
         >
           −
         </Button>
         <span className="w-5 text-center font-medium">{quantity}</span>
-        <Button type="button" variant="outline" size="icon" onClick={() => onChange(quantity + 1)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label={`Increase quantity of ${item.name}`}
+          onClick={() => onChange(quantity + 1)}
+        >
           +
         </Button>
       </div>

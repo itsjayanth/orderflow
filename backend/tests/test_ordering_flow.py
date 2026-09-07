@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +9,8 @@ from billing.adapters.repository import SubscriptionRepository
 from billing.domain.state_machine import transition_subscription_status
 from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
+from ordering_flow.domain.checkout import CheckoutItem, ItemUnavailableError, perform_checkout
+from orders.adapters.repository import OrderRepository
 from shared.tenant import TenantContext
 
 
@@ -241,6 +244,65 @@ async def test_public_checkout_unknown_item_returns_404(
     )
 
     assert response.status_code == 404
+
+
+async def test_public_checkout_unavailable_item_returns_409(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    item_repo = ItemRepository(db_session)
+    item = await item_repo.create(
+        tenant, category="Mains", name="Sold Out Dish", price=Decimal("199.00")
+    )
+    await item_repo.update(tenant, item.item_id, is_available=False)
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/ordering-flow/{tenant.merchant_id}/checkout",
+        json={
+            "customer_whatsapp_number": "+919876543210",
+            "customer_display_name": "Asha",
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
+            "payment_method": "online",
+        },
+    )
+
+    assert response.status_code == 409, response.text
+    orders = await OrderRepository(db_session).list(tenant)
+    assert len(orders) == 0
+
+
+async def test_perform_checkout_raises_for_unavailable_item(db_session: AsyncSession) -> None:
+    # A merchant is needed for the tenant FK; use the identity repository
+    # directly (same pattern as test_checkout_transaction_ordering.py) to
+    # avoid going through the HTTP registration flow for a pure-domain test.
+    from identity.adapters.repository import MerchantRepository
+
+    item_repo = ItemRepository(db_session)
+    merchant = await MerchantRepository(db_session).create(
+        business_name="Direct Checkout Business", owner_contact=f"{uuid.uuid4()}@example.com"
+    )
+    tenant = TenantContext(merchant_id=merchant.merchant_id)
+    item = await item_repo.create(
+        tenant, category="Mains", name="Sold Out Dish", price=Decimal("199.00")
+    )
+    await item_repo.update(tenant, item.item_id, is_available=False)
+    await db_session.commit()
+
+    with pytest.raises(ItemUnavailableError) as exc_info:
+        await perform_checkout(
+            db_session,
+            tenant,
+            customer_whatsapp_number="+919876543210",
+            items=[CheckoutItem(item_id=item.item_id, quantity=1)],
+            payment_method="cod",
+            customer_display_name="Asha",
+        )
+    assert exc_info.value.item_id == item.item_id
+
+    orders = await OrderRepository(db_session).list(tenant)
+    assert len(orders) == 0
 
 
 async def test_public_checkout_unknown_merchant_returns_404(client: AsyncClient) -> None:

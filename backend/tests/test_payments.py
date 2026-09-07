@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
 from orders.adapters.repository import OrderRepository
+from shared.config import get_settings
 from shared.tenant import TenantContext
 
 
@@ -248,7 +250,7 @@ async def test_webhook_marks_order_paid_and_gates_fulfillment(
 
     # The dummy secret used when no real credentials are configured, per
     # gateway_selector.resolve_credentials.
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.captured", payment_id="pay_abc123", order_id=provider_order_id
     )
@@ -290,7 +292,7 @@ async def test_webhook_payment_failed_does_not_gate_fulfillment(
     order_id = checkout.json()["order_id"]
     provider_order_id = checkout.json()["payment_link_url"].split("/pay/")[1].split("?")[0]
 
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.failed", payment_id="pay_fail1", order_id=provider_order_id
     )
@@ -361,7 +363,7 @@ async def test_webhook_redelivery_is_idempotent(
     order_id = checkout.json()["order_id"]
     provider_order_id = checkout.json()["payment_link_url"].split("/pay/")[1].split("?")[0]
 
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.captured", payment_id="pay_dup1", order_id=provider_order_id
     )
@@ -385,11 +387,56 @@ async def test_webhook_redelivery_is_idempotent(
     assert order_response.json()["payment_status"] == "paid"
 
 
+async def test_concurrent_webhook_redelivery_does_not_double_process(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Regression test for the row-locking fix: two *genuinely concurrent*
+    deliveries of the same webhook (Razorpay's documented retry behavior)
+    must not both transition the order -- see
+    OrderRepository.get_for_update()."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    customer, item = await _seed_customer_and_item(db_session, tenant)
+
+    checkout = await client.post(
+        "/api/v1/payments/test-checkout",
+        json={
+            "customer_whatsapp_number": "+919876543210",
+            "items": [{"item_id": str(item.item_id), "quantity": 1}],
+            "payment_method": "online",
+        },
+        headers=_auth_headers(tokens),
+    )
+    order_id = checkout.json()["order_id"]
+    provider_order_id = checkout.json()["payment_link_url"].split("/pay/")[1].split("?")[0]
+
+    secret = get_settings().payments_dummy_gateway_secret
+    payload = _webhook_payload(
+        event="payment.captured", payment_id="pay_concurrent1", order_id=provider_order_id
+    )
+    signature = _sign(payload, secret)
+
+    async def _deliver() -> dict:
+        response = await client.post(
+            f"/api/v1/payments/webhook/razorpay/{tenant.merchant_id}",
+            content=payload,
+            headers={"X-Razorpay-Signature": signature, "Content-Type": "application/json"},
+        )
+        return response.json()
+
+    first, second = await asyncio.gather(_deliver(), _deliver())
+    statuses = {first["status"], second["status"]}
+    assert statuses == {"ok", "duplicate"}
+
+    order_response = await client.get(f"/api/v1/orders/{order_id}", headers=_auth_headers(tokens))
+    assert order_response.json()["payment_status"] == "paid"
+
+
 async def test_webhook_unknown_order_returns_404(client: AsyncClient) -> None:
     tokens = await _register(client)
     tenant = await _tenant_for(client, tokens)
 
-    secret = f"dummy-secret-{tenant.merchant_id}"
+    secret = get_settings().payments_dummy_gateway_secret
     payload = _webhook_payload(
         event="payment.captured", payment_id="pay_orphan", order_id="dummy_order_doesnotexist"
     )

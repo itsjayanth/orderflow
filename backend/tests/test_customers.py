@@ -1,16 +1,23 @@
+import asyncio
 import uuid
 from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from catalog.adapters.repository import ItemRepository
-from customers.adapters.repository import AddressInUseError, AddressRepository, CustomerRepository
+from customers.adapters.repository import (
+    AddressInUseError,
+    AddressRepository,
+    CustomerRepository,
+    _whatsapp_number_lookup_hash,
+)
 from customers.domain.models import Customer
 from identity.adapters.repository import MerchantRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
+from shared.db import SessionFactory
 from shared.tenant import TenantContext
 
 
@@ -62,14 +69,131 @@ async def test_find_or_create_idempotent(db_session: AsyncSession) -> None:
 
     # Stored normalized (no "+") -- see customers.domain.phone.normalize_whatsapp_id
     # -- so this queries the canonical form, not the raw "+"-prefixed input.
+    # whatsapp_number itself is Fernet-encrypted at rest (non-deterministic
+    # ciphertext -- see customers.domain.models.FernetEncryptedString), so
+    # dedup is verified via the deterministic whatsapp_number_lookup_hash
+    # column instead of an exact-match WHERE on whatsapp_number.
     result = await db_session.execute(
         select(Customer).where(
             Customer.merchant_id == tenant.merchant_id,
-            Customer.whatsapp_number == "919876543210",
+            Customer.whatsapp_number_lookup_hash == _whatsapp_number_lookup_hash("919876543210"),
         )
     )
     rows = result.scalars().all()
     assert len(rows) == 1
+    # The row itself still reads back as the decrypted plaintext number --
+    # FernetEncryptedString decrypts transparently on load.
+    assert rows[0].whatsapp_number == "919876543210"
+
+
+# --- PII encryption at rest (Customer.whatsapp_number, Address fields) ---
+
+
+async def test_whatsapp_number_round_trips_through_create_lookup_and_get(
+    db_session: AsyncSession,
+) -> None:
+    """Create -> lookup by number -> plain get(customer_id) must all hand
+    back the same decrypted plaintext number, regardless of which query
+    path loaded the row (INSERT ... RETURNING, a hash-keyed SELECT, or a
+    primary-key SELECT) -- proving FernetEncryptedString's transparent
+    decrypt applies uniformly, not just to one code path."""
+    tenant = await _make_tenant(db_session)
+    repo = CustomerRepository(db_session)
+
+    created = await repo.find_or_create(tenant, "+91 98765-43210", display_name="Asha")
+    assert created.whatsapp_number == "919876543210"
+
+    looked_up = await repo.get_by_whatsapp_number(tenant, "919876543210")
+    assert looked_up is not None
+    assert looked_up.whatsapp_number == "919876543210"
+
+    fetched = await repo.get(tenant, created.customer_id)
+    assert fetched is not None
+    assert fetched.whatsapp_number == "919876543210"
+
+
+async def test_whatsapp_number_and_address_fields_not_stored_as_plaintext(
+    db_session: AsyncSession,
+) -> None:
+    """Bypasses the repository entirely and reads the raw column values
+    with a plain SQL query -- the actual guarantee this whole change is
+    for: a DB dump/backup must not contain a cleartext phone number or
+    address, only Fernet ciphertext (which always starts with the
+    versioned "gAAAAA" token prefix and is much longer than the
+    plaintext)."""
+    tenant = await _make_tenant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(
+        tenant, "+919876543210", display_name="Asha"
+    )
+    await AddressRepository(db_session).create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        line2="Near Park",
+        landmark="Big Tree",
+    )
+    await db_session.commit()
+
+    raw_customer = (
+        await db_session.execute(
+            text("SELECT whatsapp_number FROM customers WHERE customer_id = :id"),
+            {"id": str(customer.customer_id)},
+        )
+    ).scalar_one()
+    assert raw_customer != "919876543210"
+    assert "919876543210" not in raw_customer
+    assert raw_customer.startswith("gAAAAA")
+
+    raw_address = (
+        await db_session.execute(
+            text(
+                "SELECT line1, line2, landmark, city, pincode FROM addresses "
+                "WHERE customer_id = :id"
+            ),
+            {"id": str(customer.customer_id)},
+        )
+    ).one()
+    for plaintext, raw_value in zip(
+        ["12 MG Road", "Near Park", "Big Tree", "Bengaluru", "560001"], raw_address, strict=True
+    ):
+        assert raw_value != plaintext
+        assert plaintext not in raw_value
+        assert raw_value.startswith("gAAAAA")
+
+
+async def test_address_fields_round_trip_decrypted(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    customer = await CustomerRepository(db_session).find_or_create(tenant, "+919876543210")
+    address_repo = AddressRepository(db_session)
+
+    created = await address_repo.create(
+        tenant,
+        customer.customer_id,
+        label="Home",
+        line1="12 MG Road",
+        city="Bengaluru",
+        pincode="560001",
+        line2="Near Park",
+        landmark="Big Tree",
+    )
+    assert created.line1 == "12 MG Road"
+    assert created.line2 == "Near Park"
+    assert created.landmark == "Big Tree"
+    assert created.city == "Bengaluru"
+    assert created.pincode == "560001"
+
+    fetched = await address_repo.get(tenant, customer.customer_id, created.address_id)
+    assert fetched is not None
+    assert fetched.line1 == "12 MG Road"
+    assert fetched.city == "Bengaluru"
+    assert fetched.pincode == "560001"
+
+    listed = await address_repo.list_for_customer(tenant, customer.customer_id)
+    assert len(listed) == 1
+    assert listed[0].line1 == "12 MG Road"
 
 
 async def test_find_or_create_idempotent_across_whatsapp_number_formatting(
@@ -126,6 +250,46 @@ async def test_find_or_create_different_merchants_get_different_customers(
     customer_b = await repo.find_or_create(tenant_b, "+919876543210")
 
     assert customer_a.customer_id != customer_b.customer_id
+
+
+async def test_concurrent_find_or_create_for_never_seen_number_does_not_raise(
+    db_session: AsyncSession,
+) -> None:
+    """Regression test for the find_or_create race: two genuinely concurrent
+    inbound-message deliveries for the same brand-new (merchant_id,
+    whatsapp_number) -- e.g. two WhatsApp webhook redeliveries processed by
+    different workers -- must not raise an unhandled IntegrityError, and
+    must resolve to exactly one Customer row. See
+    test_appointment_concurrency.py for the same "each call gets its own
+    session" shape, matching two simultaneous HTTP requests rather than two
+    operations sharing one session."""
+    tenant = await _make_tenant(db_session)
+    await db_session.commit()
+
+    async def _find_or_create_in_own_session() -> Customer:
+        async with SessionFactory() as session:
+            customer = await CustomerRepository(session).find_or_create(
+                tenant, "+919876543210", display_name="Concurrent Customer"
+            )
+            await session.commit()
+            return customer
+
+    first, second = await asyncio.gather(
+        _find_or_create_in_own_session(), _find_or_create_in_own_session()
+    )
+
+    assert first.customer_id == second.customer_id
+
+    async with SessionFactory() as session:
+        result = await session.execute(
+            select(Customer).where(
+                Customer.merchant_id == tenant.merchant_id,
+                Customer.whatsapp_number_lookup_hash
+                == _whatsapp_number_lookup_hash("919876543210"),
+            )
+        )
+        rows = result.scalars().all()
+        assert len(rows) == 1
 
 
 # --- Address repository ---
@@ -205,6 +369,46 @@ async def test_list_customers_returns_seeded_customer(
     # Stored normalized (no "+") -- see customers.domain.phone.normalize_whatsapp_id.
     assert body[0]["whatsapp_number"] == "919876543210"
     assert body[0]["customer_number"] == 1
+
+
+# --- Pagination -------------------------------------------------------------
+
+
+async def test_list_customers_limit_caps_results_and_reports_has_more(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    for i in range(5):
+        await CustomerRepository(db_session).find_or_create(tenant, f"+9198765432{i:02d}")
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/customers", params={"limit": 2}, headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert response.headers["x-has-more"] == "true"
+
+
+async def test_list_customers_without_limit_returns_full_unbounded_list(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Backward-compatibility guarantee: omitting `limit` entirely (as
+    every existing caller does) must keep returning every matching row,
+    with has_more reported False -- exactly the pre-pagination behavior."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    for i in range(5):
+        await CustomerRepository(db_session).find_or_create(tenant, f"+9198765432{i:02d}")
+    await db_session.commit()
+
+    response = await client.get("/api/v1/customers", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    assert len(response.json()) == 5
+    assert response.headers["x-has-more"] == "false"
 
 
 async def test_get_customer_detail_includes_addresses(

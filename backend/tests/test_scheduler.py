@@ -2,6 +2,7 @@ import datetime
 import uuid
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import shared.scheduler as scheduler_module
@@ -11,6 +12,7 @@ from customers.adapters.repository import CustomerRepository
 from identity.adapters.repository import MerchantRepository
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
+from orders.domain.models import OrderStatusEvent
 from shared.config import get_settings
 from shared.encryption import encrypt
 from shared.scheduler import send_due_appointment_reminders, sweep_abandoned_orders
@@ -72,6 +74,25 @@ async def test_sweep_cancels_abandoned_orders_but_not_recent_ones(
     assert stale_order.payment_status == "cancelled"
     assert stale_order.fulfillment_status == "cancelled"
     assert recent_order.payment_status == "awaiting_payment"
+
+    # The auto-cancellation's fulfillment-status side effect (state_machine's
+    # payment->cancelled mirror) must leave an audit trail, same as every
+    # other fulfillment_status mutation -- see shared/scheduler.py.
+    result = await db_session.execute(
+        select(OrderStatusEvent).where(OrderStatusEvent.order_id == stale_order.order_id)
+    )
+    events = result.scalars().all()
+    assert len(events) == 1
+    assert events[0].from_status is None
+    assert events[0].to_status == "cancelled"
+    assert events[0].changed_by == "system"
+
+    recent_events = (
+        await db_session.execute(
+            select(OrderStatusEvent).where(OrderStatusEvent.order_id == recent_order.order_id)
+        )
+    ).scalars().all()
+    assert recent_events == []
 
 
 class FakeReminderSender:

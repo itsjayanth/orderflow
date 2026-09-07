@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from customers.adapters.repository import (
     AddressInUseError,
@@ -23,9 +23,24 @@ router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
 
 @router.get("", response_model=list[CustomerOut])
 async def list_customers(
-    tenant: CurrentTenant, session: DbSession, include_inactive: bool = False
+    tenant: CurrentTenant,
+    session: DbSession,
+    response: Response,
+    include_inactive: bool = False,
+    limit: int | None = Query(default=None, gt=0, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[CustomerOut]:
-    customers = await CustomerRepository(session).list(tenant, include_inactive=include_inactive)
+    """`limit`/`offset` optional, off by default -- see list_orders in
+    orders/api/router.py for the full rationale (bare-list body preserved
+    for the existing frontend/tests, "more available" signalled via the
+    X-Has-More header instead of an envelope)."""
+    customers = await CustomerRepository(session).list(
+        tenant, include_inactive=include_inactive, limit=limit, offset=offset
+    )
+    has_more = limit is not None and len(customers) > limit
+    if has_more:
+        customers = customers[:limit]
+    response.headers["X-Has-More"] = "true" if has_more else "false"
     return [CustomerOut.model_validate(customer) for customer in customers]
 
 

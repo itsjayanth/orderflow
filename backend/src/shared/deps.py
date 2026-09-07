@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from identity.adapters.repository import MerchantRepository
 from shared.db import get_session
 from shared.security import decode_token
 from shared.tenant import TenantContext
@@ -38,5 +39,18 @@ async def get_current_staff_user_id(
     return uuid.UUID(payload["sub"])
 
 
+async def get_public_tenant(merchant_id: uuid.UUID, session: DbSession) -> TenantContext:
+    """Tenant resolution for the public, unauthenticated customer-facing
+    ordering endpoints -- there's no JWT here, so the merchant_id path
+    parameter is the tenant boundary instead. Mirrors get_tenant_context's
+    404-on-unknown-merchant behavior so every public endpoint gets it for
+    free instead of hand-rolling the lookup."""
+    merchant = await MerchantRepository(session).get(merchant_id)
+    if merchant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
+    return TenantContext(merchant_id=merchant.merchant_id)
+
+
 CurrentTenant = Annotated[TenantContext, Depends(get_tenant_context)]
 CurrentStaffUserId = Annotated[uuid.UUID, Depends(get_current_staff_user_id)]
+PublicTenant = Annotated[TenantContext, Depends(get_public_tenant)]

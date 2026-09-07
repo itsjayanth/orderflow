@@ -17,6 +17,7 @@ from identity.domain.models import MerchantVertical
 from notifications.adapters.whatsapp_channel import WhatsAppNotificationChannel
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from orders.adapters.repository import OrderRepository
+from orders.domain.models import OrderStatusEvent
 from orders.domain.state_machine import transition_payment_status
 from shared.config import get_settings
 from shared.db import SessionFactory
@@ -52,7 +53,28 @@ async def sweep_abandoned_orders() -> None:
         repo = OrderRepository(session)
         stale_orders = await repo.list_stale_awaiting_payment(threshold)
         for order in stale_orders:
+            # Raw domain call (not OrderRepository.transition_payment_status)
+            # since this sweep is cross-tenant and already holds the loaded
+            # Order objects -- see list_stale_awaiting_payment's docstring.
+            # transition_payment_status's "cancelled" branch also mirrors
+            # the cancellation onto fulfillment_status (state_machine.py),
+            # so record that side of it as an OrderStatusEvent ourselves --
+            # OrderRepository.transition_payment_status doesn't write one
+            # either (fulfillment-only by design, per its own docstring),
+            # but every OTHER fulfillment_status mutation goes through
+            # transition_fulfillment_status and gets one, so an auto-
+            # cancellation shouldn't be the one silent exception in the
+            # audit trail.
+            from_fulfillment_status = order.fulfillment_status
             transition_payment_status(order, "cancelled")
+            session.add(
+                OrderStatusEvent(
+                    order_id=order.order_id,
+                    from_status=from_fulfillment_status,
+                    to_status=order.fulfillment_status,
+                    changed_by="system",
+                )
+            )
         if stale_orders:
             await session.commit()
             logger.info("Cancelled %d abandoned order(s)", len(stale_orders))

@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: orderflow
+          POSTGRES_PASSWORD: orderflow
+          POSTGRES_DB: orderflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orderflow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://orderflow:orderflow@localhost:5432/orderflow_test
+      TEST_DATABASE_URL: postgresql+asyncpg://orderflow:orderflow@localhost:5432/orderflow_test
+      # Harmless belt-and-suspenders: tests/conftest.py now pins its own
+      # test-only default via os.environ.setdefault, so this is no longer
+      # required, but setting it here costs nothing and keeps CI resilient
+      # if that default is ever removed.
+      SECRETS_ENCRYPTION_KEY: PVHGIbvhdJthNQhBaOU5otAB3QhyVwoX5EnP2NvLM5w=
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type-check (mypy)
+        run: uv run mypy src
+
+      - name: Test (pytest)
+        run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Node
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (biome)
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test (vitest)
+        run: npm run test
+
+      - name: Build
+        run: npm run build

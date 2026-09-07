@@ -180,7 +180,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     expect(await screen.findByText(totalText('Total: INR 349.00'))).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
@@ -234,7 +234,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
@@ -264,7 +264,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
@@ -328,7 +328,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     const phoneInput = screen.getByLabelText('Your WhatsApp number')
@@ -363,7 +363,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     const phoneInput = screen.getByLabelText('Your WhatsApp number')
@@ -390,7 +390,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     const phoneInput = screen.getByLabelText('Your WhatsApp number')
@@ -413,7 +413,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
@@ -445,7 +445,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.change(screen.getByLabelText('Your WhatsApp number'), {
@@ -476,7 +476,7 @@ describe('OrderingPage', () => {
 
     const first = renderPage()
     await screen.findByText('Butter Chicken')
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     // Simulates a real reload -- the component tree is torn down and
@@ -496,7 +496,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
 
     // The docked bar is the only persistent way back into the cart once
     // you've scrolled down -- it must open the cart, not just push further
@@ -519,7 +519,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     fireEvent.click(screen.getByRole('button', { name: /Back to catalog/ }))
@@ -541,7 +541,7 @@ describe('OrderingPage', () => {
     renderPage()
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     const phoneInput = screen.getByLabelText('Your WhatsApp number')
@@ -565,7 +565,7 @@ describe('OrderingPage', () => {
     renderPage('?wa=919876543210')
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     expect(screen.queryByLabelText('Your WhatsApp number')).not.toBeInTheDocument()
@@ -600,7 +600,7 @@ describe('OrderingPage', () => {
     renderPage('?wa=919876543210')
     await screen.findByText('Butter Chicken')
 
-    fireEvent.click(screen.getByRole('button', { name: '+' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity of Butter Chicken' }))
     await screen.findByText(totalText('Total: INR 349.00'))
 
     // Payment method shows as a confirmed field (from last_payment_method),

@@ -2,7 +2,7 @@ import datetime
 import uuid
 
 import jwt
-from fastapi import APIRouter, Cookie, HTTPException, Query, Response, status
+from fastapi import APIRouter, Cookie, HTTPException, Query, Request, Response, status
 
 from appointments.adapters.scheduling_repository import (
     AppointmentServiceRepository,
@@ -35,12 +35,14 @@ from identity.domain.auth import (
     TokenPair,
     login,
     register_merchant,
+    revoke_refresh_token,
     rotate_tokens,
 )
 from identity.domain.models import InvalidWebsiteUrlError, normalize_website_url
 from onboarding.domain.onboarding_service import try_advance_for_catalog_ready
 from shared.config import get_settings
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
+from shared.rate_limiting import limiter
 from shared.security import decode_token
 
 router = APIRouter(prefix="/api/v1/auth", tags=["identity"])
@@ -73,9 +75,20 @@ def _access_token_response(response: Response, tokens: TokenPair) -> AccessToken
     return AccessTokenResponse(access_token=tokens.access_token)
 
 
+def _expires_at_from_payload(payload: dict[str, str]) -> datetime.datetime:
+    """PyJWT keeps a verified token's `exp` claim as the raw POSIX-timestamp
+    number it decoded, not a datetime -- convert once here for the
+    denylist's `expires_at` column."""
+    return datetime.datetime.fromtimestamp(float(payload["exp"]), tz=datetime.UTC)
+
+
 @router.post("/register", response_model=AccessTokenResponse, status_code=status.HTTP_201_CREATED)
+# 10/minute per IP: registration is a one-off action for a legitimate user,
+# so this is generous headroom for retries (e.g. fixing a validation error)
+# while still bounding automated account-creation abuse.
+@limiter.limit("10/minute")
 async def register(
-    body: RegisterRequest, session: DbSession, response: Response
+    request: Request, body: RegisterRequest, session: DbSession, response: Response
 ) -> AccessTokenResponse:
     try:
         _merchant, _staff_user, tokens = await register_merchant(
@@ -89,8 +102,13 @@ async def register(
 
 
 @router.post("/login", response_model=AccessTokenResponse)
+# 10/minute per IP: tight enough to blunt credential-stuffing/brute-force
+# (a real attempt at guessing a password needs far more than 10 tries),
+# generous enough that a person mistyping their password a few times in a
+# row never gets locked out.
+@limiter.limit("10/minute")
 async def login_route(
-    body: LoginRequest, session: DbSession, response: Response
+    request: Request, body: LoginRequest, session: DbSession, response: Response
 ) -> AccessTokenResponse:
     try:
         _staff_user, tokens = await login(session, body.email_or_phone, body.password)
@@ -118,14 +136,45 @@ async def refresh(
         ) from exc
 
     try:
-        tokens = await rotate_tokens(session, uuid.UUID(payload["sub"]))
+        tokens = await rotate_tokens(
+            session,
+            uuid.UUID(payload["sub"]),
+            refresh_jti=uuid.UUID(payload["jti"]),
+            refresh_expires_at=_expires_at_from_payload(payload),
+        )
     except InvalidCredentialsError as exc:
+        # Covers both an unknown staff user and RefreshTokenReusedError (a
+        # subclass): either way the caller gets the same generic 401, so a
+        # client can't distinguish "reused token" from "deleted account" by
+        # response alone. The reuse case is already logged server-side by
+        # rotate_tokens.
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token") from exc
     return _access_token_response(response, tokens)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response) -> None:
+async def logout(
+    session: DbSession,
+    response: Response,
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
+) -> None:
+    if refresh_token is not None:
+        try:
+            payload = decode_token(refresh_token, expected_type="refresh")
+        except jwt.InvalidTokenError:
+            payload = None
+        if payload is not None:
+            # Best-effort: an already-expired or malformed refresh token
+            # needs no denylist entry (it can't be used regardless), so
+            # logout still succeeds and clears the cookie either way --
+            # logout is idempotent from the client's perspective.
+            await revoke_refresh_token(
+                session,
+                staff_user_id=uuid.UUID(payload["sub"]),
+                merchant_id=uuid.UUID(payload["merchant_id"]),
+                refresh_jti=uuid.UUID(payload["jti"]),
+                refresh_expires_at=_expires_at_from_payload(payload),
+            )
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/v1/auth")
 
 

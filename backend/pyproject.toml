@@ -17,6 +17,7 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "pyjwt>=2.13.0",
     "razorpay>=2.0.1",
+    "slowapi>=0.1.10",
     "sqlalchemy[asyncio]>=2.0.51",
     "uvicorn[standard]>=0.52.1",
 ]

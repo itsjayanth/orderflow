@@ -20,6 +20,18 @@ os.environ.setdefault("INTERACTION_MODE", "WHATSAPP_FLOW")
 os.environ.setdefault("JWT_SECRET", "test-only-jwt-secret-do-not-use-in-production")
 os.environ.setdefault("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "test-only-webhook-verify-token")
 os.environ.setdefault("META_APP_SECRET", "test-only-meta-app-secret")
+# PAYMENTS_DUMMY_GATEWAY_SECRET/PLATFORM_RAZORPAY_WEBHOOK_SECRET default to a
+# random value generated at process startup (shared/config.py) when unset,
+# same "no guessable committed default" reasoning as the three above --
+# pinned here for the same test-determinism reason.
+os.environ.setdefault("PAYMENTS_DUMMY_GATEWAY_SECRET", "test-only-payments-dummy-gateway-secret")
+os.environ.setdefault(
+    "PLATFORM_RAZORPAY_WEBHOOK_SECRET", "test-only-platform-razorpay-webhook-secret"
+)
+# SECRETS_ENCRYPTION_KEY has no hardcoded default in shared/config.py either
+# (shared/encryption.py's _fernet() fails closed on an unset key) -- a fixed,
+# valid Fernet key here, same rationale as the secrets above.
+os.environ.setdefault("SECRETS_ENCRYPTION_KEY", "PVHGIbvhdJthNQhBaOU5otAB3QhyVwoX5EnP2NvLM5w=")
 
 import hashlib
 import hmac
@@ -62,6 +74,16 @@ def webhook_request_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_db() -> AsyncIterator[None]:
+    # `app` (and therefore `app.state.limiter`) is a single module-level
+    # object shared across the whole test session -- a fresh `client`
+    # AsyncClient per test does NOT give each test a fresh rate-limit
+    # counter, since slowapi's in-memory storage lives on that shared
+    # limiter, keyed by IP, and every ASGITransport request in this suite
+    # reports the same client IP. Reset it here (same place schema state
+    # gets reset) so per-endpoint limits are evaluated fresh each test,
+    # rather than accumulating false 429s from unrelated earlier tests.
+    app.state.limiter.reset()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

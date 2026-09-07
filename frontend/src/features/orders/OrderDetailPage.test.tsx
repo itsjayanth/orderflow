@@ -200,6 +200,22 @@ describe('OrderDetailPage', () => {
     )
   })
 
+  it('shows a distinct error message (not "not found") when the order fetch fails', async () => {
+    mockedApiFetch.mockRejectedValueOnce(new ApiError(500, 'server error'))
+
+    renderPage()
+
+    expect(
+      await screen.findByText('Something went wrong loading this order. Try again.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Order not found.')).not.toBeInTheDocument()
+
+    mockedApiFetch.mockResolvedValueOnce(sampleOrder)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('Butter Chicken')).toBeInTheDocument()
+  })
+
   it('rolls back the optimistic status update when the mutation fails', async () => {
     mockedApiFetch.mockResolvedValueOnce(sampleOrder)
     // A manually-controlled promise so the test can observe the optimistic

@@ -4,6 +4,7 @@ from payments.adapters.dummy_gateway import DummyPaymentGateway
 from payments.adapters.razorpay_gateway import RazorpayGateway
 from payments.domain.gateway import PaymentGateway
 from payments.domain.models import MerchantPaymentCredentials
+from shared.config import get_settings
 from shared.encryption import decrypt
 
 REAL_KEY_PREFIXES = ("rzp_test_", "rzp_live_")
@@ -13,15 +14,17 @@ def resolve_credentials(
     credentials: MerchantPaymentCredentials | None, merchant_id: uuid.UUID
 ) -> tuple[str | None, str]:
     """key_id is None (dummy gateway) unless real credentials are on file.
-    key_secret always resolves to *something* -- a deterministic per-merchant
-    fallback when none is configured -- so DummyPaymentGateway's HMAC
+    key_secret always resolves to *something* so DummyPaymentGateway's HMAC
     verification has a stable secret to check webhook signatures against
-    even before a merchant has visited Settings."""
+    even before a merchant has visited Settings -- sourced from
+    Settings.payments_dummy_gateway_secret (a placeholder, unguessable from
+    merchant_id or any other public value), never derived from the merchant
+    itself."""
     key_id = credentials.razorpay_key_id if credentials else None
     key_secret = (
         decrypt(credentials.razorpay_key_secret_encrypted)
         if credentials and credentials.razorpay_key_secret_encrypted
-        else f"dummy-secret-{merchant_id}"
+        else get_settings().payments_dummy_gateway_secret
     )
     return key_id, key_secret
 

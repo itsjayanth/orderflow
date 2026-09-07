@@ -162,3 +162,33 @@ class StaffUser(Base):
     )
 
     merchant: Mapped["Merchant"] = relationship(back_populates="staff_users")
+
+
+class RevokedRefreshToken(Base):
+    """Denylist of refresh-token `jti`s that must stop working before their
+    natural expiry -- logout, and the token a rotation replaces (see
+    identity/domain/auth.py's rotate_tokens, which also uses a hit here as
+    reuse-detection: presenting an already-revoked jti is treated as a
+    stolen/replayed token, not silently re-revoked).
+
+    Deliberately a denylist, not an allowlist of every issued token: staff
+    logins are infrequent and this repo's threat model only cares about
+    tokens that need to stop working early, so there's no need to track
+    (and prune) a row for every refresh token ever issued -- only the
+    handful that get revoked. `expires_at` mirrors the revoked token's own
+    `exp` claim so a future cleanup job (not built here -- not required by
+    this task) can safely delete rows past their `exp` without a JWT
+    decode, since a naturally-expired token needs no denylist entry to be
+    rejected."""
+
+    __tablename__ = "revoked_refresh_tokens"
+
+    jti: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    staff_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("staff_users.staff_user_id"), index=True
+    )
+    merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
+    expires_at: Mapped[datetime.datetime] = mapped_column(index=True)
+    revoked_at: Mapped[datetime.datetime] = mapped_column(
+        default=lambda: datetime.datetime.now(datetime.UTC)
+    )

@@ -1,14 +1,12 @@
 import datetime
-import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from billing.adapters.repository import PlanRepository, SubscriptionRepository
 from billing.domain.gating import effective_tier
 from catalog.adapters.repository import ItemRepository
 from customers.domain.identity_resolution import resolve_customer_by_whatsapp_id
 from identity.adapters.repository import MerchantRepository
-from identity.domain.models import Merchant
 from onboarding.adapters.repository import WhatsAppBusinessAccountRepository
 from ordering_flow.api.schemas import (
     OrderingFlowAddressOut,
@@ -21,29 +19,25 @@ from ordering_flow.api.schemas import (
 from ordering_flow.domain.checkout import (
     CheckoutItem,
     ItemNotFoundError,
+    ItemUnavailableError,
     NewDeliveryAddress,
     perform_checkout,
 )
-from shared.deps import DbSession
+from shared.deps import DbSession, PublicTenant
+from shared.rate_limiting import limiter
 from shared.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v1/ordering-flow", tags=["ordering_flow"])
 
 
-async def _get_merchant_or_404(session: DbSession, merchant_id: uuid.UUID) -> Merchant:
-    merchant = await MerchantRepository(session).get(merchant_id)
-    if merchant is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
-    return merchant
-
-
 @router.get("/{merchant_id}/catalog", response_model=PublicCatalogOut)
-async def get_public_catalog(merchant_id: uuid.UUID, session: DbSession) -> PublicCatalogOut:
+async def get_public_catalog(tenant: PublicTenant, session: DbSession) -> PublicCatalogOut:
     """Public and unauthenticated -- this is what the customer-facing
     ordering webview (the OrderingSurface fallback, per ARCHITECTURE.md
     Section 6, in place of a live WhatsApp Flow connection) loads."""
-    merchant = await _get_merchant_or_404(session, merchant_id)
-    tenant = TenantContext(merchant_id=merchant.merchant_id)
+    merchant = await MerchantRepository(session).get(tenant.merchant_id)
+    if merchant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Merchant not found")
     items = await ItemRepository(session).list(tenant, include_unavailable=False)
     waba = await WhatsAppBusinessAccountRepository(session).get(tenant)
     return PublicCatalogOut(
@@ -71,7 +65,7 @@ async def _hide_branding(session: DbSession, tenant: TenantContext) -> bool:
 
 @router.get("/{merchant_id}/customer-lookup", response_model=OrderingFlowCustomerLookupOut)
 async def customer_lookup(
-    merchant_id: uuid.UUID, whatsapp_number: str, session: DbSession
+    tenant: PublicTenant, whatsapp_number: str, session: DbSession
 ) -> OrderingFlowCustomerLookupOut:
     """Public and unauthenticated, matching the rest of this module's
     security model (checkout already creates customers by phone number
@@ -81,9 +75,6 @@ async def customer_lookup(
     one merchant's customers never surface through another merchant's
     ordering page. 404s for a customer that doesn't exist yet -- that's
     the normal new-customer case, not an error."""
-    merchant = await _get_merchant_or_404(session, merchant_id)
-    tenant = TenantContext(merchant_id=merchant.merchant_id)
-
     resolved = await resolve_customer_by_whatsapp_id(
         session, tenant, whatsapp_number, include_address=True
     )
@@ -105,16 +96,20 @@ async def customer_lookup(
     response_model=OrderingFlowCheckoutResponse,
     status_code=status.HTTP_201_CREATED,
 )
+# 20/minute per IP: this does a real DB write and, for merchants with live
+# credentials, a real Razorpay API call per request, so it needs a bound --
+# but it's also the real customer checkout path, and one customer session
+# can retry after a validation error or resubmit while adjusting items, so
+# it's set loose enough that a legitimate multi-attempt order flow won't
+# trip it.
+@limiter.limit("20/minute")
 async def checkout(
-    merchant_id: uuid.UUID, body: OrderingFlowCheckoutRequest, session: DbSession
+    request: Request, tenant: PublicTenant, body: OrderingFlowCheckoutRequest, session: DbSession
 ) -> OrderingFlowCheckoutResponse:
     """The real customer-facing checkout -- same
     ordering_flow.domain.checkout.perform_checkout the dashboard's
     test-checkout (Phase 5) uses, so both paths stay in sync by
     construction rather than by discipline."""
-    merchant = await _get_merchant_or_404(session, merchant_id)
-    tenant = TenantContext(merchant_id=merchant.merchant_id)
-
     new_delivery_address = (
         NewDeliveryAddress(
             line1=body.delivery_address.line1,
@@ -144,6 +139,8 @@ async def checkout(
         )
     except ItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ItemUnavailableError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
     return OrderingFlowCheckoutResponse(
         order_id=result.order.order_id,

@@ -34,6 +34,12 @@ class ItemNotFoundError(Exception):
         self.item_id = item_id
 
 
+class ItemUnavailableError(Exception):
+    def __init__(self, item_id: uuid.UUID) -> None:
+        super().__init__(f"Item {item_id} is not available")
+        self.item_id = item_id
+
+
 @dataclass(frozen=True, slots=True)
 class CheckoutItem:
     item_id: uuid.UUID
@@ -127,6 +133,8 @@ async def perform_checkout(
         item = await item_repo.get(tenant, line.item_id)
         if item is None:
             raise ItemNotFoundError(line.item_id)
+        if not item.is_available:
+            raise ItemUnavailableError(line.item_id)
         item_inputs.append(
             OrderItemInput(
                 item_id=item.item_id,
@@ -196,6 +204,15 @@ async def perform_checkout(
         contact_phone=resolved_contact_phone,
         items=item_inputs,
     )
+    # Committed before the gateway call below, deliberately -- create_link()
+    # is a real external Razorpay API call for merchants with real
+    # credentials configured. If it raised (or the process died) *before*
+    # this commit, a live payment link could end up pointing at an order_id
+    # that never got durably persisted. Committing here first means a
+    # gateway failure just leaves the order sitting in awaiting_payment with
+    # no link -- visible on the dashboard, recoverable -- instead of a
+    # phantom order behind real captured money.
+    await session.commit()
 
     credentials = await MerchantPaymentCredentialsRepository(session).get(tenant)
     key_id, key_secret = resolve_credentials(credentials, tenant.merchant_id)

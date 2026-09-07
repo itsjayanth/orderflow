@@ -1,7 +1,8 @@
 import uuid
-from collections import defaultdict
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+
+from shared.events import EventBus
+from shared.events import Handler as _Handler
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,20 +31,24 @@ class AppointmentCancelled(AppointmentEvent):
     pass
 
 
-Handler = Callable[[AppointmentEvent], Awaitable[None]]
+type Handler = _Handler[AppointmentEvent]
 
 # Dead simple in-process pub-sub -- its own module-level subscriber table,
 # entirely separate from orders/domain/events.py's, so this feature stays
 # cleanly independent of the Order domain (per the product spec). Producers
 # (Appointment dashboard API) don't know who's listening; notifications/
 # wiring.py subscribes without this module changing.
-_subscribers: dict[type[AppointmentEvent], list[Handler]] = defaultdict(list)
+#
+# The pub-sub mechanism itself lives in shared/events.py (generic, reused
+# by orders/domain/events.py); this module's bus instance is its own,
+# independent subscriber table -- events published here are never visible
+# to any other module's subscribers.
+_bus: EventBus[AppointmentEvent] = EventBus()
 
 
 def subscribe(event_type: type[AppointmentEvent], handler: Handler) -> None:
-    _subscribers[event_type].append(handler)
+    _bus.subscribe(event_type, handler)
 
 
 async def publish(event: AppointmentEvent) -> None:
-    for handler in _subscribers[type(event)]:
-        await handler(event)
+    await _bus.publish(event)

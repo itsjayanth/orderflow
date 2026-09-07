@@ -9,13 +9,32 @@ import { useOrder } from './useOrder'
 
 export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>()
-  const { data: order, isLoading } = useOrder(orderId ?? '')
+  const { data: order, isLoading, isError, refetch } = useOrder(orderId ?? '')
 
   if (isLoading) {
     return <p className="text-muted-foreground text-sm">Loading…</p>
   }
 
+  // Checked before `isError` -- once an order has loaded, a later
+  // background refetch failing (e.g. the invalidation after a status
+  // mutation) shouldn't yank already-rendered data off the screen.
   if (!order) {
+    if (isError) {
+      return (
+        <div className="space-y-2">
+          <p className="text-destructive text-sm">
+            Something went wrong loading this order. Try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-primary text-sm font-medium hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      )
+    }
     return <p className="text-muted-foreground text-sm">Order not found.</p>
   }
 
