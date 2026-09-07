@@ -184,3 +184,27 @@ removing the need for CI (or a fresh clone) to generate/export one.
 
 **2026-09-07** — Plan written, Trello card #51 created, not yet implemented. Awaiting
 go-ahead before touching payment-webhook code and adding a migration.
+
+**2026-09-07** — Item 1 (webhook idempotency race) implemented, one at a time per user
+request. `OrderRepository.get_for_update()`/`AppointmentRepository.get_for_update()` added
+(SELECT ... FOR UPDATE); used in both webhook handlers and inside
+`transition_fulfillment_status`/`transition_payment_status` (closing P1-#5 for free, as
+planned). Migration `fcd1cd201c55` adds the partial unique index on
+`payment_events.provider_payment_id`.
+
+Deviation from the plan, caught during testing: the plan's index was `WHERE
+provider_payment_id IS NOT NULL` with no `event_type` filter. That broke the *existing*,
+intentional design — both webhook handlers write a `webhook_received_duplicate`
+`PaymentEvent` row reusing the same `provider_payment_id` on every redelivery, as an audit
+trail (confirmed by `test_webhook_redelivery_is_idempotent` failing against the new index).
+Fixed by scoping the unique index to `event_type IN ('payment_succeeded',
+'payment_failed')` -- the real invariant is "at most one *processing* event per payment
+id", not "at most one row total". Migration regenerated (old `c3af89a03a8b` file deleted
+before it was committed/pushed anywhere, so no orphaned migration in history).
+
+Added `test_concurrent_webhook_redelivery_does_not_double_process` (genuine
+`asyncio.gather` concurrency, not sequential) — passed 5/5 repeated runs. Full backend
+suite: 833/833 passing (was 832 before this item); ruff clean; mypy clean aside from the
+one pre-existing `payments/api/router.py` finding (now at a shifted line number, same
+underlying pre-existing type looseness, not a new issue -- verified by comparing against
+the finding already documented from card #48/#50).

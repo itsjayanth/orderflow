@@ -218,6 +218,23 @@ class AppointmentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_for_update(
+        self, tenant: TenantContext, appointment_id: uuid.UUID
+    ) -> Appointment | None:
+        """Same as get(), but locks the appointment row (SELECT ... FOR
+        UPDATE) for the rest of this transaction -- see
+        OrderRepository.get_for_update()'s docstring for why."""
+        result = await self._session.execute(
+            select(Appointment)
+            .where(
+                Appointment.appointment_id == appointment_id,
+                Appointment.merchant_id == tenant.merchant_id,
+            )
+            .options(selectinload(Appointment.customer), selectinload(Appointment.status_events))
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def list_booked_ranges(
         self,
         tenant: TenantContext,

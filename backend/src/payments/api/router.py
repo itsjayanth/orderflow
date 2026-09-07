@@ -59,7 +59,10 @@ async def razorpay_webhook(
     if link_event is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No order found for this payment")
 
-    order = await OrderRepository(session).get(tenant, link_event.order_id)
+    # Locks the order row so a concurrent redelivery of this same webhook
+    # blocks here instead of racing this request to the transition below --
+    # see OrderRepository.get_for_update()'s docstring.
+    order = await OrderRepository(session).get_for_update(tenant, link_event.order_id)
     if order is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Order not found")
 
@@ -143,7 +146,12 @@ async def razorpay_appointment_webhook(
     if link_event is None or link_event.appointment_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No appointment found for this payment")
 
-    appointment = await AppointmentRepository(session).get(tenant, link_event.appointment_id)
+    # Locks the appointment row for the same reason as the order webhook
+    # above -- a concurrent redelivery blocks here instead of racing the
+    # payment_status check/write below.
+    appointment = await AppointmentRepository(session).get_for_update(
+        tenant, link_event.appointment_id
+    )
     if appointment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Appointment not found")
 

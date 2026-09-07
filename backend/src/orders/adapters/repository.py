@@ -150,6 +150,24 @@ class OrderRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_for_update(self, tenant: TenantContext, order_id: uuid.UUID) -> Order | None:
+        """Same as get(), but locks the order row (SELECT ... FOR UPDATE)
+        for the rest of this transaction. Use before reading payment_status/
+        fulfillment_status to decide a transition -- a concurrent caller
+        doing the same blocks here until this transaction commits, then
+        re-reads the post-transition state instead of racing against it."""
+        result = await self._session.execute(
+            select(Order)
+            .where(Order.order_id == order_id, Order.merchant_id == tenant.merchant_id)
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.customer),
+                selectinload(Order.delivery_address),
+            )
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def list(
         self,
         tenant: TenantContext,
@@ -188,8 +206,10 @@ class OrderRepository:
         """The only path that mutates fulfillment_status -- always goes
         through the domain state machine first (defense in depth: even a
         bug elsewhere in the app can't skip validation, since there's no
-        other way to write this field)."""
-        order = await self.get(tenant, order_id)
+        other way to write this field). Locks the row (get_for_update) so
+        two concurrent transitions on the same order serialize instead of
+        racing against each other's in-memory state."""
+        order = await self.get_for_update(tenant, order_id)
         if order is None:
             raise OrderNotFoundError(order_id)
 
@@ -219,8 +239,10 @@ class OrderRepository:
         already-collected or online order) is rejected the same way.
         Audit trail is a PaymentEvent, written by the caller (api layer)
         alongside this, not here -- OrderStatusEvent above is
-        fulfillment-only by design (see its docstring)."""
-        order = await self.get(tenant, order_id)
+        fulfillment-only by design (see its docstring). Locks the row
+        (get_for_update) for the same reason transition_fulfillment_status
+        does."""
+        order = await self.get_for_update(tenant, order_id)
         if order is None:
             raise OrderNotFoundError(order_id)
 

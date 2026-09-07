@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base
@@ -40,6 +40,27 @@ class PaymentEvent(Base):
             "(order_id IS NOT NULL) != (appointment_id IS NOT NULL)",
             name="ck_payment_events_exactly_one_entity",
         ),
+        # Defense-in-depth against double-processing the same webhook
+        # delivery: the actual race is closed by OrderRepository/
+        # AppointmentRepository.get_for_update() row-locking the entity
+        # before a transition, but this catches a future regression loudly
+        # (IntegrityError) instead of silently. Scoped to the two
+        # "processing" event types, not every row sharing a
+        # provider_payment_id -- redelivery is expected to append
+        # additional webhook_received_duplicate rows with the *same*
+        # provider_payment_id as an intentional audit trail (see both
+        # webhook handlers' duplicate-handling branches), so the real
+        # invariant is "at most one payment_succeeded/payment_failed per
+        # provider_payment_id", not "at most one row total".
+        Index(
+            "ix_payment_events_provider_payment_id_unique",
+            "provider_payment_id",
+            unique=True,
+            postgresql_where=text(
+                "provider_payment_id IS NOT NULL "
+                "AND event_type IN ('payment_succeeded', 'payment_failed')"
+            ),
+        ),
     )
 
     payment_event_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -51,7 +72,7 @@ class PaymentEvent(Base):
     )
 
     provider: Mapped[str] = mapped_column(String(32))  # "razorpay" | "dummy" | "cod"
-    provider_payment_id: Mapped[str | None] = mapped_column(String(255), default=None, index=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(255), default=None)
     provider_order_id: Mapped[str | None] = mapped_column(String(255), default=None)
 
     # link_created, payment_succeeded, payment_failed,
