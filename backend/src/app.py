@@ -3,8 +3,11 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from appointment_flow.api.router import router as appointment_flow_router
 from billing.api.router import router as billing_webhook_router
@@ -17,6 +20,7 @@ from payments.api.router import router as payments_webhook_router
 from shared.config import get_settings
 from shared.interaction_mode import validate_startup_config
 from shared.logging import configure_logging
+from shared.rate_limiting import limiter
 from shared.scheduler import create_scheduler
 
 configure_logging()
@@ -53,6 +57,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# IP-keyed rate limiting (slowapi/limits, in-memory storage; the shared
+# `limiter` instance lives in shared/rate_limiting.py so routers can apply
+# @limiter.limit(...) without an import cycle back through this module).
+# There's no per-tenant/per-API-key identity on the unauthenticated
+# endpoints this guards (login/register, public checkout, payment
+# webhooks), so client IP is the only signal available -- see the
+# individual @limiter.limit(...) call sites for the per-endpoint numbers
+# and reasoning. In-memory storage is single-process-only: a
+# multi-worker/multi-instance deployment would need a shared backend (e.g.
+# Redis) for limits to be enforced consistently across processes, which is
+# out of scope for this pass.
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(_request: Request, exc: RateLimitExceeded) -> Response:
+    # Match this app's normal HTTPException error shape ({"detail": ...},
+    # e.g. shared/deps.py) rather than slowapi's default {"error": ...} body.
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"},
+    )
+
 
 app.include_router(dashboard_api_router)
 app.include_router(whatsapp_webhook_router)

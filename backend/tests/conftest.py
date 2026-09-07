@@ -74,6 +74,16 @@ def webhook_request_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_db() -> AsyncIterator[None]:
+    # `app` (and therefore `app.state.limiter`) is a single module-level
+    # object shared across the whole test session -- a fresh `client`
+    # AsyncClient per test does NOT give each test a fresh rate-limit
+    # counter, since slowapi's in-memory storage lives on that shared
+    # limiter, keyed by IP, and every ASGITransport request in this suite
+    # reports the same client IP. Reset it here (same place schema state
+    # gets reset) so per-endpoint limits are evaluated fresh each test,
+    # rather than accumulating false 429s from unrelated earlier tests.
+    app.state.limiter.reset()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

@@ -12,12 +12,18 @@ from payments.adapters.repository import (
 )
 from payments.domain.gateway import WebhookVerificationError
 from shared.deps import DbSession
+from shared.rate_limiting import limiter
 from shared.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v1/payments/webhook", tags=["payments"])
 
 
 @router.post("/razorpay/{merchant_id}")
+# 60/minute per IP: webhooks come from Razorpay's own small, fixed set of
+# source IPs, so this should never bind legitimate delivery/retries --
+# it's here purely to bound worst-case abuse if this URL leaks (merchant_id
+# is a UUID in the path, not itself a secret).
+@limiter.limit("60/minute")
 async def razorpay_webhook(
     merchant_id: uuid.UUID,
     request: Request,
@@ -100,6 +106,9 @@ async def razorpay_webhook(
 
 
 @router.post("/razorpay/appointment/{merchant_id}")
+# Same reasoning as razorpay_webhook above -- Razorpay's own delivery/retry
+# traffic should never come close to this, it's a worst-case-abuse bound.
+@limiter.limit("60/minute")
 async def razorpay_appointment_webhook(
     merchant_id: uuid.UUID,
     request: Request,

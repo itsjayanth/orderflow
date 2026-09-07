@@ -2,7 +2,7 @@ import datetime
 import uuid
 
 import jwt
-from fastapi import APIRouter, Cookie, HTTPException, Query, Response, status
+from fastapi import APIRouter, Cookie, HTTPException, Query, Request, Response, status
 
 from appointments.adapters.scheduling_repository import (
     AppointmentServiceRepository,
@@ -42,6 +42,7 @@ from identity.domain.models import InvalidWebsiteUrlError, normalize_website_url
 from onboarding.domain.onboarding_service import try_advance_for_catalog_ready
 from shared.config import get_settings
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
+from shared.rate_limiting import limiter
 from shared.security import decode_token
 
 router = APIRouter(prefix="/api/v1/auth", tags=["identity"])
@@ -82,8 +83,12 @@ def _expires_at_from_payload(payload: dict[str, str]) -> datetime.datetime:
 
 
 @router.post("/register", response_model=AccessTokenResponse, status_code=status.HTTP_201_CREATED)
+# 10/minute per IP: registration is a one-off action for a legitimate user,
+# so this is generous headroom for retries (e.g. fixing a validation error)
+# while still bounding automated account-creation abuse.
+@limiter.limit("10/minute")
 async def register(
-    body: RegisterRequest, session: DbSession, response: Response
+    request: Request, body: RegisterRequest, session: DbSession, response: Response
 ) -> AccessTokenResponse:
     try:
         _merchant, _staff_user, tokens = await register_merchant(
@@ -97,8 +102,13 @@ async def register(
 
 
 @router.post("/login", response_model=AccessTokenResponse)
+# 10/minute per IP: tight enough to blunt credential-stuffing/brute-force
+# (a real attempt at guessing a password needs far more than 10 tries),
+# generous enough that a person mistyping their password a few times in a
+# row never gets locked out.
+@limiter.limit("10/minute")
 async def login_route(
-    body: LoginRequest, session: DbSession, response: Response
+    request: Request, body: LoginRequest, session: DbSession, response: Response
 ) -> AccessTokenResponse:
     try:
         _staff_user, tokens = await login(session, body.email_or_phone, body.password)

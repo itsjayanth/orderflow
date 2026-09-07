@@ -1,6 +1,6 @@
 import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from billing.adapters.repository import PlanRepository, SubscriptionRepository
 from billing.domain.gating import effective_tier
@@ -24,6 +24,7 @@ from ordering_flow.domain.checkout import (
     perform_checkout,
 )
 from shared.deps import DbSession, PublicTenant
+from shared.rate_limiting import limiter
 from shared.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v1/ordering-flow", tags=["ordering_flow"])
@@ -95,8 +96,15 @@ async def customer_lookup(
     response_model=OrderingFlowCheckoutResponse,
     status_code=status.HTTP_201_CREATED,
 )
+# 20/minute per IP: this does a real DB write and, for merchants with live
+# credentials, a real Razorpay API call per request, so it needs a bound --
+# but it's also the real customer checkout path, and one customer session
+# can retry after a validation error or resubmit while adjusting items, so
+# it's set loose enough that a legitimate multi-attempt order flow won't
+# trip it.
+@limiter.limit("20/minute")
 async def checkout(
-    tenant: PublicTenant, body: OrderingFlowCheckoutRequest, session: DbSession
+    request: Request, tenant: PublicTenant, body: OrderingFlowCheckoutRequest, session: DbSession
 ) -> OrderingFlowCheckoutResponse:
     """The real customer-facing checkout -- same
     ordering_flow.domain.checkout.perform_checkout the dashboard's
