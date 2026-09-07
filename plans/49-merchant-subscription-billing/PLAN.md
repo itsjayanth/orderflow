@@ -182,24 +182,33 @@ Migration: `billing_plans`, `subscriptions`, `billing_events` tables; seed migra
 **Risks**: (a) subscription state machine correctness under concurrent/duplicate webhooks — mitigated by mirroring `PaymentEvent`'s proven dedupe pattern exactly; (b) two independent gates (onboarding `live`, subscription status) in the same handler function risking accidental conflation — mitigated by keeping them as clearly separate `if` blocks with distinct `skipped_*` reasons, tested independently; (c) order-cap query performance at scale — not a concern at pilot scale (same reasoning `TECH_STACK.md` already applies to APScheduler-over-Celery).
 
 ## Subtask checklist
-- [ ] User confirms this write-up (data model, Phase 17 doc, open-question recommendations) before any code is written.
-- [ ] Migration + `billing` domain models + state machine + tests
-- [ ] `billing` adapters (repository, dummy/real gateway, selector) + tenant-isolation tests
-- [ ] `billing` API (webhook + dashboard router) + schemas
-- [ ] Platform Razorpay config + env var docs
-- [ ] Scheduler sweep job
-- [ ] Order-cap gate in checkout
-- [ ] Subscription gate in conversation handler (separate from `live`)
-- [ ] Flow-vs-webview tier gate
-- [ ] `hide_branding` on public catalog DTO
-- [ ] `ARCHITECTURE.md` §2 update
-- [ ] Frontend: hooks, PricingPage, BillingSettingsPage, TrialBanner, UpgradePrompt, routes
-- [ ] Full backend + frontend test/lint/typecheck pass
-- [ ] Live walkthrough per Definition of done
-- [ ] `IMPLEMENTATION_PLAN.md` Phase 17 entry finalized
+- [x] User confirms this write-up (data model, Phase 17 doc, open-question recommendations) before any code is written.
+- [x] Migration + `billing` domain models + state machine + tests
+- [x] `billing` adapters (repository, dummy/real gateway, selector) + tenant-isolation tests
+- [x] `billing` API (webhook + dashboard router) + schemas
+- [x] Platform Razorpay config + env var docs
+- [x] Scheduler sweep job
+- [x] Order-cap gate in checkout
+- [x] Subscription gate in conversation handler (separate from `live`)
+- [x] Flow-vs-webview tier gate
+- [x] `hide_branding` on public catalog DTO
+- [x] `ARCHITECTURE.md` §2 update
+- [x] Frontend: hooks, PricingPage, BillingSettingsPage, TrialBanner, UpgradePrompt, routes
+- [x] Full backend + frontend test/lint/typecheck pass
+- [x] Live walkthrough per Definition of done
+- [x] `IMPLEMENTATION_PLAN.md` Phase 17 entry finalized
 - [ ] Trello card moved through To Do → In Progress → In Review → Done with matching comments
 - [ ] Pre-merge audit pass (per CLAUDE.md's "Ongoing sync + auditing")
 
 ## Progress Log
 
 **2026-09-07** — Pre-coding research complete (3 parallel Explore subagents tracing `payments/`, onboarding/conversation gating + order-cap choke point, and frontend `settings`/routing conventions, plus direct reads of `ARCHITECTURE.md`/`TECH_STACK.md`/`IMPLEMENTATION_PLAN.md`/the brief, plus one external check confirming Razorpay's Plan-per-interval requirement). Trello card #49 created in "To Do". This `PLAN.md` drafted with the full data model, a draft Phase 17 doc, and recommendations on all four open questions plus the order-cap-enforcement discussion point. **No implementation code written yet** — awaiting explicit user confirmation per the task's own instruction. No deviations from the task brief found beyond the `render.yaml`→Railway migration noted above.
+
+**2026-09-07 (implementation)** — User approved the plan as written (all 5 recommendations accepted without change). Implemented via three sequential/parallel subagents, each committed separately once verified:
+- Commit `5cde231` — frontend billing feature (hooks, PricingPage, BillingSettingsPage, TrialBanner, UpgradePrompt, branding toggle), built in parallel with the backend module against the fixed API contract. 216/216 frontend tests, biome/tsc/build clean. Zero contract deviations.
+- Commit `185760f` — backend `billing/` module (models, migration, state machine, dummy/Razorpay gateways, repositories, webhook + dashboard API, scheduler job, registration wiring). 807/807 backend tests (85 new), ruff/mypy clean (one pre-existing unrelated mypy finding). Deviations (all documented, none substantive): `/billing/plans` lives in the dashboard router omitting its auth param rather than needing a separate public router (this codebase auths per-route, not per-router); seed data factored into `billing/domain/seed_data.py` shared by the migration and test fixtures (tests bypass Alembic); `orders_used_this_cycle` initially used an inline placeholder query pending Task A/C below.
+- Commit `18b89bc` — gate integration (`OrderRepository.count_since`, soft-block order cap in `perform_checkout()`, the independent-but-currently-always-`False` `should_block_whatsapp_traffic()` billing/onboarding gate separation, Flow-vs-webview tier gate, `hide_branding` on the public catalog, `ARCHITECTURE.md` §2 update). 831/831 backend tests (24 more new), ruff/mypy clean, frontend unaffected (216 still passing).
+- **Live walkthrough performed** (not just automated tests) against a real running backend + Postgres + frontend dev server: fetched `GET /billing/plans` (all 6 seeded correctly), registered a fresh merchant and confirmed an immediate `trialing`/Growth/750-cap subscription, called `POST /subscribe` for Growth-annual, constructed and sent a real HMAC-signed `subscription.activated` webhook against the dummy platform secret and watched status flip `trialing → active`, replayed the identical webhook and confirmed `{"status": "duplicate"}` with no double-transition, downgraded a second merchant to Starter and confirmed `GET /{merchant_id}/catalog` returns `hide_branding: false` for Starter (vs. `true` expected for Growth/Pro, exercised by the automated test suite). Loaded `/pricing` in a real Chromium browser (Playwright) against the live backend and screenshotted the rendered 3-tier comparison — prices/caps/feature rows all matched the approved pricing table exactly.
+- `IMPLEMENTATION_PLAN.md` Phase 17 entry appended, in the existing Deviations/Backend/Frontend/Definition-of-done format, reconciling all three agents' real deviations against the draft in this file.
+- **No deviations from the approved recommendations themselves** (trial-at-registration, 4-day past_due grace, 6 Plan rows, period/calendar-month cap window, soft-block enforcement) — only implementation-level details noted above.
+- Remaining: Trello card sync (comments + move to Done) and the CLAUDE.md-mandated pre-merge audit pass, both next.
