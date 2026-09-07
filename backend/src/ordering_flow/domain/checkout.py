@@ -196,6 +196,15 @@ async def perform_checkout(
         contact_phone=resolved_contact_phone,
         items=item_inputs,
     )
+    # Committed before the gateway call below, deliberately -- create_link()
+    # is a real external Razorpay API call for merchants with real
+    # credentials configured. If it raised (or the process died) *before*
+    # this commit, a live payment link could end up pointing at an order_id
+    # that never got durably persisted. Committing here first means a
+    # gateway failure just leaves the order sitting in awaiting_payment with
+    # no link -- visible on the dashboard, recoverable -- instead of a
+    # phantom order behind real captured money.
+    await session.commit()
 
     credentials = await MerchantPaymentCredentialsRepository(session).get(tenant)
     key_id, key_secret = resolve_credentials(credentials, tenant.merchant_id)

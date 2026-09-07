@@ -208,3 +208,20 @@ suite: 833/833 passing (was 832 before this item); ruff clean; mypy clean aside 
 one pre-existing `payments/api/router.py` finding (now at a shifted line number, same
 underlying pre-existing type looseness, not a new issue -- verified by comparing against
 the finding already documented from card #48/#50).
+
+**2026-09-07** — Item 2 (checkout transaction ordering) implemented. Delegated to a
+sub-agent first, which wrote a good regression test (`backend/tests/test_checkout_transaction_ordering.py`)
+but stalled across multiple resumes waiting on its own background baseline test run
+(contention from ~7 concurrent agents sharing one Postgres instance) without ever applying
+the actual code fix. Took over directly rather than continuing to resume a stuck agent:
+added a `session.commit()` right after `order_repo.create()` in `checkout.py`'s
+online-payment branch, before the `gateway.create_link()` call -- so the order is durably
+persisted in `awaiting_payment` before any external Razorpay API call happens. Verified
+`appointment_flow/domain/booking.py` (checked per the plan's note) does NOT have the
+analogous bug -- it has no payment-gateway call in its flow at all (appointment payments
+are a separate placeholder path per existing CLAUDE.md notes), so nothing to fix there.
+Ran the new tests + `test_ordering_flow.py`/`test_checkout_order_cap.py`/`test_payments.py`
+(45 passed) and the file-scoped ruff/mypy (both clean) against an isolated scratch DB
+(`orderflow_test_main`) to avoid interference from other concurrently-running agents' test
+runs against the shared `orderflow_test` database. Full-suite run in progress at time of
+writing; will confirm before final commit.
