@@ -256,6 +256,10 @@ export interface PublicCatalogOut {
   business_name: string
   items: PublicItemOut[]
   merchant_whatsapp_number: string | null
+  // Growth/Pro merchants have this true (the webview's "Powered by
+  // Orderflow" footer is hidden); Starter merchants get false. See
+  // features/ordering/OrderingPage.tsx.
+  hide_branding: boolean
 }
 
 export interface OrderingFlowCheckoutResponse {
@@ -472,4 +476,38 @@ export interface CampaignRecipientCounts {
 
 export interface CampaignDetailOut extends CampaignOut {
   recipient_counts: CampaignRecipientCounts
+}
+
+export type PlanTier = 'starter' | 'growth' | 'pro'
+export type BillingInterval = 'monthly' | 'annual'
+
+export interface PlanOut {
+  plan_id: string
+  tier: PlanTier
+  billing_interval: BillingInterval
+  display_name: string
+  price_inr: string // Decimal serializes as string, same as Item.price
+  order_cap: number | null // null = unlimited
+  whatsapp_flow_enabled: boolean
+  branding_required: boolean
+}
+
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired'
+
+export interface SubscriptionOut {
+  merchant_id: string
+  plan: PlanOut
+  status: SubscriptionStatus
+  trial_ends_at: string | null
+  current_period_start: string | null
+  current_period_end: string | null
+  past_due_since: string | null
+  cancel_at_period_end: boolean
+  orders_used_this_cycle: number
+  order_cap: number | null
+}
+
+export interface SubscriptionCheckoutOut {
+  provider_subscription_id: string
+  checkout_url: string
 }

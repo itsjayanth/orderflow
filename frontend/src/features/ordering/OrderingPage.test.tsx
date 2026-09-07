@@ -45,6 +45,7 @@ const sampleCatalog: PublicCatalogOut = {
     },
   ],
   merchant_whatsapp_number: '+91 90000 00000',
+  hide_branding: false,
 }
 
 const multiCategoryCatalog: PublicCatalogOut = {
@@ -66,6 +67,7 @@ const multiCategoryCatalog: PublicCatalogOut = {
     },
   ],
   merchant_whatsapp_number: '+91 90000 00000',
+  hide_branding: false,
 }
 
 function renderPage(search = '') {
@@ -131,6 +133,24 @@ describe('OrderingPage', () => {
     renderPage()
 
     expect(await screen.findByText('Business not found.')).toBeInTheDocument()
+  })
+
+  it('shows the "Powered by Orderflow" footer when hide_branding is false (Starter)', async () => {
+    mockedApiFetch.mockResolvedValueOnce(sampleCatalog)
+
+    renderPage()
+
+    expect(await screen.findByText('Test Business')).toBeInTheDocument()
+    expect(screen.getByText('Powered by Orderflow')).toBeInTheDocument()
+  })
+
+  it('hides the "Powered by Orderflow" footer when hide_branding is true (Growth/Pro)', async () => {
+    mockedApiFetch.mockResolvedValueOnce({ ...sampleCatalog, hide_branding: true })
+
+    renderPage()
+
+    expect(await screen.findByText('Test Business')).toBeInTheDocument()
+    expect(screen.queryByText('Powered by Orderflow')).not.toBeInTheDocument()
   })
 
   it('groups items into category sections with headers', async () => {

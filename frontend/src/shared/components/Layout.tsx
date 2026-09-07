@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useLogout, useMe } from '@/features/auth/useAuth'
+import { TrialBanner } from '@/features/billing/TrialBanner'
 import { cn } from '@/lib/utils'
 import { Toaster } from '@/shared/components/Toaster'
 import { ThemeToggle } from '@/shared/theme/ThemeToggle'
@@ -393,7 +394,10 @@ export function Layout() {
         </header>
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
-          <Outlet />
+          <TrialBanner />
+          <div className="mt-4 first:mt-0">
+            <Outlet />
+          </div>
         </main>
       </div>
 

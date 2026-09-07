@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/features/auth/authStore'
@@ -78,7 +79,9 @@ function renderPage() {
   })
   render(
     <QueryClientProvider client={queryClient}>
-      <SettingsPage />
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
