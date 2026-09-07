@@ -80,13 +80,26 @@ class CustomerRepository:
             return existing
 
         customer_number = await self._next_customer_number(tenant.merchant_id)
-        customer = Customer(
-            merchant_id=tenant.merchant_id,
-            customer_number=customer_number,
-            whatsapp_number=_canonical_whatsapp_number(whatsapp_number),
-            display_name=display_name,
+        stmt = (
+            pg_insert(Customer)
+            .values(
+                merchant_id=tenant.merchant_id,
+                customer_number=customer_number,
+                whatsapp_number=_canonical_whatsapp_number(whatsapp_number),
+                display_name=display_name,
+            )
+            .on_conflict_do_nothing(constraint="uq_customers_merchant_whatsapp")
+            .returning(Customer)
         )
-        self._session.add(customer)
+        result = await self._session.execute(stmt)
+        customer = result.scalar_one_or_none()
+        if customer is None:
+            # Lost the race: another concurrent call inserted this
+            # (merchant_id, whatsapp_number) first -- same customer either
+            # way, so fetch and return the winner's row instead of raising.
+            existing = await self.get_by_whatsapp_number(tenant, whatsapp_number)
+            assert existing is not None
+            return existing
         await self._session.flush()
         return customer
 

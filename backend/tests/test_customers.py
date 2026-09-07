@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from decimal import Decimal
 
@@ -11,6 +12,7 @@ from customers.adapters.repository import AddressInUseError, AddressRepository, 
 from customers.domain.models import Customer
 from identity.adapters.repository import MerchantRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
+from shared.db import SessionFactory
 from shared.tenant import TenantContext
 
 
@@ -126,6 +128,45 @@ async def test_find_or_create_different_merchants_get_different_customers(
     customer_b = await repo.find_or_create(tenant_b, "+919876543210")
 
     assert customer_a.customer_id != customer_b.customer_id
+
+
+async def test_concurrent_find_or_create_for_never_seen_number_does_not_raise(
+    db_session: AsyncSession,
+) -> None:
+    """Regression test for the find_or_create race: two genuinely concurrent
+    inbound-message deliveries for the same brand-new (merchant_id,
+    whatsapp_number) -- e.g. two WhatsApp webhook redeliveries processed by
+    different workers -- must not raise an unhandled IntegrityError, and
+    must resolve to exactly one Customer row. See
+    test_appointment_concurrency.py for the same "each call gets its own
+    session" shape, matching two simultaneous HTTP requests rather than two
+    operations sharing one session."""
+    tenant = await _make_tenant(db_session)
+    await db_session.commit()
+
+    async def _find_or_create_in_own_session() -> Customer:
+        async with SessionFactory() as session:
+            customer = await CustomerRepository(session).find_or_create(
+                tenant, "+919876543210", display_name="Concurrent Customer"
+            )
+            await session.commit()
+            return customer
+
+    first, second = await asyncio.gather(
+        _find_or_create_in_own_session(), _find_or_create_in_own_session()
+    )
+
+    assert first.customer_id == second.customer_id
+
+    async with SessionFactory() as session:
+        result = await session.execute(
+            select(Customer).where(
+                Customer.merchant_id == tenant.merchant_id,
+                Customer.whatsapp_number == "919876543210",
+            )
+        )
+        rows = result.scalars().all()
+        assert len(rows) == 1
 
 
 # --- Address repository ---
