@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
 
-from ordering_flow.domain.checkout import CheckoutItem, ItemNotFoundError, perform_checkout
+from ordering_flow.domain.checkout import (
+    CheckoutItem,
+    ItemNotFoundError,
+    ItemUnavailableError,
+    perform_checkout,
+)
 from payments.adapters.gateway_selector import REAL_KEY_PREFIXES
 from payments.adapters.repository import MerchantPaymentCredentialsRepository
 from payments.api.schemas import (
@@ -74,6 +79,8 @@ async def test_checkout(
         )
     except ItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ItemUnavailableError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
     return TestCheckoutResponse(
         order_id=result.order.order_id,

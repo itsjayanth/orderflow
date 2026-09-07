@@ -21,6 +21,7 @@ from ordering_flow.api.schemas import (
 from ordering_flow.domain.checkout import (
     CheckoutItem,
     ItemNotFoundError,
+    ItemUnavailableError,
     NewDeliveryAddress,
     perform_checkout,
 )
@@ -144,6 +145,8 @@ async def checkout(
         )
     except ItemNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ItemUnavailableError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
     return OrderingFlowCheckoutResponse(
         order_id=result.order.order_id,

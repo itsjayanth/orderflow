@@ -34,6 +34,12 @@ class ItemNotFoundError(Exception):
         self.item_id = item_id
 
 
+class ItemUnavailableError(Exception):
+    def __init__(self, item_id: uuid.UUID) -> None:
+        super().__init__(f"Item {item_id} is not available")
+        self.item_id = item_id
+
+
 @dataclass(frozen=True, slots=True)
 class CheckoutItem:
     item_id: uuid.UUID
@@ -127,6 +133,8 @@ async def perform_checkout(
         item = await item_repo.get(tenant, line.item_id)
         if item is None:
             raise ItemNotFoundError(line.item_id)
+        if not item.is_available:
+            raise ItemUnavailableError(line.item_id)
         item_inputs.append(
             OrderItemInput(
                 item_id=item.item_id,
