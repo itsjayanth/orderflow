@@ -28,6 +28,10 @@ os.environ.setdefault("PAYMENTS_DUMMY_GATEWAY_SECRET", "test-only-payments-dummy
 os.environ.setdefault(
     "PLATFORM_RAZORPAY_WEBHOOK_SECRET", "test-only-platform-razorpay-webhook-secret"
 )
+# SECRETS_ENCRYPTION_KEY has no hardcoded default in shared/config.py either
+# (shared/encryption.py's _fernet() fails closed on an unset key) -- a fixed,
+# valid Fernet key here, same rationale as the secrets above.
+os.environ.setdefault("SECRETS_ENCRYPTION_KEY", "PVHGIbvhdJthNQhBaOU5otAB3QhyVwoX5EnP2NvLM5w=")
 
 import hashlib
 import hmac
