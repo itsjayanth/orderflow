@@ -1,8 +1,6 @@
 import datetime
-import uuid
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import func, select
 
 from billing.adapters.gateway_selector import get_billing_gateway
 from billing.adapters.repository import PlanRepository, SubscriptionRepository
@@ -15,7 +13,7 @@ from billing.api.schemas import (
 )
 from billing.domain.gating import billing_cycle_window, effective_order_cap, effective_tier
 from billing.domain.models import Plan, Subscription
-from orders.domain.models import Order
+from orders.adapters.repository import OrderRepository
 from shared.config import get_settings
 from shared.deps import CurrentTenant, DbSession
 
@@ -35,28 +33,6 @@ def _plan_out(plan: Plan) -> PlanOut:
     )
 
 
-async def _count_orders_since(
-    session: DbSession,
-    merchant_id: uuid.UUID,
-    cycle_start: datetime.datetime,
-    cycle_end: datetime.datetime,
-) -> int:
-    # TODO(billing): replace with OrderRepository.count_since once orders/
-    # gate work (order-cap enforcement in ordering_flow/domain/checkout.py)
-    # lands -- kept as a local inline query for now so this endpoint is
-    # correct today without depending on that concurrent work.
-    result = await session.execute(
-        select(func.count())
-        .select_from(Order)
-        .where(
-            Order.merchant_id == merchant_id,
-            Order.placed_at >= cycle_start,
-            Order.placed_at < cycle_end,
-        )
-    )
-    return int(result.scalar_one())
-
-
 async def _build_subscription_out(
     session: DbSession, tenant: CurrentTenant, subscription: Subscription, plan: Plan
 ) -> SubscriptionOut:
@@ -66,8 +42,8 @@ async def _build_subscription_out(
     order_cap = effective_order_cap(tier, plans_by_tier)
 
     cycle_start, cycle_end = billing_cycle_window(subscription, now)
-    orders_used_this_cycle = await _count_orders_since(
-        session, tenant.merchant_id, cycle_start, cycle_end
+    orders_used_this_cycle = await OrderRepository(session).count_since(
+        tenant, cycle_start, cycle_end
     )
 
     return SubscriptionOut(

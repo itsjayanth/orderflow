@@ -2,10 +2,13 @@ import datetime
 import uuid
 from decimal import Decimal
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from appointments.adapters.repository import AppointmentRepository
 from appointments.adapters.scheduling_repository import AppointmentServiceRepository
+from billing.adapters.repository import PlanRepository, SubscriptionRepository
+from billing.domain.state_machine import transition_subscription_status
 from catalog.adapters.repository import ItemRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
 from conversation.domain.handler import handle_inbound_message
@@ -1441,3 +1444,102 @@ async def test_order_flow_completion_with_selected_items_still_creates_order_not
         tenant, customer_id=customer.customer_id
     )
     assert appointments == []
+
+
+# --- Billing gates (Phase 17) ------------------------------------------------
+
+
+async def _seed_subscription(
+    db_session: AsyncSession, tenant: TenantContext, *, tier: str, status: str
+):
+    """Drives a fresh Subscription (always created "trialing" by
+    SubscriptionRepository.create) through transition_subscription_status
+    to land on the requested status, mirroring test_billing_scheduler.py's
+    setup pattern exactly."""
+    plan = await PlanRepository(db_session).get_by_tier_and_interval(tier, "monthly")
+    assert plan is not None
+    subscription = await SubscriptionRepository(db_session).create(
+        tenant, plan_id=plan.plan_id, status="trialing", trial_ends_at=None
+    )
+    if status == "trialing":
+        pass
+    elif status == "active":
+        transition_subscription_status(subscription, "active")
+    elif status == "past_due":
+        transition_subscription_status(subscription, "active")
+        transition_subscription_status(subscription, "past_due")
+    elif status == "expired":
+        transition_subscription_status(subscription, "expired")
+    elif status == "canceled":
+        transition_subscription_status(subscription, "active")
+        transition_subscription_status(subscription, "canceled")
+    else:
+        raise ValueError(status)
+    await db_session.commit()
+    return subscription
+
+
+@pytest.mark.parametrize("status", ["trialing", "active", "past_due", "expired", "canceled"])
+async def test_billing_status_never_blocks_whatsapp_traffic(
+    db_session: AsyncSession, status: str
+) -> None:
+    """Regression test for the invariant billing/domain/gating.py's
+    should_block_whatsapp_traffic docstring claims: every reachable
+    Subscription.status still gets a normal reply, never
+    skipped_billing_blocked -- billing status degrades feature access
+    (order cap, Flow, branding), it never cuts off inbound WhatsApp
+    traffic outright."""
+    _, tenant = await _seed_connected_merchant(db_session)
+    await _seed_subscription(db_session, tenant, tier="growth", status=status)
+    sender = FakeSender()
+    message = _inbound(text="hi")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.skipped_billing_blocked is False
+    assert result.reply_sent is True
+
+
+async def test_place_order_starter_tier_uses_webview_link_even_with_flow_configured(
+    db_session: AsyncSession,
+) -> None:
+    """A Starter-tier merchant never gets the native Flow, even with
+    waba.whatsapp_flow_id set -- native Flow ordering is a Growth/Pro-only
+    feature (Plan.whatsapp_flow_enabled == False for Starter)."""
+    _, tenant = await _seed_connected_merchant(db_session)
+    await WhatsAppBusinessAccountRepository(db_session).set_flow_credentials(
+        tenant, flow_id="FLOW_123", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await _seed_subscription(db_session, tenant, tier="starter", status="active")
+    sender = FakeSender()
+    message = _inbound(button_id="place_order")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.PLACE_ORDER
+    assert result.reply_sent is True
+    assert sender.flow_calls == []
+    assert len(sender.text_calls) == 1
+    assert f"/order/{tenant.merchant_id}" in sender.text_calls[0]["body"]
+
+
+async def test_place_order_growth_tier_still_gets_flow_when_configured(
+    db_session: AsyncSession,
+) -> None:
+    """Regression test: a Growth/Pro-tier merchant's existing Flow-send
+    behavior is unaffected by the new tier gate."""
+    _, tenant = await _seed_connected_merchant(db_session)
+    await WhatsAppBusinessAccountRepository(db_session).set_flow_credentials(
+        tenant, flow_id="FLOW_123", private_key_encrypted=encrypt("dummy-pem")
+    )
+    await _seed_subscription(db_session, tenant, tier="growth", status="active")
+    sender = FakeSender()
+    message = _inbound(button_id="place_order")
+
+    result = await handle_inbound_message(db_session, sender, message)
+
+    assert result.intent == Intent.PLACE_ORDER
+    assert result.reply_sent is True
+    assert len(sender.flow_calls) == 1
+    assert sender.flow_calls[0]["flow_id"] == "FLOW_123"
+    assert sender.text_calls == []

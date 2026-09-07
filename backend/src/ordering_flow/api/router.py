@@ -1,7 +1,10 @@
+import datetime
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
 
+from billing.adapters.repository import PlanRepository, SubscriptionRepository
+from billing.domain.gating import effective_tier
 from catalog.adapters.repository import ItemRepository
 from customers.domain.identity_resolution import resolve_customer_by_whatsapp_id
 from identity.adapters.repository import MerchantRepository
@@ -47,7 +50,23 @@ async def get_public_catalog(merchant_id: uuid.UUID, session: DbSession) -> Publ
         business_name=merchant.business_name,
         items=[PublicItemOut.model_validate(item) for item in items],
         merchant_whatsapp_number=waba.display_phone_number if waba else None,
+        hide_branding=await _hide_branding(session, tenant),
     )
+
+
+async def _hide_branding(session: DbSession, tenant: TenantContext) -> bool:
+    """Starter shows the "Powered by Orderflow" footer; Growth/Pro hide it.
+    Fails open to False (show branding) whenever there's no Subscription
+    row or its Plan can't be resolved -- never crash the public menu page
+    over a billing lookup issue."""
+    subscription = await SubscriptionRepository(session).get(tenant)
+    if subscription is None:
+        return False
+    plan = await PlanRepository(session).get(subscription.plan_id)
+    if plan is None:
+        return False
+    tier = effective_tier(subscription, plan, datetime.datetime.now(datetime.UTC))
+    return tier != "starter"
 
 
 @router.get("/{merchant_id}/customer-lookup", response_model=OrderingFlowCustomerLookupOut)

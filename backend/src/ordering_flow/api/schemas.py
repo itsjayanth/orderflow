@@ -22,6 +22,13 @@ class PublicCatalogOut(BaseModel):
     # the webview link back to the chat (e.g. after checkout) since a
     # website can't programmatically return the customer to WhatsApp itself.
     merchant_whatsapp_number: str | None = None
+    # True (hide the "Powered by Orderflow" footer) once the merchant's
+    # effective billing tier is above Starter -- see
+    # ordering_flow/api/router.py's get_public_catalog for how this is
+    # computed. Defaults to False (show branding) whenever there's no
+    # Subscription row to check, so a billing-lookup gap never silently
+    # hides branding a merchant hasn't paid to remove.
+    hide_branding: bool = False
 
 
 class OrderingFlowCheckoutItem(BaseModel):

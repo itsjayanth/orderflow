@@ -48,6 +48,24 @@ def _calendar_month_window(now: datetime.datetime) -> tuple[datetime.datetime, d
     return start, end
 
 
+def should_block_whatsapp_traffic(subscription: Subscription) -> bool:
+    """Whether billing status should, on its own, block inbound WhatsApp
+    traffic -- kept structurally separate from onboarding's `live` gate
+    (conversation/domain/handler.py) so the two can block independently for
+    their own reasons, per this platform's design. Currently always False:
+    every reachable Subscription.status (including a lapsed trial or a
+    past-due subscription past its grace window) degrades to Starter-tier
+    feature limits (order cap, WhatsApp Flow access, webview branding)
+    rather than a full block -- cutting off a live restaurant's WhatsApp
+    number entirely is worse for the business than capping it (PLAN.md open
+    questions 2 and 5). This function exists as the one place that policy
+    would change if that trade-off is ever revisited, and as a regression
+    test target (mirrors notifications/adapters/whatsapp_channel.py's
+    Phase-12 pattern: "a regression test proves the channel is structurally
+    unaware of the flag") -- not dead code, a documented invariant."""
+    return False
+
+
 def billing_cycle_window(
     subscription: Subscription, now: datetime.datetime
 ) -> tuple[datetime.datetime, datetime.datetime]:

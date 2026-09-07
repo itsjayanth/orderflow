@@ -1,3 +1,4 @@
+import datetime
 import uuid
 from dataclasses import dataclass
 
@@ -6,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from appointment_flow.domain.booking import PastDateError, perform_booking
 from appointments.adapters.repository import AppointmentRepository, SlotConflictError
 from appointments.domain.models import Appointment
+from billing.adapters.repository import PlanRepository, SubscriptionRepository
+from billing.domain.gating import effective_tier, should_block_whatsapp_traffic
 from catalog.adapters.repository import ItemRepository
 from conversation.adapters.repository import MessageDedupeRepository
 from conversation.adapters.whatsapp_client import WhatsAppSender
@@ -102,6 +105,7 @@ class HandledMessage:
     skipped_duplicate: bool = False
     skipped_unknown_number: bool = False
     skipped_not_live: bool = False
+    skipped_billing_blocked: bool = False
 
 
 async def handle_inbound_message(
@@ -123,6 +127,18 @@ async def handle_inbound_message(
     merchant = await MerchantRepository(session).get(tenant.merchant_id)
     if merchant is None or merchant.onboarding_status != "live":
         return HandledMessage(intent=Intent.GREETING, reply_sent=False, skipped_not_live=True)
+
+    # Structurally independent from the `live` gate above (own field, never
+    # merged into that condition) -- billing/domain/gating.py's
+    # should_block_whatsapp_traffic is currently always False (see its
+    # docstring: every reachable Subscription status degrades to Starter
+    # limits rather than a full WhatsApp cutoff), but this is where a future
+    # policy change would plug in without touching the onboarding gate.
+    subscription = await SubscriptionRepository(session).get(tenant)
+    if subscription is not None and should_block_whatsapp_traffic(subscription):
+        return HandledMessage(
+            intent=Intent.GREETING, reply_sent=False, skipped_billing_blocked=True
+        )
 
     dedupe_repo = MessageDedupeRepository(session)
     newly_recorded = await dedupe_repo.mark_processed(
@@ -244,6 +260,32 @@ async def _send_browser_link_reply(
     )
 
 
+async def _whatsapp_flow_allowed_by_plan(session: AsyncSession, tenant: TenantContext) -> bool:
+    """Starter-tier merchants are steered to the plain-text webview link
+    even when waba.whatsapp_flow_id is set -- native in-chat Flow ordering
+    is a Growth/Pro-only feature. Tier is computed the same way order-cap
+    enforcement gets its tier (billing/domain/gating.py's effective_tier,
+    against the *effective* tier's own Plan row, not necessarily the
+    subscription's nominal plan -- a lapsed Growth subscription degrades to
+    Starter's whatsapp_flow_enabled=False here too). Fails open (True, i.e.
+    "let the existing Flow-vs-webview logic decide") on any missing
+    Subscription/Plan data -- a billing-lookup gap must never newly break
+    Flow access for a merchant who otherwise has it."""
+    subscription = await SubscriptionRepository(session).get(tenant)
+    if subscription is None:
+        return True
+    plan = await PlanRepository(session).get(subscription.plan_id)
+    if plan is None:
+        return True
+    tier = effective_tier(subscription, plan, datetime.datetime.now(datetime.UTC))
+    all_plans = await PlanRepository(session).list_all()
+    plans_by_tier = {p.tier: p for p in all_plans if p.billing_interval == "monthly"}
+    tier_plan = plans_by_tier.get(tier)
+    if tier_plan is None:
+        return True
+    return tier_plan.whatsapp_flow_enabled
+
+
 async def _reply_for_intent(
     session: AsyncSession,
     sender: WhatsAppSender,
@@ -295,11 +337,16 @@ async def _reply_for_intent(
                 merchant_id=tenant.merchant_id,
             )
 
-        if waba.whatsapp_flow_id:
+        flow_allowed_by_plan = await _whatsapp_flow_allowed_by_plan(session, tenant)
+
+        if waba.whatsapp_flow_id and flow_allowed_by_plan:
             # Native in-chat ordering (see flows/) -- set once per merchant
             # by scripts/setup_whatsapp_flow.py. Falls back to the webview
             # link below for any merchant who hasn't had that run yet, so
-            # PLACE_ORDER never silently does nothing.
+            # PLACE_ORDER never silently does nothing. A Starter-tier
+            # merchant (flow_allowed_by_plan False) is steered to that same
+            # webview link below regardless of whatsapp_flow_id being set --
+            # native Flow access is a Growth/Pro-only feature.
             #
             # flow_token carries the customer's own WhatsApp number rather
             # than an opaque id -- flows/api/router.py has no other way to

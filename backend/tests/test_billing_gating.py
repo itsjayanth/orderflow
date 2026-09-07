@@ -2,7 +2,14 @@ import datetime
 import uuid
 from decimal import Decimal
 
-from billing.domain.gating import billing_cycle_window, effective_order_cap, effective_tier
+import pytest
+
+from billing.domain.gating import (
+    billing_cycle_window,
+    effective_order_cap,
+    effective_tier,
+    should_block_whatsapp_traffic,
+)
 from billing.domain.models import Plan, Subscription
 from shared.config import get_settings
 
@@ -142,3 +149,16 @@ def test_billing_cycle_window_calendar_month_handles_december() -> None:
 
     assert start == datetime.datetime(2026, 12, 1, tzinfo=datetime.UTC)
     assert end == datetime.datetime(2027, 1, 1, tzinfo=datetime.UTC)
+
+
+# --- should_block_whatsapp_traffic --------------------------------------------
+
+
+@pytest.mark.parametrize("status", ["trialing", "active", "past_due", "expired", "canceled"])
+def test_should_block_whatsapp_traffic_is_always_false(status: str) -> None:
+    """Regression test for the documented invariant: billing status alone
+    never blocks inbound WhatsApp traffic, for any reachable status --
+    lapsed/past-due merchants degrade to Starter limits instead."""
+    subscription = _subscription(status)
+
+    assert should_block_whatsapp_traffic(subscription) is False

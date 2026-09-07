@@ -105,7 +105,7 @@ Enforcement is structural, not a convention every engineer has to remember:
 
 - **Tenant context resolved once, early, per request.** Dashboard API requests resolve `merchant_id` from the authenticated `StaffUser`'s session via middleware before any handler runs. WhatsApp inbound webhooks resolve `merchant_id` by looking up Meta's `phone_number_id` against `WhatsAppBusinessAccount` — this lookup is the *first* thing the Conversation Handler does with any inbound message, before any other component sees it. Payment webhooks resolve tenant from the `order_id`/`provider_order_id` recorded at link-creation time — never from a tenant field the provider might echo back.
 - **Repository pattern carries the tenant context, not the caller.** No repository method exists that can fetch or mutate a row without a `TenantContext` argument (see Section 4) — this makes a cross-tenant data leak an interface-level mistake, not just something code review has to catch.
-- **Explicitly deferred**, since no current pilot need justifies it yet: per-tenant rate limiting, per-tenant data export/residency tooling, tenant-level feature flags.
+- **Explicitly deferred**, since no current pilot need justifies it yet: per-tenant rate limiting, per-tenant data export/residency tooling. ~~tenant-level feature flags~~ — **superseded by Phase 17's billing-tier gates**: `Subscription`/`Plan` (`billing/domain/models.py`) plus `billing/domain/gating.py`'s `effective_tier`/`effective_order_cap`/`should_block_whatsapp_traffic` now gate order caps, WhatsApp Flow access, and webview branding per merchant, exactly the kind of tenant-level feature flag this line once said no pilot need justified. Rate limiting and data export/residency tooling remain accurately deferred.
 
 ---
 
