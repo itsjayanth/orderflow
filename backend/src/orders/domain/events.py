@@ -1,7 +1,8 @@
 import uuid
-from collections import defaultdict
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+
+from shared.events import EventBus
+from shared.events import Handler as _Handler
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +36,7 @@ class OrderCompleted(OrderEvent):
     pass
 
 
-Handler = Callable[[OrderEvent], Awaitable[None]]
+type Handler = _Handler[OrderEvent]
 
 # Dead simple in-process pub-sub -- no message broker needed at this scale
 # (TECH_STACK.md). Producers (Order Service) don't know who's listening;
@@ -46,13 +47,17 @@ Handler = Callable[[OrderEvent], Awaitable[None]]
 # at this scale (TECH_STACK.md), so a slow/failing notification is a
 # logged no-op (see notifications/adapters/whatsapp_channel.py), not
 # something that blocks or fails the request that published the event.
-_subscribers: dict[type[OrderEvent], list[Handler]] = defaultdict(list)
+#
+# The pub-sub mechanism itself lives in shared/events.py (generic, reused
+# by appointments/domain/events.py); this module's bus instance is its own,
+# independent subscriber table -- events published here are never visible
+# to any other module's subscribers.
+_bus: EventBus[OrderEvent] = EventBus()
 
 
 def subscribe(event_type: type[OrderEvent], handler: Handler) -> None:
-    _subscribers[event_type].append(handler)
+    _bus.subscribe(event_type, handler)
 
 
 async def publish(event: OrderEvent) -> None:
-    for handler in _subscribers[type(event)]:
-        await handler(event)
+    await _bus.publish(event)
