@@ -197,8 +197,8 @@ Migration: `billing_plans`, `subscriptions`, `billing_events` tables; seed migra
 - [x] Full backend + frontend test/lint/typecheck pass
 - [x] Live walkthrough per Definition of done
 - [x] `IMPLEMENTATION_PLAN.md` Phase 17 entry finalized
-- [ ] Trello card moved through To Do → In Progress → In Review → Done with matching comments
-- [ ] Pre-merge audit pass (per CLAUDE.md's "Ongoing sync + auditing")
+- [x] Trello card moved through To Do → In Progress → In Review with matching comments (Done pending merge — no PR opened yet, only on explicit request)
+- [x] Pre-merge audit pass (per CLAUDE.md's "Ongoing sync + auditing")
 
 ## Progress Log
 
@@ -211,4 +211,5 @@ Migration: `billing_plans`, `subscriptions`, `billing_events` tables; seed migra
 - **Live walkthrough performed** (not just automated tests) against a real running backend + Postgres + frontend dev server: fetched `GET /billing/plans` (all 6 seeded correctly), registered a fresh merchant and confirmed an immediate `trialing`/Growth/750-cap subscription, called `POST /subscribe` for Growth-annual, constructed and sent a real HMAC-signed `subscription.activated` webhook against the dummy platform secret and watched status flip `trialing → active`, replayed the identical webhook and confirmed `{"status": "duplicate"}` with no double-transition, downgraded a second merchant to Starter and confirmed `GET /{merchant_id}/catalog` returns `hide_branding: false` for Starter (vs. `true` expected for Growth/Pro, exercised by the automated test suite). Loaded `/pricing` in a real Chromium browser (Playwright) against the live backend and screenshotted the rendered 3-tier comparison — prices/caps/feature rows all matched the approved pricing table exactly.
 - `IMPLEMENTATION_PLAN.md` Phase 17 entry appended, in the existing Deviations/Backend/Frontend/Definition-of-done format, reconciling all three agents' real deviations against the draft in this file.
 - **No deviations from the approved recommendations themselves** (trial-at-registration, 4-day past_due grace, 6 Plan rows, period/calendar-month cap window, soft-block enforcement) — only implementation-level details noted above.
-- Remaining: Trello card sync (comments + move to Done) and the CLAUDE.md-mandated pre-merge audit pass, both next.
+- **Pre-merge audit pass**: diffed the branch against its true fork point (`740ee57`, not local `main` which was stale) — the diff is exactly the 62 files this feature touches, no stray changes. All 4 commits on this branch are prefixed `49:`. Plan folder (`49-merchant-subscription-billing`), Trello card (#49), and commit-message ticket references all match; the one intentional mismatch (branch name is the harness-assigned `claude/merchant-subscription-billing-fnd4oh`, not a `feature/49-...` name) was flagged at the top of this file from the start, not discovered late. Trello card moved To Do → In Progress → In Review, with a comment at each transition; no PR opened (this session only opens a PR on explicit request, per its own operating rules — CLAUDE.md's workflow step 7 is superseded by that instruction here, noted rather than silently followed or silently skipped).
+- Committed as `0c2468a` (this entry + the Phase 17 doc + checklist).
