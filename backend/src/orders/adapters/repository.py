@@ -320,6 +320,23 @@ class OrderRepository:
             cancelled_orders=row[8],
         )
 
+    async def count_since(
+        self, tenant: TenantContext, start: datetime.datetime, end: datetime.datetime
+    ) -> int:
+        """Count of this merchant's orders placed in [start, end) -- backs
+        billing's order-cap check and usage display. Counts by `placed_at`,
+        tenant-scoped like every other method here."""
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(Order)
+            .where(
+                Order.merchant_id == tenant.merchant_id,
+                Order.placed_at >= start,
+                Order.placed_at < end,
+            )
+        )
+        return int(result.scalar_one())
+
     async def list_stale_awaiting_payment(
         self, older_than: datetime.datetime
     ) -> builtins.list[Order]:

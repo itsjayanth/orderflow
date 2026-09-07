@@ -829,3 +829,76 @@ async def test_get_summary_without_date_params_matches_all_time_behavior(
 
     assert response.status_code == 200
     assert response.json()["total_orders"] == 2
+
+
+# --- OrderRepository.count_since (backs billing's order-cap check) --------
+
+
+async def test_count_since_counts_orders_placed_in_window(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC)
+    )
+
+    count = await OrderRepository(db_session).count_since(
+        tenant,
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC),
+    )
+
+    assert count == 2
+
+
+async def test_count_since_end_is_exclusive(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+    await _seed_order(
+        db_session, tenant, placed_at=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC)
+    )
+
+    count = await OrderRepository(db_session).count_since(
+        tenant,
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC),
+    )
+
+    assert count == 0
+
+
+async def test_count_since_returns_zero_when_no_orders(db_session: AsyncSession) -> None:
+    tenant = await _make_tenant(db_session)
+
+    count = await OrderRepository(db_session).count_since(
+        tenant,
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC),
+    )
+
+    assert count == 0
+
+
+async def test_count_since_is_tenant_isolated(db_session: AsyncSession) -> None:
+    tenant_a = await _make_tenant(db_session, business_name="Business A")
+    tenant_b = await _make_tenant(db_session, business_name="Business B")
+    window_start = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    window_end = datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC)
+    await _seed_order(
+        db_session, tenant_a, placed_at=datetime.datetime(2026, 1, 10, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant_b, placed_at=datetime.datetime(2026, 1, 10, tzinfo=datetime.UTC)
+    )
+    await _seed_order(
+        db_session, tenant_b, placed_at=datetime.datetime(2026, 1, 11, tzinfo=datetime.UTC)
+    )
+
+    count_a = await OrderRepository(db_session).count_since(tenant_a, window_start, window_end)
+    count_b = await OrderRepository(db_session).count_since(tenant_b, window_start, window_end)
+
+    assert count_a == 1
+    assert count_b == 2

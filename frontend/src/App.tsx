@@ -5,6 +5,8 @@ import { AppointmentsPage } from '@/features/appointments/AppointmentsPage'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RegisterPage } from '@/features/auth/RegisterPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
+import { BillingSettingsPage } from '@/features/billing/BillingSettingsPage'
+import { PricingPage } from '@/features/billing/PricingPage'
 import { BookingPage } from '@/features/booking/BookingPage'
 import { CampaignDetailPage } from '@/features/campaigns/CampaignDetailPage'
 import { CampaignsPage } from '@/features/campaigns/CampaignsPage'
@@ -34,6 +36,10 @@ export function App() {
       <Route path="order/:merchantId" element={<OrderingPage />} />
       {/* Public customer-facing appointment booking webview -- no staff auth, no dashboard Layout. */}
       <Route path="book/:merchantId" element={<BookingPage />} />
+      {/* Public pricing/marketing page -- usable logged-out (links to
+          /register) or logged-in (subscribes directly). No staff auth, no
+          dashboard Layout. */}
+      <Route path="pricing" element={<PricingPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route path="dashboard" element={<DashboardHomePage />} />
@@ -50,6 +56,7 @@ export function App() {
           <Route path="campaigns/templates" element={<TemplatesPage />} />
           <Route path="onboarding" element={<OnboardingPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="settings/billing" element={<BillingSettingsPage />} />
         </Route>
       </Route>
       {/* Outside <RequireAuth> -- a 404 shouldn't require login to see. */}

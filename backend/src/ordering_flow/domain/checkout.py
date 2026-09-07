@@ -1,9 +1,16 @@
+import datetime
 import uuid
 from dataclasses import dataclass
 from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from billing.adapters.repository import (
+    BillingEventRepository,
+    PlanRepository,
+    SubscriptionRepository,
+)
+from billing.domain.gating import billing_cycle_window, effective_order_cap, effective_tier
 from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import AddressRepository, CustomerRepository
 from orders.adapters.repository import OrderItemInput, OrderRepository
@@ -131,6 +138,32 @@ async def perform_checkout(
 
     order_repo = OrderRepository(session)
     payment_event_repo = PaymentEventRepository(session)
+
+    # Order-cap soft-block (PLAN.md open question 5, approved: soft-block,
+    # never reject) -- never fail a customer's in-progress checkout over the
+    # merchant's billing state. A merchant with no Subscription row at all
+    # (shouldn't happen post-registration-wiring, but defensively) also just
+    # proceeds uncapped -- fail open, not closed, on a missing billing record.
+    subscription = await SubscriptionRepository(session).get(tenant)
+    plan = await PlanRepository(session).get(subscription.plan_id) if subscription else None
+    if subscription and plan:
+        now = datetime.datetime.now(datetime.UTC)
+        tier = effective_tier(subscription, plan, now)
+        all_plans = await PlanRepository(session).list_all()
+        plans_by_tier = {p.tier: p for p in all_plans if p.billing_interval == "monthly"}
+        cap = effective_order_cap(tier, plans_by_tier)
+        if cap is not None:
+            window_start, window_end = billing_cycle_window(subscription, now)
+            used = await OrderRepository(session).count_since(tenant, window_start, window_end)
+            if used >= cap:
+                await BillingEventRepository(session).create(
+                    merchant_id=tenant.merchant_id,
+                    provider="dummy",
+                    event_type="order_cap_exceeded",
+                    raw_payload=f'{{"used": {used}, "cap": {cap}, "tier": "{tier}"}}',
+                )
+                # NOT a block -- order proceeds. This is a dunning signal for
+                # the merchant's dashboard, not a gate.
 
     if payment_method == "cod":
         order = await order_repo.create(

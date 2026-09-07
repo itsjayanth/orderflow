@@ -4,14 +4,17 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from billing.adapters.repository import PlanRepository, SubscriptionRepository
 from identity.adapters.repository import MerchantRepository, StaffUserRepository
 from identity.domain.models import Merchant, StaffUser
+from shared.config import get_settings
 from shared.security import (
     create_access_token,
     create_refresh_token,
     hash_password,
     verify_password,
 )
+from shared.tenant import TenantContext
 
 
 class EmailAlreadyRegisteredError(Exception):
@@ -55,6 +58,26 @@ async def register_merchant(
         password_hash=hash_password(password),
         role="owner",
     )
+
+    # Every merchant starts a Growth-tier trial the moment they register --
+    # not gated behind onboarding's `live` status, which is an independent
+    # concern (see billing/domain/gating.py's docstring: no order can flow
+    # before `live` regardless of subscription status, so starting the
+    # trial clock here doesn't leak any value early, and it matches the
+    # plain "14-day free trial" mental model a merchant expects from the
+    # moment they sign up). Same transaction as Merchant/StaffUser above.
+    settings = get_settings()
+    tenant = TenantContext(merchant_id=merchant.merchant_id)
+    growth_plan = await PlanRepository(session).get_by_tier_and_interval("growth", "monthly")
+    assert growth_plan is not None, "billing_plans seed migration must have run"
+    await SubscriptionRepository(session).create(
+        tenant,
+        plan_id=growth_plan.plan_id,
+        status="trialing",
+        trial_ends_at=datetime.datetime.now(datetime.UTC)
+        + datetime.timedelta(days=settings.trial_period_days),
+    )
+
     await session.commit()
     return merchant, staff_user, _issue_tokens(staff_user)
 

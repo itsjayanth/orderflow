@@ -109,6 +109,29 @@ class Settings(BaseSettings):
 
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
+    # Platform Razorpay account for merchant subscription billing
+    # (billing/) -- a completely separate integration from payments/'s
+    # per-merchant Razorpay Payment Links: this is Orderflow charging its
+    # own merchants (Starter/Growth/Pro), not a merchant charging their
+    # customers. Exactly one platform account, so these are Settings
+    # fields, not a per-merchant credentials row. No hardcoded fallback
+    # for key_id/key_secret -- unset means billing/adapters/gateway_selector.py
+    # falls back to DummyBillingGateway, same "fails closed to a safe
+    # dummy" pattern payments/adapters/gateway_selector.py already uses.
+    platform_razorpay_key_id: str | None = None
+    platform_razorpay_key_secret: str = ""
+    # A real default is fine here, unlike jwt_secret/secrets_encryption_key
+    # above -- this is a billing-webhook HMAC key, not a login/encryption
+    # secret. It has no cross-tenant forgery blast radius (every merchant
+    # already shares one platform account by design, so there's nothing
+    # merchant-specific to forge access to), and DummyBillingGateway's
+    # webhook signature check needs *some* stable secret to verify against
+    # even before real platform credentials exist.
+    platform_razorpay_webhook_secret: str = "dummy-platform-billing-secret"
+
+    trial_period_days: int = 14
+    billing_past_due_grace_days: int = 4
+
 
 @lru_cache
 def get_settings() -> Settings:

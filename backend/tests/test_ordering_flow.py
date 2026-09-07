@@ -4,6 +4,8 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from billing.adapters.repository import SubscriptionRepository
+from billing.domain.state_machine import transition_subscription_status
 from catalog.adapters.repository import ItemRepository
 from customers.adapters.repository import CustomerRepository
 from shared.tenant import TenantContext
@@ -55,6 +57,10 @@ async def test_public_catalog_requires_no_auth(
     assert len(body["items"]) == 1
     assert body["items"][0]["name"] == "Butter Chicken"
     assert body["items"][0]["image_url"] == "https://example.com/butter-chicken.jpg"
+    # Registration wires up a trialing Growth subscription by default
+    # (identity/domain/auth.py) -- Growth is above Starter, so branding is
+    # hidden.
+    assert body["hide_branding"] is True
 
 
 async def test_public_item_without_image_has_null_image_url(
@@ -99,6 +105,66 @@ async def test_public_catalog_unknown_merchant_returns_404(client: AsyncClient) 
     response = await client.get(f"/api/v1/ordering-flow/{uuid.uuid4()}/catalog")
 
     assert response.status_code == 404
+
+
+# --- hide_branding (Phase 17 billing-tier gate) ----------------------------
+
+
+async def test_public_catalog_hide_branding_false_for_starter_tier(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    plans = (await client.get("/api/v1/billing/plans")).json()
+    starter_plan = next(
+        p for p in plans if p["tier"] == "starter" and p["billing_interval"] == "monthly"
+    )
+    await client.post(
+        "/api/v1/billing/change-plan",
+        json={"plan_id": starter_plan["plan_id"]},
+        headers=_auth_headers(tokens),
+    )
+
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
+
+    assert response.status_code == 200
+    assert response.json()["hide_branding"] is False
+
+
+async def test_public_catalog_hide_branding_true_for_growth_tier(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    subscription = await SubscriptionRepository(db_session).get(tenant)
+    assert subscription is not None
+    # Confirm the active-status path too, not just the default trialing one.
+    transition_subscription_status(subscription, "active")
+    await db_session.commit()
+
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hide_branding"] is True
+
+
+async def test_public_catalog_hide_branding_false_when_no_subscription_row(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Fails open (branding shown) rather than crashing the public menu
+    page when there's no Subscription row to check."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    subscription = await SubscriptionRepository(db_session).get(tenant)
+    assert subscription is not None
+    await db_session.delete(subscription)
+    await db_session.commit()
+
+    response = await client.get(f"/api/v1/ordering-flow/{tenant.merchant_id}/catalog")
+
+    assert response.status_code == 200
+    assert response.json()["hide_branding"] is False
 
 
 async def test_public_checkout_online_creates_order_with_link(

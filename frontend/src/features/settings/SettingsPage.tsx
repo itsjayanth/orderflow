@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Info, Plus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { Link } from 'react-router-dom'
 import { z } from 'zod'
 
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +14,8 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useMe } from '@/features/auth/useAuth'
+import { SUBSCRIPTION_STATUS_LABELS } from '@/features/billing/subscriptionTransitions'
+import { useSubscription } from '@/features/billing/useSubscription'
 import { ConnectWhatsAppButton } from '@/features/onboarding/ConnectWhatsAppButton'
 import { useSelectVerticals } from '@/features/onboarding/useOnboarding'
 import type { NotificationTemplateOut } from '@/shared/api/types'
@@ -115,6 +118,40 @@ function BusinessTypesSettingsSection() {
         </Button>
         {justSaved && !selectVerticals.isPending && <SavedIndicator message="Saved" />}
       </div>
+    </Card>
+  )
+}
+
+// Lightweight teaser -- not a duplicate of BillingSettingsPage.tsx (its own
+// routed page at /settings/billing), just current plan + a link there.
+function BillingSettingsSection() {
+  const { data: subscription, isLoading } = useSubscription()
+
+  return (
+    <Card className="space-y-4 p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-medium">Billing</h2>
+          <p className="text-muted-foreground text-sm">
+            Your Orderflow subscription plan and usage.
+          </p>
+        </div>
+        {!isLoading && subscription && (
+          <Badge tone={subscription.plan.tier === 'starter' ? 'gray' : 'gold'}>
+            {subscription.plan.display_name}
+          </Badge>
+        )}
+      </div>
+
+      {!isLoading && subscription && (
+        <p className="text-muted-foreground text-sm">
+          Status: {SUBSCRIPTION_STATUS_LABELS[subscription.status]}
+        </p>
+      )}
+
+      <Button asChild variant="outline" size="sm">
+        <Link to="/settings/billing">Manage billing</Link>
+      </Button>
     </Card>
   )
 }
@@ -714,6 +751,7 @@ export function SettingsPage() {
         description="Test/dummy values work fine for now -- switching to real credentials later doesn't require any code changes."
       />
       <BusinessTypesSettingsSection />
+      <BillingSettingsSection />
       <WebsiteLinkSettingsSection />
       <PaymentSettingsSection />
       <WhatsAppSettingsSection />

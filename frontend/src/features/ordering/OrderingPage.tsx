@@ -990,6 +990,12 @@ export function OrderingPage() {
           </div>
         )}
       </Sheet>
+
+      {/* Starter-tier merchants keep the "Powered by Orderflow" footer;
+          Growth/Pro have it removed (catalog.hide_branding is true). */}
+      {!catalog.hide_branding && (
+        <p className="text-muted-foreground pb-6 text-center text-xs">Powered by Orderflow</p>
+      )}
     </div>
   )
 }

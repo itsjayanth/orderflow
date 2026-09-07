@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import json
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from typing import Any
 
 import pytest_asyncio
@@ -36,6 +37,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # since app -> dashboard_api's router -> every domain module's router ->
 # that module's models. New modules never need to touch this file.
 from app import app
+from billing.domain.models import Plan
+from billing.domain.seed_data import SEED_PLANS
 from shared.db import Base, SessionFactory, engine
 
 
@@ -62,6 +65,20 @@ async def _reset_db() -> AsyncIterator[None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
+    # Tests recreate schema via Base.metadata.create_all rather than
+    # running Alembic migrations, so the billing_plans seed migration's
+    # data-seed step never runs here -- reseed the same SEED_PLANS rows
+    # directly (registration creates a Subscription against the seeded
+    # Growth plan, so most of the suite transitively depends on this
+    # existing, not just billing's own tests).
+    async with SessionFactory() as session:
+        session.add_all(
+            Plan(**{**plan, "price_inr": Decimal(str(plan["price_inr"]))})
+            for plan in SEED_PLANS
+        )
+        await session.commit()
+
     yield
 
 

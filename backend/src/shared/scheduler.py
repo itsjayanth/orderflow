@@ -6,6 +6,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from appointment_flow.domain.reminders import is_reminder_due
 from appointments.adapters.reminder_repository import AppointmentReminderRepository
+from billing.adapters.repository import SubscriptionRepository
+from billing.domain.state_machine import transition_subscription_status
 from campaigns.adapters.repository import CampaignRecipientRepository, CampaignRepository
 from campaigns.domain.send_orchestrator import send_campaign_batch
 from campaigns.domain.tier_enforcement import remaining_quota_today
@@ -54,6 +56,52 @@ async def sweep_abandoned_orders() -> None:
         if stale_orders:
             await session.commit()
             logger.info("Cancelled %d abandoned order(s)", len(stale_orders))
+
+
+async def sweep_billing_subscriptions(now_utc: datetime.datetime | None = None) -> None:
+    """Billing-lapse sweep (billing/) -- mirrors sweep_abandoned_orders'
+    shape exactly: own session, one cross-tenant query per concern, apply
+    state-machine transitions in place, one commit + one summary log line.
+
+    Two independent things to sweep, both landing a merchant on Starter
+    limits rather than cutting them off (billing/domain/gating.py's
+    "never lock out a live restaurant" philosophy):
+
+    1. Trials past `trial_ends_at` with no successful `active` transition
+       yet (status is still "trialing" -- if the webhook had already fired,
+       status would be "active" and this query wouldn't find the row) ->
+       "expired".
+    2. Subscriptions "past_due" for longer than
+       settings.billing_past_due_grace_days -> "canceled" (Razorpay's own
+       retry cadence has had its chance by then).
+
+    now_utc is injectable, same testability convention as
+    send_due_appointment_reminders/send_due_campaigns above -- a test seeds
+    a subscription at a fixed trial_ends_at/past_due_since and then
+    simulates elapsed time via a later now_utc, no sleeping required."""
+    now_utc = now_utc if now_utc is not None else datetime.datetime.now(datetime.UTC)
+    settings = get_settings()
+    grace_cutoff = now_utc - datetime.timedelta(days=settings.billing_past_due_grace_days)
+
+    swept_count = 0
+    async with SessionFactory() as session:
+        subscription_repo = SubscriptionRepository(session)
+
+        expiring_trials = await subscription_repo.list_trials_expiring(before=now_utc)
+        for subscription in expiring_trials:
+            transition_subscription_status(subscription, "expired")
+            swept_count += 1
+
+        lapsed_past_due = await subscription_repo.list_past_due_exceeding_grace(
+            before=grace_cutoff
+        )
+        for subscription in lapsed_past_due:
+            transition_subscription_status(subscription, "canceled")
+            swept_count += 1
+
+        if swept_count:
+            await session.commit()
+            logger.info("Swept %d billing subscription(s) to a lapsed state", swept_count)
 
 
 async def send_due_appointment_reminders(now_utc: datetime.datetime | None = None) -> None:
@@ -220,4 +268,10 @@ def create_scheduler() -> AsyncIOScheduler:
         send_due_appointment_reminders, "interval", minutes=5, id="appointment_reminders"
     )
     scheduler.add_job(send_due_campaigns, "interval", minutes=5, id="send_due_campaigns")
+    # Trial/grace windows are measured in days, not minutes -- a longer
+    # interval than the other three jobs is plenty (no need for 5-minute
+    # granularity on a 14-day trial or a 4-day grace period).
+    scheduler.add_job(
+        sweep_billing_subscriptions, "interval", minutes=60, id="sweep_billing_subscriptions"
+    )
     return scheduler
