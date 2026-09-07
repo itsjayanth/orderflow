@@ -2,7 +2,7 @@ import datetime
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from customers.domain.models import Address, Customer
@@ -29,7 +29,19 @@ class MerchantOrderCounter(Base):
 
 class Order(Base):
     __tablename__ = "orders"
-    __table_args__ = (UniqueConstraint("merchant_id", "order_number"),)
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "order_number"),
+        # Speeds up OrderRepository.list()'s dashboard query: filtered by
+        # merchant_id (always) and fulfillment_status (optionally), sorted
+        # by placed_at DESC -- covers that exact shape without a separate
+        # sort step.
+        Index(
+            "ix_orders_merchant_fulfillment_status_placed_at",
+            "merchant_id",
+            "fulfillment_status",
+            "placed_at",
+        ),
+    )
 
     order_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)

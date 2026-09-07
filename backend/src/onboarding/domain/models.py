@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db import Base
@@ -15,6 +15,22 @@ class WhatsAppBusinessAccount(Base):
     API connection method, not just a placeholder for later)."""
 
     __tablename__ = "whatsapp_business_accounts"
+    __table_args__ = (
+        # get_by_phone_number_id() (onboarding/adapters/repository.py) is
+        # the merchant-resolution lookup run on every inbound WhatsApp
+        # webhook message -- the hottest read path in the app -- and this
+        # also guarantees two merchants can't collide on the same
+        # phone_number_id. Partial (not a plain unique/index=True column)
+        # because phone_number_id is null until a merchant connects
+        # WhatsApp, and multiple not-yet-connected merchants all have it
+        # null.
+        Index(
+            "ix_whatsapp_business_accounts_phone_number_id_unique",
+            "phone_number_id",
+            unique=True,
+            postgresql_where=text("phone_number_id IS NOT NULL"),
+        ),
+    )
 
     waba_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     merchant_id: Mapped[uuid.UUID] = mapped_column(
