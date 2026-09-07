@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from appointments.api.router import router as appointments_router
+from billing.api.dashboard_router import router as billing_dashboard_router
 from campaigns.api.router import router as campaigns_router
 from catalog.api.router import router as catalog_router
 from customers.api.router import router as customers_router
@@ -20,5 +21,6 @@ router.include_router(customers_router)
 router.include_router(orders_router)
 router.include_router(appointments_router)
 router.include_router(payments_dashboard_router)
+router.include_router(billing_dashboard_router)
 router.include_router(notifications_router)
 router.include_router(campaigns_router)

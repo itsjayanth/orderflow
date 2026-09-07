@@ -91,6 +91,7 @@ Deploys as a single Render **Web Service** built from `Dockerfile` (`render.yaml
 | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | any string — whatever you configure as the verify token on the Meta webhook subscription |
 | `FRONTEND_BASE_URL` | your Vercel deployment URL, e.g. `https://orderflow.vercel.app` (no trailing slash) |
 | `CORS_ALLOW_ORIGINS` | `["https://orderflow.vercel.app"]` — must match the Vercel URL exactly (scheme + host), or the dashboard's requests will be blocked by CORS |
+| `PLATFORM_RAZORPAY_KEY_ID` / `PLATFORM_RAZORPAY_KEY_SECRET` / `PLATFORM_RAZORPAY_WEBHOOK_SECRET` | The **platform's own** Razorpay account for merchant subscription billing (`billing/`) — separate from any per-merchant Razorpay credentials merchants enter themselves under Payments settings. Leave `PLATFORM_RAZORPAY_KEY_ID` unset to run on `DummyBillingGateway` (no real charges); `PLATFORM_RAZORPAY_WEBHOOK_SECRET` has a workable default even when unset, see `.env.example`. |
 
 `DATABASE_URL` is wired automatically from the Blueprint's Postgres resource — Render's connection string comes as `postgres://`/`postgresql://`, which `shared/config.py`'s `Settings` rewrites to `postgresql+asyncpg://` on load, so no manual edit is needed there.
 
