@@ -1,4 +1,12 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Inbox, Search } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronDown,
+  Inbox,
+  Search,
+} from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
@@ -161,7 +169,7 @@ export function OrdersPage() {
   const from_date = searchParams.get('from_date') ?? undefined
   const to_date = searchParams.get('to_date') ?? undefined
   const range: DateRangeValue = { from_date, to_date }
-  const { data: orders, isLoading } = useOrders(range)
+  const { data: orders, isLoading, isError, refetch } = useOrders(range)
   const [search, setSearch] = useState('')
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -432,7 +440,23 @@ export function OrdersPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-              {!isLoading && visibleOrders?.length === 0 && (
+              {!isLoading && isError && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={COLUMN_COUNT}>
+                    <EmptyState
+                      icon={AlertTriangle}
+                      title="Something went wrong loading orders."
+                      description="Try again in a moment."
+                      action={
+                        <Button type="button" size="sm" variant="outline" onClick={() => refetch()}>
+                          Retry
+                        </Button>
+                      }
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoading && !isError && visibleOrders?.length === 0 && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={COLUMN_COUNT}>
                     <EmptyState
@@ -456,8 +480,6 @@ export function OrdersPage() {
                   <Fragment key={order.order_id}>
                     <TableRow
                       onClick={() => toggleExpanded(order.order_id)}
-                      aria-expanded={isExpanded}
-                      aria-controls={detailRowId}
                       className={cn(
                         'cursor-pointer',
                         isExpanded && 'bg-muted/40',
@@ -484,6 +506,7 @@ export function OrdersPage() {
                               : `Expand order ${formatOrderNumber(order.order_number)}`
                           }
                           aria-expanded={isExpanded}
+                          aria-controls={detailRowId}
                           onClick={(e) => {
                             e.stopPropagation()
                             toggleExpanded(order.order_id)

@@ -215,6 +215,28 @@ describe('OrdersPage', () => {
     expect(await screen.findByText('No orders yet.')).toBeInTheDocument()
   })
 
+  it('shows a distinct error state (not the empty state) when the orders fetch fails', async () => {
+    mockedApiFetch.mockImplementation((path: string) => {
+      if (path.startsWith('/api/v1/orders')) return Promise.reject(new Error('server error'))
+      if (path.startsWith('/api/v1/catalog/items')) return Promise.resolve([])
+      return Promise.reject(new Error(`unexpected apiFetch call: ${path}`))
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/orders']}>
+          <OrdersPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('Something went wrong loading orders.')).toBeInTheDocument()
+    expect(screen.queryByText('No orders yet.')).not.toBeInTheDocument()
+  })
+
   it('re-fetches orders with date-range params when a preset is selected', async () => {
     renderPage([sampleOrder])
 
