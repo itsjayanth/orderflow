@@ -248,6 +248,46 @@ async def test_list_customers_returns_seeded_customer(
     assert body[0]["customer_number"] == 1
 
 
+# --- Pagination -------------------------------------------------------------
+
+
+async def test_list_customers_limit_caps_results_and_reports_has_more(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    for i in range(5):
+        await CustomerRepository(db_session).find_or_create(tenant, f"+9198765432{i:02d}")
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/customers", params={"limit": 2}, headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert response.headers["x-has-more"] == "true"
+
+
+async def test_list_customers_without_limit_returns_full_unbounded_list(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Backward-compatibility guarantee: omitting `limit` entirely (as
+    every existing caller does) must keep returning every matching row,
+    with has_more reported False -- exactly the pre-pagination behavior."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    for i in range(5):
+        await CustomerRepository(db_session).find_or_create(tenant, f"+9198765432{i:02d}")
+    await db_session.commit()
+
+    response = await client.get("/api/v1/customers", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    assert len(response.json()) == 5
+    assert response.headers["x-has-more"] == "false"
+
+
 async def test_get_customer_detail_includes_addresses(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:

@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from customers.api.schemas import AddressOut
 from orders.adapters.repository import OrderNotFoundError, OrderRepository
@@ -70,18 +70,35 @@ def _to_order_detail_out(order: Order) -> OrderDetailOut:
 async def list_orders(
     tenant: CurrentTenant,
     session: DbSession,
+    response: Response,
     fulfillment_status: str | None = None,
     from_date: datetime.date | None = None,
     to_date: datetime.date | None = None,
     customer_id: uuid.UUID | None = None,
+    limit: int | None = Query(default=None, gt=0, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[OrderOut]:
+    """`limit`/`offset` are optional and off by default -- omitting them
+    returns every matching order exactly as before (existing dashboard
+    frontend and tests rely on the bare, unpaginated list). When `limit`
+    is passed, the response body stays a bare list (capped at `limit`) to
+    keep that same shape; whether more rows exist beyond this page is
+    reported out-of-band via the `X-Has-More` header instead of wrapping
+    the body, since the frontend's OrderOut[] parsing would otherwise
+    break on an envelope."""
     orders = await OrderRepository(session).list(
         tenant,
         fulfillment_status=fulfillment_status,
         from_date=from_date,
         to_date=to_date,
         customer_id=customer_id,
+        limit=limit,
+        offset=offset,
     )
+    has_more = limit is not None and len(orders) > limit
+    if has_more:
+        orders = orders[:limit]
+    response.headers["X-Has-More"] = "true" if has_more else "false"
     return [_to_order_out(order) for order in orders]
 
 

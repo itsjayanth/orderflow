@@ -181,7 +181,24 @@ class CustomerRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list(self, tenant: TenantContext, include_inactive: bool = False) -> list[Customer]:
+    async def list(
+        self,
+        tenant: TenantContext,
+        include_inactive: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Customer]:
+        """`limit`/`offset` are optional and offset-based (see
+        OrderRepository.list in orders/adapters/repository.py for the
+        full rationale, mirrored here rather than factored into a shared
+        helper -- this codebase prefers a few repeated lines per
+        repository over a generic pagination base class). Omitted (the
+        default), behavior is exactly as before this pagination support
+        was added: every matching row, unbounded. When `limit` is given,
+        `limit + 1` rows are fetched so the caller (customers/api/
+        router.py's list_customers) can detect "is there another page"
+        itself and trim to `limit` before returning to its own caller --
+        kept out of this method so its return type stays a plain list."""
         stmt = (
             select(Customer)
             .where(Customer.merchant_id == tenant.merchant_id)
@@ -189,6 +206,8 @@ class CustomerRepository:
         )
         if not include_inactive:
             stmt = stmt.where(Customer.is_active.is_(True))
+        if limit is not None:
+            stmt = stmt.offset(offset).limit(limit + 1)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

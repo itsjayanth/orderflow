@@ -34,12 +34,33 @@ class ItemRepository:
         return result.scalar_one() - 1
 
     async def list(
-        self, tenant: TenantContext, include_unavailable: bool = True
+        self,
+        tenant: TenantContext,
+        include_unavailable: bool = True,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Item]:
+        """`limit`/`offset` are optional and offset-based (simpler than a
+        created_at+item_id keyset cursor, and acceptable here since
+        nothing yet drives repeat deep pagination -- the trade-off is that
+        a page can skip or repeat a row if items are inserted/deleted
+        between two calls, unlike a keyset cursor). Omitted (the default),
+        behavior is exactly as before this pagination support was added:
+        every matching row, unbounded -- this method has several other
+        callers (onboarding, flows, conversation) that rely on that and
+        never pass `limit`. When `limit` is given, `limit + 1` rows are
+        fetched so the caller (catalog/api/router.py's list_items) can
+        detect "is there another page" itself by checking whether more
+        than `limit` rows came back, then trim to `limit` before
+        returning to its own caller -- kept out of this method so its
+        return type (and every existing call site) stays untouched."""
         stmt = select(Item).where(Item.merchant_id == tenant.merchant_id)
         if not include_unavailable:
             stmt = stmt.where(Item.is_available.is_(True))
-        result = await self._session.execute(stmt.order_by(Item.created_at))
+        stmt = stmt.order_by(Item.created_at)
+        if limit is not None:
+            stmt = stmt.offset(offset).limit(limit + 1)
+        result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def create(

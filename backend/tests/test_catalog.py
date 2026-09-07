@@ -202,3 +202,47 @@ async def test_create_then_list_items_for_clothing_vertical(client: AsyncClient)
     items = list_response.json()
     assert {item["item_id"] for item in items} == set(created_ids)
     assert {item["category"] for item in items} == {"Shirts", "Shoes"}
+
+
+# --- Pagination -------------------------------------------------------------
+
+
+async def test_list_items_limit_caps_results_and_reports_has_more(client: AsyncClient) -> None:
+    tokens = await _register(client)
+    for i in range(5):
+        response = await client.post(
+            "/api/v1/catalog/items",
+            json={"category": "Mains", "name": f"Item {i}", "price": "100.00"},
+            headers=_auth_headers(tokens),
+        )
+        assert response.status_code == 201, response.text
+
+    list_response = await client.get(
+        "/api/v1/catalog/items", params={"limit": 2}, headers=_auth_headers(tokens)
+    )
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 2
+    assert list_response.headers["x-has-more"] == "true"
+
+
+async def test_list_items_without_limit_returns_full_unbounded_list(
+    client: AsyncClient,
+) -> None:
+    """Backward-compatibility guarantee: omitting `limit` entirely (as
+    every existing caller does) must keep returning every matching row,
+    with has_more reported False -- exactly the pre-pagination behavior."""
+    tokens = await _register(client)
+    for i in range(5):
+        response = await client.post(
+            "/api/v1/catalog/items",
+            json={"category": "Mains", "name": f"Item {i}", "price": "100.00"},
+            headers=_auth_headers(tokens),
+        )
+        assert response.status_code == 201, response.text
+
+    list_response = await client.get("/api/v1/catalog/items", headers=_auth_headers(tokens))
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 5
+    assert list_response.headers["x-has-more"] == "false"

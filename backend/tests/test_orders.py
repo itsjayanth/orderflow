@@ -762,6 +762,71 @@ async def test_list_orders_combines_date_range_with_fulfillment_status(
     assert body[0]["order_id"] == str(matching.order_id)
 
 
+# --- Pagination -------------------------------------------------------------
+
+
+async def test_list_orders_limit_caps_results_and_reports_has_more(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    for _ in range(5):
+        await _seed_order(db_session, tenant)
+
+    response = await client.get(
+        "/api/v1/orders", params={"limit": 2}, headers=_auth_headers(tokens)
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+    assert response.headers["x-has-more"] == "true"
+
+
+async def test_list_orders_limit_offset_pages_through_all_results(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    seeded = [await _seed_order(db_session, tenant) for _ in range(5)]
+    seeded_ids = {str(o.order_id) for o in seeded}
+
+    seen_ids: set[str] = set()
+    offset = 0
+    while True:
+        response = await client.get(
+            "/api/v1/orders",
+            params={"limit": 2, "offset": offset},
+            headers=_auth_headers(tokens),
+        )
+        assert response.status_code == 200
+        page = response.json()
+        seen_ids.update(order["order_id"] for order in page)
+        has_more = response.headers["x-has-more"] == "true"
+        offset += 2
+        if not has_more:
+            break
+
+    assert seen_ids == seeded_ids
+
+
+async def test_list_orders_without_limit_returns_full_unbounded_list(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Backward-compatibility guarantee: omitting `limit` entirely (as
+    every existing caller does) must keep returning every matching row,
+    with has_more reported False -- exactly the pre-pagination behavior."""
+    tokens = await _register(client)
+    tenant = await _tenant_for(client, tokens)
+    for _ in range(5):
+        await _seed_order(db_session, tenant)
+
+    response = await client.get("/api/v1/orders", headers=_auth_headers(tokens))
+
+    assert response.status_code == 200
+    assert len(response.json()) == 5
+    assert response.headers["x-has-more"] == "false"
+
+
 async def test_get_summary_filtered_by_date_range(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
