@@ -148,6 +148,66 @@ async def test_logout_clears_refresh_cookie(client: AsyncClient) -> None:
     assert refresh_response.status_code == 401
 
 
+# --- Refresh-token revocation -------------------------------------------
+
+
+async def test_logout_revokes_refresh_token_server_side(client: AsyncClient) -> None:
+    """Server-side revocation, not just the client-side cookie clear that
+    test_logout_clears_refresh_cookie above exercises: even a client that
+    kept holding the raw refresh token JWT (e.g. it leaked, or the cookie
+    jar wasn't cleared) can no longer use it to mint a new access token
+    after logout."""
+    await _register(client)
+    old_refresh_token = client.cookies[REFRESH_COOKIE_NAME]
+
+    logout_response = await client.post("/api/v1/auth/logout")
+    assert logout_response.status_code == 204
+
+    # Re-present the pre-logout refresh token directly, bypassing whatever
+    # the logout response told the cookie jar to do.
+    client.cookies.set(REFRESH_COOKIE_NAME, old_refresh_token)
+    refresh_response = await client.post("/api/v1/auth/refresh")
+    assert refresh_response.status_code == 401
+
+
+async def test_rotated_away_refresh_token_cannot_be_reused(client: AsyncClient) -> None:
+    """Reuse detection: once a refresh token has been rotated (successfully
+    exchanged for a new pair), presenting that same OLD token again must be
+    rejected -- it's no longer the client's current token, so a second use
+    of it is a signal of a stolen/replayed token, not a legitimate retry."""
+    await _register(client)
+    old_refresh_token = client.cookies[REFRESH_COOKIE_NAME]
+
+    first_refresh = await client.post("/api/v1/auth/refresh")
+    assert first_refresh.status_code == 200
+    new_refresh_token = client.cookies[REFRESH_COOKIE_NAME]
+    assert new_refresh_token != old_refresh_token
+
+    # Replay the pre-rotation token.
+    client.cookies.set(REFRESH_COOKIE_NAME, old_refresh_token)
+    replay_response = await client.post("/api/v1/auth/refresh")
+    assert replay_response.status_code == 401
+
+    # The legitimate, rotated-to token must still work -- rotation isn't
+    # itself treated as a compromise signal, only reuse of the old token is.
+    client.cookies.set(REFRESH_COOKIE_NAME, new_refresh_token)
+    second_refresh = await client.post("/api/v1/auth/refresh")
+    assert second_refresh.status_code == 200
+
+
+async def test_fresh_refresh_token_still_works(client: AsyncClient) -> None:
+    """Regression guard: a refresh token that was never rotated or used for
+    logout keeps working -- the denylist must not reject tokens it was
+    never told to revoke."""
+    tokens = await _register(client)
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 200
+    new_access_token = response.json()["access_token"]
+    assert new_access_token != tokens["access_token"]
+
+
 async def test_me_scoped_to_own_merchant(client: AsyncClient) -> None:
     tokens_a = await _register(client, owner_contact="owner-a@example.com")
     tokens_b = await _register(client, owner_contact="owner-b@example.com")

@@ -35,6 +35,7 @@ from identity.domain.auth import (
     TokenPair,
     login,
     register_merchant,
+    revoke_refresh_token,
     rotate_tokens,
 )
 from identity.domain.models import InvalidWebsiteUrlError, normalize_website_url
@@ -71,6 +72,13 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
 def _access_token_response(response: Response, tokens: TokenPair) -> AccessTokenResponse:
     _set_refresh_cookie(response, tokens.refresh_token)
     return AccessTokenResponse(access_token=tokens.access_token)
+
+
+def _expires_at_from_payload(payload: dict[str, str]) -> datetime.datetime:
+    """PyJWT keeps a verified token's `exp` claim as the raw POSIX-timestamp
+    number it decoded, not a datetime -- convert once here for the
+    denylist's `expires_at` column."""
+    return datetime.datetime.fromtimestamp(float(payload["exp"]), tz=datetime.UTC)
 
 
 @router.post("/register", response_model=AccessTokenResponse, status_code=status.HTTP_201_CREATED)
@@ -118,14 +126,45 @@ async def refresh(
         ) from exc
 
     try:
-        tokens = await rotate_tokens(session, uuid.UUID(payload["sub"]))
+        tokens = await rotate_tokens(
+            session,
+            uuid.UUID(payload["sub"]),
+            refresh_jti=uuid.UUID(payload["jti"]),
+            refresh_expires_at=_expires_at_from_payload(payload),
+        )
     except InvalidCredentialsError as exc:
+        # Covers both an unknown staff user and RefreshTokenReusedError (a
+        # subclass): either way the caller gets the same generic 401, so a
+        # client can't distinguish "reused token" from "deleted account" by
+        # response alone. The reuse case is already logged server-side by
+        # rotate_tokens.
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token") from exc
     return _access_token_response(response, tokens)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response) -> None:
+async def logout(
+    session: DbSession,
+    response: Response,
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
+) -> None:
+    if refresh_token is not None:
+        try:
+            payload = decode_token(refresh_token, expected_type="refresh")
+        except jwt.InvalidTokenError:
+            payload = None
+        if payload is not None:
+            # Best-effort: an already-expired or malformed refresh token
+            # needs no denylist entry (it can't be used regardless), so
+            # logout still succeeds and clears the cookie either way --
+            # logout is idempotent from the client's perspective.
+            await revoke_refresh_token(
+                session,
+                staff_user_id=uuid.UUID(payload["sub"]),
+                merchant_id=uuid.UUID(payload["merchant_id"]),
+                refresh_jti=uuid.UUID(payload["jti"]),
+                refresh_expires_at=_expires_at_from_payload(payload),
+            )
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/v1/auth")
 
 
