@@ -3,8 +3,48 @@ import uuid
 
 from sqlalchemy import Boolean, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import Text, TypeDecorator
 
 from shared.db import Base
+from shared.encryption import decrypt, encrypt
+
+
+class FernetEncryptedString(TypeDecorator[str]):
+    """Transparently Fernet-encrypts a string column at the SQLAlchemy
+    bind/result boundary, reusing shared/encryption.py's encrypt()/decrypt()
+    (the same Fernet cipher already used for WhatsApp/Razorpay credentials)
+    -- not a new encryption system, just this one wrapped in a Type so it
+    applies uniformly to every load path.
+
+    Deliberately NOT this codebase's usual convention of explicit encrypt()/
+    decrypt() calls at the repository boundary (see e.g. payments/adapters/
+    gateway_selector.py, onboarding/api/router.py): Customer and Address
+    rows are routinely loaded elsewhere in the app via a plain SQLAlchemy
+    relationship -- Order.customer/Order.delivery_address, Appointment.
+    customer (selectinload'd in orders/adapters/repository.py and
+    appointments/adapters/repository.py) -- entirely bypassing
+    CustomerRepository/AddressRepository. notifications/adapters/
+    whatsapp_channel.py then sends `to=customer.whatsapp_number` straight
+    to Meta's API from one of those relationship loads. An explicit
+    decrypt-at-this-module's-repository-boundary would leave every one of
+    those other call sites reading raw ciphertext -- notifications would
+    silently try to message a base64 blob instead of a phone number. A
+    transparent column type is the smallest fix that is correct on every
+    load path without editing those other modules.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: str | None, dialect: object) -> str | None:
+        if value is None:
+            return None
+        return encrypt(value)
+
+    def process_result_value(self, value: str | None, dialect: object) -> str | None:
+        if value is None:
+            return None
+        return decrypt(value)
 
 
 class MerchantCustomerCounter(Base):
@@ -24,7 +64,20 @@ class MerchantCustomerCounter(Base):
 class Customer(Base):
     __tablename__ = "customers"
     __table_args__ = (
-        UniqueConstraint("merchant_id", "whatsapp_number", name="uq_customers_merchant_whatsapp"),
+        # The unique/dedup constraint lives on whatsapp_number_lookup_hash,
+        # not on whatsapp_number itself -- Fernet's ciphertext is
+        # non-deterministic (random IV per call), so two encryptions of the
+        # identical phone number never compare equal, and a DB-level unique
+        # constraint on the ciphertext column would be meaningless. The
+        # HMAC lookup hash is deterministic and is the real identity key
+        # here; whatsapp_number is kept only as the (encrypted) display/
+        # send-target value. See CustomerRepository for the read/write side
+        # of this split.
+        UniqueConstraint(
+            "merchant_id",
+            "whatsapp_number_lookup_hash",
+            name="uq_customers_merchant_whatsapp_hash",
+        ),
         UniqueConstraint("merchant_id", "customer_number", name="uq_customers_merchant_number"),
     )
 
@@ -35,7 +88,19 @@ class Customer(Base):
     # and items. Shown in the dashboard, orders, and customers UI, and
     # usable as a search filter, instead of the raw customer_id UUID.
     customer_number: Mapped[int] = mapped_column()
-    whatsapp_number: Mapped[str] = mapped_column(String(32))
+    # Stored Fernet-encrypted at rest (FernetEncryptedString transparently
+    # encrypts/decrypts -- reads back as plaintext everywhere the ORM loads
+    # this column, direct query or relationship traversal alike). Text, not
+    # a bounded String: a Fernet token is meaningfully longer than a phone
+    # number and grows with plaintext length.
+    whatsapp_number: Mapped[str] = mapped_column(FernetEncryptedString)
+    # Deterministic HMAC-SHA256(whatsapp_number, secrets_encryption_key) hex
+    # digest -- the actual lookup/dedup key now that whatsapp_number itself
+    # is non-deterministic ciphertext (see __table_args__ above).
+    # CustomerRepository computes this on every write and queries by it
+    # instead of by whatsapp_number. Indexed: this is the hottest read path
+    # in the app (every inbound WhatsApp webhook message).
+    whatsapp_number_lookup_hash: Mapped[str] = mapped_column(String(64), index=True)
     display_name: Mapped[str | None] = mapped_column(String(255), default=None)
     # Null means "call me on my WhatsApp number" (the common case) -- only
     # set when the customer has explicitly asked for a *different* number
@@ -90,11 +155,15 @@ class Address(Base):
     # don't need to join through Customer.
     merchant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("merchants.merchant_id"), index=True)
     label: Mapped[str] = mapped_column(String(64))
-    line1: Mapped[str] = mapped_column(String(255))
-    line2: Mapped[str | None] = mapped_column(String(255), default=None)
-    landmark: Mapped[str | None] = mapped_column(String(255), default=None)
-    city: Mapped[str] = mapped_column(String(128))
-    pincode: Mapped[str] = mapped_column(String(16))
+    # PII, Fernet-encrypted at rest via FernetEncryptedString (see that
+    # type's docstring) -- unlike whatsapp_number these are never queried
+    # by value (only ever displayed, or matched by address_id/customer_id),
+    # so no lookup-hash companion column is needed here.
+    line1: Mapped[str] = mapped_column(FernetEncryptedString)
+    line2: Mapped[str | None] = mapped_column(FernetEncryptedString, default=None)
+    landmark: Mapped[str | None] = mapped_column(FernetEncryptedString, default=None)
+    city: Mapped[str] = mapped_column(FernetEncryptedString)
+    pincode: Mapped[str] = mapped_column(FernetEncryptedString)
     geo_lat: Mapped[float | None] = mapped_column(Float, default=None)
     geo_long: Mapped[float | None] = mapped_column(Float, default=None)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
