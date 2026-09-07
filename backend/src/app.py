@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -19,7 +20,7 @@ from ordering_flow.api.router import router as ordering_flow_router
 from payments.api.router import router as payments_webhook_router
 from shared.config import get_settings
 from shared.interaction_mode import validate_startup_config
-from shared.logging import configure_logging
+from shared.logging import configure_logging, request_id_var
 from shared.rate_limiting import limiter
 from shared.scheduler import create_scheduler
 
@@ -96,17 +97,29 @@ app.include_router(billing_webhook_router)
 async def log_requests(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    start = time.perf_counter()
-    response = await call_next(request)
-    duration_ms = (time.perf_counter() - start) * 1000
-    request_logger.info(
-        "%s %s -> %d (%.1fms)",
-        request.method,
-        request.url.path,
-        response.status_code,
-        duration_ms,
-    )
-    return response
+    # Trusts an inbound X-Request-ID if the caller already has one (e.g. a
+    # reverse proxy or another service in front of this one), otherwise
+    # mints a fresh one -- either way, every log line emitted anywhere
+    # while handling this request (however deep the call stack) carries it
+    # via shared/logging.py's request_id_var, and it's echoed back in the
+    # response header so a client/proxy can correlate its own logs too.
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    token = request_id_var.set(request_id)
+    try:
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+        response.headers["X-Request-ID"] = request_id
+        request_logger.info(
+            "%s %s -> %d (%.1fms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+        return response
+    finally:
+        request_id_var.reset(token)
 
 
 @app.get("/health", tags=["system"])

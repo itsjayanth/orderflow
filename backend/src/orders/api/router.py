@@ -1,4 +1,5 @@
 import datetime
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -18,6 +19,8 @@ from orders.domain.models import Order
 from orders.domain.state_machine import IllegalTransitionError
 from payments.adapters.repository import PaymentEventRepository
 from shared.deps import CurrentStaffUserId, CurrentTenant, DbSession
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
@@ -156,6 +159,13 @@ async def update_fulfillment_status(
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
     await session.commit()
+    logger.info(
+        "order %s fulfillment_status -> %s (merchant=%s, changed_by=%s)",
+        order_id,
+        body.to_status,
+        tenant.merchant_id,
+        staff_user_id,
+    )
 
     event_cls = _EVENT_BY_STATUS.get(body.to_status)
     if event_cls is not None:

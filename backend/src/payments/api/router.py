@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
@@ -14,6 +15,8 @@ from payments.domain.gateway import WebhookVerificationError
 from shared.deps import DbSession
 from shared.rate_limiting import limiter
 from shared.tenant import TenantContext
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/payments/webhook", tags=["payments"])
 
@@ -40,6 +43,7 @@ async def razorpay_webhook(
     try:
         verified = gateway.verify_webhook(payload=body, signature=x_razorpay_signature)
     except WebhookVerificationError as exc:
+        logger.warning("razorpay webhook signature verification failed (merchant=%s)", merchant_id)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook signature") from exc
 
     payment_event_repo = PaymentEventRepository(session)
@@ -56,12 +60,24 @@ async def razorpay_webhook(
             provider_order_id=verified.provider_order_id,
         )
         await session.commit()
+        logger.info(
+            "razorpay webhook duplicate (order=%s, payment=%s)",
+            already_processed.order_id,
+            verified.provider_payment_id,
+        )
         return {"status": "duplicate"}
 
     link_event = await payment_event_repo.get_latest_by_provider_order_id(
         verified.provider_order_id
     )
     if link_event is None:
+        logger.warning(
+            "razorpay webhook for unknown provider_order_id=%s (merchant=%s, payment=%s)"
+            " -- payment may be captured with no matching order",
+            verified.provider_order_id,
+            merchant_id,
+            verified.provider_payment_id,
+        )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No order found for this payment")
 
     # Order Service owns the actual lookup-with-lock + state-machine
@@ -88,6 +104,11 @@ async def razorpay_webhook(
             provider_order_id=verified.provider_order_id,
         )
         await session.commit()
+        logger.info(
+            "razorpay webhook duplicate, already settled (order=%s, payment=%s)",
+            result.order.order_id,
+            verified.provider_payment_id,
+        )
         return {"status": "duplicate"}
 
     await payment_event_repo.create(
@@ -98,6 +119,13 @@ async def razorpay_webhook(
         provider_order_id=verified.provider_order_id,
     )
     await session.commit()
+    logger.info(
+        "order %s payment_status -> %s (merchant=%s, payment=%s)",
+        result.order.order_id,
+        "paid" if verified.succeeded else "payment_failed",
+        merchant_id,
+        verified.provider_payment_id,
+    )
 
     if verified.succeeded:
         await publish(OrderPaid(order_id=result.order.order_id, merchant_id=merchant_id))
@@ -135,6 +163,10 @@ async def razorpay_appointment_webhook(
     try:
         verified = gateway.verify_webhook(payload=body, signature=x_razorpay_signature)
     except WebhookVerificationError as exc:
+        logger.warning(
+            "razorpay appointment webhook signature verification failed (merchant=%s)",
+            merchant_id,
+        )
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook signature") from exc
 
     payment_event_repo = PaymentEventRepository(session)
@@ -151,12 +183,24 @@ async def razorpay_appointment_webhook(
             provider_order_id=verified.provider_order_id,
         )
         await session.commit()
+        logger.info(
+            "razorpay appointment webhook duplicate (appointment=%s, payment=%s)",
+            already_processed.appointment_id,
+            verified.provider_payment_id,
+        )
         return {"status": "duplicate"}
 
     link_event = await payment_event_repo.get_latest_by_provider_order_id(
         verified.provider_order_id
     )
     if link_event is None or link_event.appointment_id is None:
+        logger.warning(
+            "razorpay appointment webhook for unknown provider_order_id=%s (merchant=%s,"
+            " payment=%s) -- payment may be captured with no matching appointment",
+            verified.provider_order_id,
+            merchant_id,
+            verified.provider_payment_id,
+        )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No appointment found for this payment")
 
     # Appointment Service owns the actual lookup-with-lock + guarded write
@@ -182,6 +226,11 @@ async def razorpay_appointment_webhook(
             provider_order_id=verified.provider_order_id,
         )
         await session.commit()
+        logger.info(
+            "razorpay appointment webhook duplicate, already settled (appointment=%s, payment=%s)",
+            result.appointment.appointment_id,
+            verified.provider_payment_id,
+        )
         return {"status": "duplicate"}
 
     await payment_event_repo.create(
@@ -192,5 +241,12 @@ async def razorpay_appointment_webhook(
         provider_order_id=verified.provider_order_id,
     )
     await session.commit()
+    logger.info(
+        "appointment %s payment_status -> %s (merchant=%s, payment=%s)",
+        result.appointment.appointment_id,
+        "paid" if verified.succeeded else "failed",
+        merchant_id,
+        verified.provider_payment_id,
+    )
 
     return {"status": "ok"}
