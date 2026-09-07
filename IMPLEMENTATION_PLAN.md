@@ -367,6 +367,14 @@ Everything `ARCHITECTURE.md` §11 and `TECH_STACK.md`'s "explicitly deferred" se
 
 Note on Phase 2 POS sync specifically: this is a **restaurant-vertical-specific optional integration** (Petpooja/UrbanPiper are food-service POS/KDS systems), not a universal Phase 2 assumption for every merchant on the platform — a non-restaurant tenant has no equivalent Phase 2 obligation, per the same reframing in `ARCHITECTURE.md` §8.
 
+## Known deferred remediation (order-flow audit)
+
+A full order-flow audit (`plans/50-payment-gateway-placeholder-remediation-plan/PLAN.md`) surfaced ~40 findings; all of them were closed out across cards #51 (P0) and #52 (P1-P3) — see `plans/51-p0-order-flow-correctness-ci/PLAN.md` and `plans/52-batch-remediation-p1-p3/PLAN.md` for the full record — except three, deliberately not attempted because they were judged too invasive to safely automate via unreviewed parallel sub-agents on a payment codebase:
+
+1. **Split `conversation/domain/handler.py`** (770 lines, imports from 12 other modules, `_reply_for_intent` alone ~200 lines of nested branching) into per-intent handler modules under `conversation/domain/intent_handlers/`. Needs careful manual review given how central and behavior-sensitive this file is (every inbound WhatsApp message routes through it).
+2. **Repo-wide `StrEnum` conversion** for `payment_status`/`fulfillment_status` (currently plain `str` type aliases guarded only by frozensets in `orders/domain/state_machine.py` and `appointments/domain/state_machine.py`) — touches every call site across `orders`, `payments`, `appointments`, and `ordering_flow` that compares against a status literal. High blast radius for a single automated pass; do it as its own reviewed change.
+3. **Frontend/backend transition-table codegen** — `frontend/src/features/orders/statusTransitions.ts` (and its appointments equivalent) hand-copy the backend's transition tables with a "mirrors backend exactly" comment but no shared source of truth. Fixing this is a small feature/tooling addition (an endpoint or build-time codegen step), not a pure bug fix, so it needs a design decision first rather than being bundled into a remediation pass.
+
 ## Suggested execution order
 
 Phases 1–4 are pure CRUD-and-state-machine work and can move fast — they're also where the tenant-isolation and state-machine correctness bugs are cheapest to catch. Phase 5 and 6 are where external-integration risk lives (Razorpay test mode is low-friction; Meta's Flow data-exchange protocol is not) — get real sandbox credentials for both before starting Phase 5, not when you reach Phase 6. Phases 7–8 are comparatively mechanical once 1–6 exist.
