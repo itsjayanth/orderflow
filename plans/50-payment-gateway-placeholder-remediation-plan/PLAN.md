@@ -170,8 +170,17 @@ Each backlog item above is also tracked as a Trello checklist item on card #50 u
 
 ## Progress Log
 
-**2026-09-07** — Implemented the placeholder fix (commit TBD — filled in after commit).
-Replaced the merchant_id-derived dummy webhook secret and the hardcoded platform billing
-webhook secret literal with `Field(default_factory=lambda: secrets.token_urlsafe(32))`
-settings, sourced from new/existing env vars the user will set later. Wrote the full P0-P3
-backlog above and mirrored it onto Trello card #50's "Backlog" checklist.
+**2026-09-07** — Implemented the placeholder fix (commit `a1cd862`). Replaced the
+merchant_id-derived dummy webhook secret and the hardcoded platform billing webhook secret
+literal with `Field(default_factory=lambda: secrets.token_urlsafe(32))` settings, sourced
+from new/existing env vars (`PAYMENTS_DUMMY_GATEWAY_SECRET`,
+`PLATFORM_RAZORPAY_WEBHOOK_SECRET`) the user will set later. Updated the 6 test call sites
+that hardcoded the old `dummy-secret-{merchant_id}` string to read
+`get_settings().payments_dummy_gateway_secret` instead, added a regression test asserting
+the secret is not derivable from merchant_id, and pinned both new settings to deterministic
+test-only values in `conftest.py` (matching the existing JWT_SECRET/WHATSAPP_WEBHOOK_VERIFY_TOKEN
+convention). Full backend suite: 832/832 passing; `ruff check` clean; `mypy src` clean
+except the one pre-existing `payments/api/router.py:62` finding already documented in card
+#48/`IMPLEMENTATION_PLAN.md` as unrelated/predating this work. Wrote the full P0-P3 backlog
+above and mirrored it onto Trello card #50's "Backlog" checklist. Pushed to
+`claude/order-flow-audit-0ybduw`. No deviations from the plan.
